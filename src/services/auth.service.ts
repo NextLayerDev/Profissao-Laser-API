@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { permissionsService } from '@/services/permissions.service';
 import type {
 	LoginParams,
 	RegisterParams,
@@ -6,6 +7,14 @@ import type {
 
 export class AuthService {
 	async register(userData: RegisterParams) {
+		const permission = await permissionsService.getPermissionsByRole(
+			userData.role,
+		);
+
+		if (!permission || !permission.id) {
+			throw new Error('Permission not found for this role');
+		}
+
 		const { data, error } = await supabase.auth.signUp({
 			email: userData.email,
 			password: userData.password,
@@ -13,6 +22,7 @@ export class AuthService {
 				data: {
 					name: userData.name,
 					role: userData.role,
+					permissionId: permission.id,
 				},
 			},
 		});
@@ -34,3 +44,5 @@ export class AuthService {
 		return { token: data.session.access_token };
 	}
 }
+
+export const authService = new AuthService();

@@ -6,6 +6,7 @@ import {
 import { ErrorSchema } from './error.schema';
 
 export const LoginSchema = {
+	description: 'Login with token return',
 	body: LoginParamsSchema,
 	response: {
 		200: z.object({
