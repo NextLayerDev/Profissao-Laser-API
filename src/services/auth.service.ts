@@ -1,47 +1,107 @@
 import { supabase } from '@/lib/supabase';
-import { permissionsService } from '@/services/permissions.service';
-import type {
-	LoginParams,
-	RegisterParams,
-} from '@/types/Interfaces/IAuthParams';
+import {
+	createCustomer,
+	getCustomerByEmail,
+} from '@/repositories/customer.repository';
+import { createUser, getUserByEmail } from '@/repositories/user.repository';
+import type { CustomerParams } from '@/types/Interfaces/ICustomerParams';
+import type { UserParams } from '@/types/Interfaces/IUserParams';
 
 export class AuthService {
-	async register(userData: RegisterParams) {
-		const permission = await permissionsService.getPermissionsByRole(
-			userData.role,
-		);
+	async registerUser(userData: UserParams) {
+		let permissionId = 1; // Default to Super Admin or handle error
+		if (userData.role === 'Financial') permissionId = 2;
+		if (userData.role === 'Super Admin') permissionId = 1;
 
-		if (!permission || !permission.id) {
-			throw new Error('Permission not found for this role');
-		}
-
-		const { data, error } = await supabase.auth.signUp({
-			email: userData.email,
-			password: userData.password,
-			options: {
-				data: {
+		const { data: authData, error: authError } =
+			await supabase.auth.admin.createUser({
+				email: userData.email,
+				password: userData.password,
+				email_confirm: true,
+				user_metadata: {
 					name: userData.name,
 					role: userData.role,
-					permissionId: permission.id,
 				},
-			},
-		});
+			});
 
-		if (error) throw new Error(error.message);
+		if (authError) throw new Error(authError.message);
+		if (!authData.user) throw new Error('Failed to create user in Auth');
 
-		return { message: 'User created', user: data.user };
+		const { password, Permissions, ...rest } = userData;
+
+		const userToCreate = {
+			...rest,
+			id: authData.user.id,
+			Permissions: permissionId,
+		};
+
+		await createUser(userToCreate);
+		return { message: 'User created', userId: authData.user.id };
 	}
 
-	async login(userData: LoginParams) {
+	async registerCustomer(customerData: CustomerParams) {
+		const { data: authData, error: authError } =
+			await supabase.auth.admin.createUser({
+				email: customerData.email,
+				password: customerData.password,
+				email_confirm: true,
+				user_metadata: {
+					name: customerData.name,
+					role: 'customer',
+				},
+			});
+
+		if (authError) throw new Error(authError.message);
+		if (!authData.user) throw new Error('Failed to create customer in Auth');
+
+		const customerToCreate = { ...customerData };
+		delete customerToCreate.password;
+		customerToCreate.id = authData.user.id;
+
+		await createCustomer(customerToCreate);
+		return { message: 'Customer created', userId: authData.user.id };
+	}
+
+	async loginUser(userData: UserParams) {
+		if (!userData.password) {
+			throw Error('Not password provided!');
+		}
+
 		const { data, error } = await supabase.auth.signInWithPassword({
 			email: userData.email,
 			password: userData.password,
 		});
 
 		if (error) throw new Error(error.message);
-		if (!data.session) throw new Error('No session created');
 
-		return { token: data.session.access_token };
+		const userProfile = await getUserByEmail(userData.email);
+		if (!userProfile) {
+			await supabase.auth.signOut();
+			throw new Error('Unauthorized: User profile not found');
+		}
+
+		return data.session;
+	}
+
+	async loginCustomer(customerData: CustomerParams) {
+		if (!customerData.password) {
+			throw Error('Password not provided!');
+		}
+
+		const { data, error } = await supabase.auth.signInWithPassword({
+			email: customerData.email,
+			password: customerData.password,
+		});
+
+		if (error) throw new Error(error.message);
+
+		const customerProfile = await getCustomerByEmail(customerData.email);
+		if (!customerProfile) {
+			await supabase.auth.signOut();
+			throw new Error('Unauthorized: Customer profile not found');
+		}
+
+		return data.session;
 	}
 }
 

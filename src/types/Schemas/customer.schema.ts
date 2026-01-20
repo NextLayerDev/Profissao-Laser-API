@@ -1,30 +1,13 @@
-import z from 'zod';
-import {
-	CustomerParamsSchema,
-	UpdateCustomerParamsSchema,
-} from '../Interfaces/ICustomers';
-import { ErrorSchema } from './error.schema';
+import { z } from 'zod';
 
-export const CustomerSchema = {
-	description: 'Get the customers',
-	response: {
-		200: z.array(CustomerParamsSchema),
-		401: ErrorSchema,
-		500: ErrorSchema,
-	},
-	tags: ['Customers'],
-};
+export const CustomerSchema = z.object({
+	id: z.string().optional(),
+	email: z.email(),
+	name: z.string().min(2),
+	stripe: z.string(),
+	access: z.string(),
+	password: z.string().min(6).optional(),
+	role: z.string().optional(),
+});
 
-export const UpdateCustomerSchema = {
-	description: 'Update customer',
-	params: z.object({
-		id: z.string(),
-	}),
-	body: UpdateCustomerParamsSchema,
-	response: {
-		200: z.any(),
-		401: ErrorSchema,
-		500: ErrorSchema,
-	},
-	tags: ['Customers'],
-};
+export const UpdateCustomerSchema = CustomerSchema.partial();

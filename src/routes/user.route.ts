@@ -1,24 +1,49 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import {
-	getUsersController,
-	updateUserController,
-} from '@/controllers/user.controller';
-import { UpdateUserSchema, UserSchema } from '@/types/Schemas/user.schema';
+	loginController,
+	registerController,
+} from '@/controllers/auth/user.controller';
+import { ErrorSchema } from '@/types/Schemas/error.schema';
 
-export async function userRoute(server: FastifyInstance) {
-	server.get(
-		'/users',
+export async function userAuthRoute(server: FastifyInstance) {
+	server.post(
+		'/register/user',
 		{
-			schema: UserSchema,
+			schema: {
+				body: z.object({
+					name: z.string().min(2),
+					email: z.email(),
+					password: z.string().min(6),
+					role: z.string().optional(),
+				}),
+				response: {
+					201: z.object({ message: z.string() }),
+					400: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Auth User'],
+			},
 		},
-		getUsersController,
+		registerController,
 	);
 
-	server.put(
-		'/users/:id',
+	server.post(
+		'/login/user',
 		{
-			schema: UpdateUserSchema,
+			schema: {
+				body: z.object({
+					email: z.email(),
+					password: z.string().min(6),
+				}),
+				response: {
+					200: z.object({ token: z.string() }),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Auth User'],
+			},
 		},
-		updateUserController,
+		loginController,
 	);
 }

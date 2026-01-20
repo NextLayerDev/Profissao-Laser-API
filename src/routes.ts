@@ -1,12 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { authRoute } from '@/routes/auth.route';
-import { customerRoute } from '@/routes/customer.route';
-import { permissionsRoute } from '@/routes/permissions.route';
-import { userRoute } from '@/routes/user.route';
+import { customerAuthRoute } from '@/routes/customer.route';
+import { userAuthRoute } from '@/routes/user.route';
 
-export const routes = async (app: FastifyInstance) => {
-	app.register(authRoute);
-	app.register(userRoute);
-	app.register(customerRoute);
-	app.register(permissionsRoute);
-};
+export async function routes(app: FastifyInstance) {
+	app.register(userAuthRoute);
+	app.register(customerAuthRoute);
+}

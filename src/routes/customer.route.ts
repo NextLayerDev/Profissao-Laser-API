@@ -1,27 +1,49 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import {
-	getCustomersController,
-	updateCustomerController,
-} from '@/controllers/customer.controller';
-import {
-	CustomerSchema,
-	UpdateCustomerSchema,
-} from '@/types/Schemas/customer.schema';
+	loginController,
+	registerController,
+} from '@/controllers/auth/customer.controller';
+import { ErrorSchema } from '@/types/Schemas/error.schema';
 
-export async function customerRoute(server: FastifyInstance) {
-	server.get(
-		'/customers',
+export async function customerAuthRoute(server: FastifyInstance) {
+	server.post(
+		'/register/customer',
 		{
-			schema: CustomerSchema,
+			schema: {
+				body: z.object({
+					name: z.string().min(2),
+					email: z.email(),
+					password: z.string().min(6),
+					role: z.string().optional(),
+				}),
+				response: {
+					201: z.object({ message: z.string() }),
+					400: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Auth Customer'],
+			},
 		},
-		getCustomersController,
+		registerController,
 	);
 
-	server.put(
-		'/customers/:id',
+	server.post(
+		'/login/customer',
 		{
-			schema: UpdateCustomerSchema,
+			schema: {
+				body: z.object({
+					email: z.email(),
+					password: z.string().min(6),
+				}),
+				response: {
+					200: z.object({ token: z.string() }),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Auth Customer'],
+			},
 		},
-		updateCustomerController,
+		loginController,
 	);
 }
