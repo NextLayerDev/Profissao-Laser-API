@@ -16,6 +16,29 @@ export async function getCustomerByEmail(email: string) {
 	return data as CustomerParams;
 }
 
+export async function updateCustomer(
+	id: string,
+	data: Partial<CustomerParams>,
+) {
+	const { data: updatedCustomer, error } = await supabase
+
+		.from('Customers')
+
+		.update(data)
+
+		.eq('id', id)
+
+		.select()
+
+		.single();
+
+	if (error) {
+		throw new Error(error.message);
+	}
+
+	return updatedCustomer as CustomerParams;
+}
+
 export async function createCustomer(customer: CustomerParams) {
 	const { data, error } = await supabase
 		.from('Customers')

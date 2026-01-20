@@ -20,10 +20,7 @@ export const loginController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const result = await authService.loginUser(
-			request.body as UserParams,
-			reply,
-		);
+		const result = await authService.loginUser(request.body as UserParams);
 		return reply.send(result);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';

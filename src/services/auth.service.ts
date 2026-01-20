@@ -80,7 +80,7 @@ export class AuthService {
 			throw new Error('Unauthorized: User profile not found');
 		}
 
-		return data.session;
+		return { token: data.session.access_token };
 	}
 
 	async loginCustomer(customerData: CustomerParams) {
@@ -101,7 +101,7 @@ export class AuthService {
 			throw new Error('Unauthorized: Customer profile not found');
 		}
 
-		return data.session;
+		return { token: data.session.access_token };
 	}
 }
 

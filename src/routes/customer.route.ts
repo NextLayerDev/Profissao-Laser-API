@@ -11,6 +11,7 @@ export async function customerAuthRoute(server: FastifyInstance) {
 		'/register/customer',
 		{
 			schema: {
+				description: 'Register a new customer.',
 				body: z.object({
 					name: z.string().min(2),
 					email: z.email(),
@@ -32,6 +33,7 @@ export async function customerAuthRoute(server: FastifyInstance) {
 		'/login/customer',
 		{
 			schema: {
+				description: 'Login as a customer.',
 				body: z.object({
 					email: z.email(),
 					password: z.string().min(6),

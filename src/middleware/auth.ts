@@ -17,13 +17,16 @@ export const authenticate = async (
 	}
 
 	try {
-		const user = await supabase.auth.getUser(token);
+		const {
+			data: { user },
+			error,
+		} = await supabase.auth.getUser(token);
 
-		if (!user) {
+		if (error || !user) {
 			throw new Error('User not found');
 		}
 
-		return reply.status(200).send({ message: 'Authenticated successfully' });
+		request.user = user;
 	} catch (error) {
 		request.log.warn({ error }, 'Authentication error');
 		return reply.status(401).send({

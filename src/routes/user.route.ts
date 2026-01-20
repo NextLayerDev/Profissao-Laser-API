@@ -11,6 +11,7 @@ export async function userAuthRoute(server: FastifyInstance) {
 		'/register/user',
 		{
 			schema: {
+				description: 'Register a new administrative user.',
 				body: z.object({
 					name: z.string().min(2),
 					email: z.email(),
@@ -32,6 +33,7 @@ export async function userAuthRoute(server: FastifyInstance) {
 		'/login/user',
 		{
 			schema: {
+				description: 'Login as an administrative user.',
 				body: z.object({
 					email: z.email(),
 					password: z.string().min(6),

@@ -3,6 +3,8 @@ import { fastifyJwt } from '@fastify/jwt';
 import { fastifySwagger } from '@fastify/swagger';
 import ScalarApiReference from '@scalar/fastify-api-reference';
 import { fastify } from 'fastify';
+import fastifyRawBody from 'fastify-raw-body';
+
 import {
 	jsonSchemaTransform,
 	serializerCompiler,
@@ -15,6 +17,14 @@ import { routes } from './routes';
 const app = fastify().withTypeProvider<ZodTypeProvider>();
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
+
+app.register(fastifyRawBody, {
+	field: 'rawBody',
+	global: false,
+	encoding: 'utf8',
+	runFirst: true,
+	routes: [],
+});
 
 app.register(fastifyCors, {
 	origin: true,

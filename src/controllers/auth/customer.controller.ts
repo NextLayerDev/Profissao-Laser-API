@@ -24,7 +24,6 @@ export const loginController = async (
 	try {
 		const result = await authService.loginCustomer(
 			request.body as CustomerParams,
-			reply,
 		);
 		return reply.send(result);
 	} catch (err) {
