@@ -16,6 +16,31 @@ export async function getUserByEmail(email: string) {
 	return data as UserParams;
 }
 
+export async function getUserById(id: string) {
+	const { data, error } = await supabase
+		.from('Users')
+		.select('*')
+		.eq('id', id)
+		.single();
+
+	if (error) {
+		if (error.code === 'PGRST116') return null; // Not found
+		throw new Error(error.message);
+	}
+
+	return data as UserParams;
+}
+
+export async function getAllUsers() {
+	const { data, error } = await supabase.from('Users').select('*');
+
+	if (error) {
+		throw new Error(error.message);
+	}
+
+	return data as UserParams[];
+}
+
 export async function createUser(user: UserParams) {
 	const { data, error } = await supabase
 		.from('Users')

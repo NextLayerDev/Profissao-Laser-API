@@ -4,9 +4,16 @@ import {
 	loginController,
 	registerController,
 } from '@/controllers/auth/customer.controller';
+import {
+	getCustomerController,
+	getCustomersController,
+	getMeController,
+} from '@/controllers/customer.controller';
+import { authenticate } from '@/middleware/auth';
+import { CustomerSchema } from '@/types/Schemas/customer.schema';
 import { ErrorSchema } from '@/types/Schemas/error.schema';
 
-export async function customerAuthRoute(server: FastifyInstance) {
+export async function customerRoutes(server: FastifyInstance) {
 	server.post(
 		'/register/customer',
 		{
@@ -47,5 +54,61 @@ export async function customerAuthRoute(server: FastifyInstance) {
 			},
 		},
 		loginController,
+	);
+
+	server.get(
+		'/customers/me',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Get current customer profile.',
+				response: {
+					200: CustomerSchema, // Use schema if available, otherwise define or use generic
+					401: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+			},
+		},
+		getMeController,
+	);
+
+	server.get(
+		'/customers',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Get all customers.',
+				response: {
+					200: z.array(CustomerSchema),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+			},
+		},
+		getCustomersController,
+	);
+
+	server.get(
+		'/customers/:id',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Get customer by ID.',
+				params: z.object({
+					id: z.string().uuid(),
+				}),
+				response: {
+					200: CustomerSchema,
+					401: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+			},
+		},
+		getCustomerController,
 	);
 }

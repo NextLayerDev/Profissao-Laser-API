@@ -4,9 +4,16 @@ import {
 	loginController,
 	registerController,
 } from '@/controllers/auth/user.controller';
+import {
+	getMeController,
+	getUserController,
+	getUsersController,
+} from '@/controllers/user.controller';
+import { authenticate } from '@/middleware/auth';
 import { ErrorSchema } from '@/types/Schemas/error.schema';
+import { UserSchema } from '@/types/Schemas/user.schema';
 
-export async function userAuthRoute(server: FastifyInstance) {
+export async function userRoutes(server: FastifyInstance) {
 	server.post(
 		'/register/user',
 		{
@@ -47,5 +54,61 @@ export async function userAuthRoute(server: FastifyInstance) {
 			},
 		},
 		loginController,
+	);
+
+	server.get(
+		'/users/me',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Get current user profile.',
+				response: {
+					200: UserSchema,
+					401: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['User'],
+			},
+		},
+		getMeController,
+	);
+
+	server.get(
+		'/users',
+		{
+			// preHandler: [authenticate],
+			schema: {
+				description: 'Get all users.',
+				response: {
+					200: z.array(UserSchema),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['User'],
+			},
+		},
+		getUsersController,
+	);
+
+	server.get(
+		'/users/:id',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Get user by ID.',
+				params: z.object({
+					id: z.string().uuid(),
+				}),
+				response: {
+					200: UserSchema,
+					401: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['User'],
+			},
+		},
+		getUserController,
 	);
 }
