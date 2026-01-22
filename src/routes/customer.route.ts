@@ -57,13 +57,13 @@ export async function customerRoutes(server: FastifyInstance) {
 	);
 
 	server.get(
-		'/customers/me',
+		'/customer/me',
 		{
 			preHandler: [authenticate],
 			schema: {
 				description: 'Get current customer profile.',
 				response: {
-					200: CustomerSchema, // Use schema if available, otherwise define or use generic
+					200: CustomerSchema,
 					401: ErrorSchema,
 					404: ErrorSchema,
 					500: ErrorSchema,
@@ -92,13 +92,13 @@ export async function customerRoutes(server: FastifyInstance) {
 	);
 
 	server.get(
-		'/customers/:id',
+		'/customer/:id',
 		{
 			preHandler: [authenticate],
 			schema: {
 				description: 'Get customer by ID.',
 				params: z.object({
-					id: z.string().uuid(),
+					id: z.uuid(),
 				}),
 				response: {
 					200: CustomerSchema,

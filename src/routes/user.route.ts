@@ -77,7 +77,7 @@ export async function userRoutes(server: FastifyInstance) {
 	server.get(
 		'/users',
 		{
-			// preHandler: [authenticate],
+			preHandler: [authenticate],
 			schema: {
 				description: 'Get all users.',
 				response: {
@@ -92,13 +92,13 @@ export async function userRoutes(server: FastifyInstance) {
 	);
 
 	server.get(
-		'/users/:id',
+		'/user/:id',
 		{
 			preHandler: [authenticate],
 			schema: {
 				description: 'Get user by ID.',
 				params: z.object({
-					id: z.string().uuid(),
+					id: z.uuid(),
 				}),
 				response: {
 					200: UserSchema,
