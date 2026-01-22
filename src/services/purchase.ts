@@ -46,6 +46,7 @@ export class PurchaseService {
 
 		return sessions.data.map((session) => {
 			const item = session.line_items?.data[0];
+			// biome-ignore lint/suspicious/noExplicitAny: Stripe.Customer can be an object or string, so we cast it to any.
 			const customer = session.customer as any; // Cast as Stripe.Customer or similar
 
 			return {

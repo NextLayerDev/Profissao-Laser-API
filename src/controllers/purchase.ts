@@ -1,6 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { purchaseService } from '@/services/purchase.service';
+import { purchaseService } from '@/services/purchase';
 
 export const getPurchasesController = async (
 	request: FastifyRequest,

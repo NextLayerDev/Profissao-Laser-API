@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { productService } from '@/services/product.service';
+import { productService } from '@/services/product';
 
 export const getProductsController = async (
 	_request: FastifyRequest,

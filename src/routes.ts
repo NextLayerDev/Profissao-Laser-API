@@ -1,16 +1,16 @@
 import type { FastifyInstance } from 'fastify';
-import { checkoutRoute } from '@/routes/checkout.route';
-import { customerRoutes } from '@/routes/customer.route';
-import { productRoute } from '@/routes/product.route';
-import { purchaseRoute } from '@/routes/purchase.route';
-import { userRoutes } from '@/routes/user.route';
-import { webhookRoute } from '@/routes/webhook.route';
+import { authRoutes } from '@/routes/auth';
+import { checkoutRoute } from '@/routes/checkout';
+import { customerRoutes } from '@/routes/customer';
+import { productRoute } from '@/routes/product';
+import { purchaseRoute } from '@/routes/purchase';
+import { usersRoutes } from '@/routes/user';
 
 export async function routes(app: FastifyInstance) {
-	app.register(userRoutes);
+	app.register(authRoutes);
+	app.register(usersRoutes);
 	app.register(customerRoutes);
 	app.register(productRoute);
 	app.register(checkoutRoute);
-	app.register(webhookRoute);
 	app.register(purchaseRoute);
 }

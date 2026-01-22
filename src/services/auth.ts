@@ -1,14 +1,9 @@
 import { supabase } from '@/lib/supabase';
-import {
-	createCustomer,
-	getCustomerByEmail,
-} from '@/repositories/customer.repository';
-import { createUser, getUserByEmail } from '@/repositories/user.repository';
-import type { CustomerParams } from '@/types/Interfaces/ICustomerParams';
-import type { UserParams } from '@/types/Interfaces/IUserParams';
+import { usersRepository } from '@/repositories/user';
+import type { CustomerRegister, Login, UserRegister } from '@/types/auth';
 
 export class AuthService {
-	async registerUser(userData: UserParams) {
+	async registerUser(userData: UserRegister) {
 		let permissionId = 1; // Default to Super Admin or handle error
 		if (userData.role === 'Financial') permissionId = 2;
 		if (userData.role === 'Super Admin') permissionId = 1;
@@ -35,11 +30,11 @@ export class AuthService {
 			Permissions: permissionId,
 		};
 
-		await createUser(userToCreate);
+		await usersRepository.createUser(userToCreate);
 		return { message: 'User created', userId: authData.user.id };
 	}
 
-	async registerCustomer(customerData: CustomerParams) {
+	async registerCustomer(customerData: CustomerRegister) {
 		const { data: authData, error: authError } =
 			await supabase.auth.admin.createUser({
 				email: customerData.email,
@@ -62,7 +57,7 @@ export class AuthService {
 		return { message: 'Customer created', userId: authData.user.id };
 	}
 
-	async loginUser(userData: UserParams) {
+	async loginUser(userData: Login) {
 		if (!userData.password) {
 			throw Error('Not password provided!');
 		}
@@ -74,16 +69,10 @@ export class AuthService {
 
 		if (error) throw new Error(error.message);
 
-		const userProfile = await getUserByEmail(userData.email);
-		if (!userProfile) {
-			await supabase.auth.signOut();
-			throw new Error('Unauthorized: User profile not found');
-		}
-
 		return { token: data.session.access_token };
 	}
 
-	async loginCustomer(customerData: CustomerParams) {
+	async loginCustomer(customerData: Login) {
 		if (!customerData.password) {
 			throw Error('Password not provided!');
 		}
@@ -94,12 +83,6 @@ export class AuthService {
 		});
 
 		if (error) throw new Error(error.message);
-
-		const customerProfile = await getCustomerByEmail(customerData.email);
-		if (!customerProfile) {
-			await supabase.auth.signOut();
-			throw new Error('Unauthorized: Customer profile not found');
-		}
 
 		return { token: data.session.access_token };
 	}

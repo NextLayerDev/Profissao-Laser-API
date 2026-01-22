@@ -1,9 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
-import { createCheckoutSessionController } from '@/controllers/checkout.controller';
+import { createCheckoutSessionController } from '@/controllers/checkout';
 import { authenticate } from '@/middleware/auth';
-import { createCheckoutBodySchema } from '@/types/Schemas/checkout.schema';
-import { ErrorSchema } from '@/types/Schemas/error.schema';
+import { checkoutBodySchema, checkoutResponseSchema } from '@/types/checkout';
+import { ErrorSchema } from '@/types/error';
 
 export async function checkoutRoute(server: FastifyInstance) {
 	server.post(
@@ -13,12 +12,9 @@ export async function checkoutRoute(server: FastifyInstance) {
 			schema: {
 				description:
 					'Creates a Stripe Checkout Session for a specific price. Returns the URL to redirect the user.',
-				body: createCheckoutBodySchema,
+				body: checkoutBodySchema,
 				response: {
-					200: z.object({
-						url: z.string().nullable(),
-						sessionId: z.string(),
-					}),
+					200: checkoutResponseSchema,
 					400: ErrorSchema,
 					401: ErrorSchema,
 					500: ErrorSchema,

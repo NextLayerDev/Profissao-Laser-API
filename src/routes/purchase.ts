@@ -3,9 +3,9 @@ import { z } from 'zod';
 import {
 	getAllPurchasesController,
 	getPurchasesController,
-} from '@/controllers/purchase.controller';
+} from '@/controllers/purchase';
 import { authenticate } from '@/middleware/auth';
-import { ErrorSchema } from '@/types/Schemas/error.schema';
+import { ErrorSchema } from '@/types/error';
 
 export async function purchaseRoute(server: FastifyInstance) {
 	server.get(
@@ -39,7 +39,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 	server.get(
 		'/purchases/all',
 		{
-			preHandler: [authenticate],
+			// preHandler: [authenticate],
 			schema: {
 				description: 'Retrieve all purchases (Administrative view).',
 				response: {
