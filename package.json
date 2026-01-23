@@ -30,6 +30,7 @@
 		"fastify-type-provider-zod": "^6.1.0",
 		"husky": "^9.1.7",
 		"stripe": "^20.2.0",
+		"tsc": "^2.0.4",
 		"tsx": "^4.21.0",
 		"typescript": "^5.9.3",
 		"zod": "^4.3.5"
