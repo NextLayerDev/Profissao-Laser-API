@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { usersController } from '@/controllers/user';
-import { ErrorSchema } from '@/types/error';
-import { userSchema } from '@/types/user';
+import { usersController } from '../controllers/user';
+import { ErrorSchema } from '../types/error';
+import { userSchema } from '../types/user';
 
 export async function usersRoutes(server: FastifyInstance) {
 	server.get(

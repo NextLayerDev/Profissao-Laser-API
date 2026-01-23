@@ -1,15 +1,14 @@
 import type { User } from '@supabase/supabase-js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { checkoutService } from '@/services/checkout';
-import type { CreateCheckoutBody } from '@/types/Schemas/checkout.schema';
+import { checkoutService } from '../services/checkout';
+import type { CheckoutBody } from '../types/checkout';
 
 export const createCheckoutSessionController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
 	try {
-		const { priceId, successUrl, cancelUrl } =
-			request.body as CreateCheckoutBody;
+		const { priceId, successUrl, cancelUrl } = request.body as CheckoutBody;
 		const user = request.user as User;
 
 		if (!user || !user.email) {

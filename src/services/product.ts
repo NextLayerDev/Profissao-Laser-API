@@ -1,4 +1,4 @@
-import { listActiveProducts } from '@/repositories/product';
+import { listActiveProducts } from '../repositories/product';
 
 export class ProductService {
 	async listProducts() {

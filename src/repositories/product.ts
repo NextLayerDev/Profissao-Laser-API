@@ -1,4 +1,4 @@
-import { stripe } from '../lib/stripe.ts';
+import { stripe } from '../lib/stripe';
 
 export async function listActiveProducts() {
 	const [products, prices] = await Promise.all([

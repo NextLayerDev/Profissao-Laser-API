@@ -3,9 +3,9 @@ import { z } from 'zod';
 import {
 	getAllPurchasesController,
 	getPurchasesController,
-} from '@/controllers/purchase';
-import { authenticate } from '@/middleware/auth';
-import { ErrorSchema } from '@/types/error';
+} from '../controllers/purchase';
+import { authenticate } from '../middleware/auth';
+import { ErrorSchema } from '../types/error';
 
 export async function purchaseRoute(server: FastifyInstance) {
 	server.get(

@@ -1,6 +1,8 @@
-import { supabase } from '@/lib/supabase';
-import { usersRepository } from '@/repositories/user';
-import type { CustomerRegister, Login, UserRegister } from '@/types/auth';
+import { supabase } from '../lib/supabase';
+import { customerRepository } from '../repositories/customer';
+import { usersRepository } from '../repositories/user';
+import type { CustomerRegister, Login, UserRegister } from '../types/auth';
+import type { Customer } from '../types/customer';
 
 export class AuthService {
 	async registerUser(userData: UserRegister) {
@@ -49,11 +51,12 @@ export class AuthService {
 		if (authError) throw new Error(authError.message);
 		if (!authData.user) throw new Error('Failed to create customer in Auth');
 
-		const customerToCreate = { ...customerData };
+		// biome-ignore lint/suspicious/noExplicitAny: Temporary fix for type mismatch
+		const customerToCreate: any = { ...customerData };
 		delete customerToCreate.password;
 		customerToCreate.id = authData.user.id;
 
-		await createCustomer(customerToCreate);
+		await customerRepository.createCustomer(customerToCreate);
 		return { message: 'Customer created', userId: authData.user.id };
 	}
 

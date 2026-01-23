@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { createCheckoutSessionController } from '@/controllers/checkout';
-import { authenticate } from '@/middleware/auth';
-import { checkoutBodySchema, checkoutResponseSchema } from '@/types/checkout';
-import { ErrorSchema } from '@/types/error';
+import { createCheckoutSessionController } from '../controllers/checkout';
+import { authenticate } from '../middleware/auth';
+import { checkoutBodySchema, checkoutResponseSchema } from '../types/checkout';
+import { ErrorSchema } from '../types/error';
 
 export async function checkoutRoute(server: FastifyInstance) {
 	server.post(

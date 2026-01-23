@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { authService } from '@/services/auth';
-import type { Login, UserRegister } from '@/types/auth';
-import type { Customer } from '@/types/customer';
+import { authService } from '../services/auth';
+import type { Login, UserRegister } from '../types/auth';
+import type { Customer } from '../types/customer';
 
 class AuthController {
 	async registerUser(request: FastifyRequest, reply: FastifyReply) {

@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { customerController } from '@/controllers/customer';
-import { authenticate } from '@/middleware/auth';
-import { customerSchema } from '@/types/customer';
-import { ErrorSchema } from '@/types/error';
+import { customerController } from '../controllers/customer';
+import { authenticate } from '../middleware/auth';
+import { customerSchema } from '../types/customer';
+import { ErrorSchema } from '../types/error';
 
 export async function customerRoutes(server: FastifyInstance) {
 	server.get(

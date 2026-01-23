@@ -1,6 +1,7 @@
 import { fastifyCors } from '@fastify/cors';
 import { fastifyJwt } from '@fastify/jwt';
 import { fastifySwagger } from '@fastify/swagger';
+import ScalarApiReference from '@scalar/fastify-api-reference';
 import { fastify } from 'fastify';
 import fastifyRawBody from 'fastify-raw-body';
 
@@ -58,11 +59,8 @@ app.register(fastifySwagger, {
 	transform: jsonSchemaTransform,
 });
 
-app.register(async (instance) => {
-	const ScalarApiReference = await import('@scalar/fastify-api-reference');
-	await instance.register(ScalarApiReference.default, {
-		routePrefix: '/docs',
-	});
+app.register(ScalarApiReference, {
+	routePrefix: '/docs',
 });
 
 app.register(routes);
