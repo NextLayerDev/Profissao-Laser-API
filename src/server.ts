@@ -1,7 +1,7 @@
 import { fastifyCors } from '@fastify/cors';
 import { fastifyJwt } from '@fastify/jwt';
 import { fastifySwagger } from '@fastify/swagger';
-import { fastifySwaggerUi } from '@fastify/swagger-ui';
+import ScalarApiReference from '@scalar/fastify-api-reference';
 import { fastify } from 'fastify';
 import fastifyRawBody from 'fastify-raw-body';
 
@@ -59,17 +59,15 @@ app.register(fastifySwagger, {
 	transform: jsonSchemaTransform,
 });
 
-app.register(fastifySwaggerUi, {
+app.register(ScalarApiReference, {
 	routePrefix: '/docs',
 });
 
 app.register(routes);
 
-if (require.main === module) {
-	app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
-		console.log('HTTP server running on http://localhost:3333!');
-		console.log('Docs available at http://localhost:3333/docs');
-	});
-}
+app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
+	console.log('HTTP server running on http://localhost:3333!');
+	console.log('Docs available at http://localhost:3333/docs');
+});
 
-export { app };
+export default app;
