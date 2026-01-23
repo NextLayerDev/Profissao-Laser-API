@@ -60,18 +60,18 @@ app.register(fastifySwagger, {
 
 app.register(async (instance) => {
 	try {
-		const dynamicImport = new Function('specifier', 'return import(specifier)');
-		const ScalarApiReference = await dynamicImport(
-			'@scalar/fastify-api-reference',
-		);
-		instance.register(ScalarApiReference, {
+		// Importação dinâmica padrão que a Vercel consegue rastrear
+		const scalar = await import('@scalar/fastify-api-reference');
+		// Em ESM, o export default geralmente vem na propriedade 'default'
+		const ScalarApiReference = scalar.default || scalar;
+
+		await instance.register(ScalarApiReference, {
 			routePrefix: '/docs',
 		});
 	} catch (error) {
 		console.error('Failed to load Scalar API Reference:', error);
 	}
 });
-
 app.register(routes);
 
 if (require.main === module) {
