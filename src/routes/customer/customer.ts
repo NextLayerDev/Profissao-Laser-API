@@ -1,13 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { customerController } from '../controllers/customer.js';
-import { authenticate } from '../middleware/auth.js';
-import { customerSchema } from '../types/customer.js';
-import { ErrorSchema } from '../types/error.js';
+import { customerController } from '../../controllers/customer.js';
+import { authenticate } from '../../middleware/auth.js';
+import { customerSchema } from '../../types/customer.js';
+import { ErrorSchema } from '../../types/error.js';
 
-export async function customerRoutes(server: FastifyInstance) {
+export default async function (server: FastifyInstance) {
 	server.get(
-		'/customers',
+		'/',
 		{
 			preHandler: [authenticate],
 			schema: {
@@ -24,7 +24,7 @@ export async function customerRoutes(server: FastifyInstance) {
 	);
 
 	server.get(
-		'/customer/:id',
+		'/:id',
 		{
 			schema: {
 				description: 'Get a customer by ID',

@@ -1,89 +1,103 @@
-import { fastifyCors } from '@fastify/cors';
-import { fastifyJwt } from '@fastify/jwt';
+import 'dotenv/config';
+import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import { fastifySwagger } from '@fastify/swagger';
-import { fastify } from 'fastify';
-import fastifyRawBody from 'fastify-raw-body';
-
+import ScalarApiReference from '@scalar/fastify-api-reference';
+import Fastify, { type FastifyError } from 'fastify';
 import {
 	jsonSchemaTransform,
 	serializerCompiler,
 	validatorCompiler,
 	type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
+import registerRoutes from './routes/index.js';
 
-import { routes } from './routes';
+const startServer = async () => {
+	try {
+		const server = Fastify({
+			logger: false,
+		}).withTypeProvider<ZodTypeProvider>();
 
-const app = fastify().withTypeProvider<ZodTypeProvider>();
-app.setValidatorCompiler(validatorCompiler);
-app.setSerializerCompiler(serializerCompiler);
+		server.setErrorHandler((error: FastifyError, request, reply) => {
+			reply
+				.header('Access-Control-Allow-Origin', request.headers.origin || '*')
+				.header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+				.header(
+					'Access-Control-Allow-Methods',
+					'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+				)
+				.status(error.statusCode ?? 500)
+				.send({
+					message: error.message,
+				});
+		});
 
-app.register(fastifyRawBody, {
-	field: 'rawBody',
-	global: false,
-	encoding: 'utf8',
-	runFirst: true,
-	routes: [],
-});
+		server.setValidatorCompiler(validatorCompiler);
+		server.setSerializerCompiler(serializerCompiler);
 
-app.register(fastifyCors, {
-	origin: true,
-	methods: ['GET', 'PUT', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-});
+		await server.register(cors, {
+			origin: '*',
+		});
 
-if (!process.env.JWT_SECRET) {
-	throw new Error('JWT_SECRET is not defined in .env');
-}
+		await server.register(multipart);
 
-app.register(fastifyJwt, {
-	secret: process.env.JWT_SECRET,
-});
+		server.register(fastifySwagger, {
+			openapi: {
+				info: {
+					title: 'Profissão Lase API',
+					description: 'API documentation',
+					version: '1.0.0',
+				},
+				components: {
+					securitySchemes: {
+						bearerAuth: {
+							type: 'http',
+							scheme: 'bearer',
+							bearerFormat: 'JWT',
+						},
+					},
+				},
+				security: [
+					{
+						bearerAuth: [],
+					},
+				],
+			},
+			transform: jsonSchemaTransform,
+		});
 
-app.register(fastifySwagger, {
-	openapi: {
-		info: {
-			title: 'Profissão Laser API',
-			description: '',
-			version: '1.0.0',
-		},
-		components: {
-			securitySchemes: {
-				bearerAuth: {
-					type: 'http',
-					scheme: 'bearer',
-					bearerFormat: 'JWT',
+		server.get('/openapi.json', (_, reply) => {
+			reply.send(server.swagger());
+		});
+
+		await server.register(ScalarApiReference, {
+			routePrefix: '/docs',
+			configuration: {
+				spec: {
+					url: '/openapi.json',
 				},
 			},
-		},
-	},
-	transform: jsonSchemaTransform,
-});
-
-app.register(async (instance) => {
-	try {
-		// Importação dinâmica padrão que a Vercel consegue rastrear
-		const scalar = await import('@scalar/fastify-api-reference');
-		// Em ESM, o export default geralmente vem na propriedade 'default'
-		const ScalarApiReference = scalar.default || scalar;
-
-		await instance.register(ScalarApiReference, {
-			routePrefix: '/docs',
 		});
-	} catch (error) {
-		console.error('Failed to load Scalar API Reference:', error);
+
+		server.decorateRequest('dataSources', null);
+
+		server.get('/api', async (_, __) => {
+			return { status: 'ok' };
+		});
+
+		await registerRoutes(server);
+
+		const PORT = process.env.PORT || 4000;
+		const address = await server.listen({
+			port: Number(PORT),
+			host: '0.0.0.0',
+		});
+		console.log(`🚀 Server ready at: ${address}`);
+		return address;
+	} catch (err) {
+		console.error('Failed to start server:', err);
+		process.exit(1);
 	}
-});
-app.register(routes);
-
-if (require.main === module) {
-	app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
-		console.log('HTTP server running on http://localhost:3333!');
-		console.log('Docs available at http://localhost:3333/docs');
-	});
-}
-
-export default async (req: any, res: any) => {
-	await app.ready();
-	app.server.emit('request', req, res);
 };
 
-export { app };
+startServer();

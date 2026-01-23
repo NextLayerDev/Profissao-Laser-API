@@ -1,15 +1,15 @@
 import type { FastifyInstance } from 'fastify';
-import { createCheckoutSessionController } from '../controllers/checkout.js';
-import { authenticate } from '../middleware/auth.js';
+import { createCheckoutSessionController } from '../../controllers/checkout.js';
+import { authenticate } from '../../middleware/auth.js';
 import {
 	checkoutBodySchema,
 	checkoutResponseSchema,
-} from '../types/checkout.js';
-import { ErrorSchema } from '../types/error.js';
+} from '../../types/checkout.js';
+import { ErrorSchema } from '../../types/error.js';
 
-export async function checkoutRoute(server: FastifyInstance) {
+export default async function (server: FastifyInstance) {
 	server.post(
-		'/checkout',
+		'/',
 		{
 			preHandler: [authenticate],
 			schema: {

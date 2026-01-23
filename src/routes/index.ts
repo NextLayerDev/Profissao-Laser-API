@@ -1,16 +1,36 @@
+import { readdirSync } from 'node:fs';
+import { dirname, join, parse } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { authRoutes } from './auth.js';
-import { checkoutRoute } from './checkout.js';
-import { customerRoutes } from './customer.js';
-import { productRoute } from './product.js';
-import { purchaseRoute } from './purchase.js';
-import { usersRoutes } from './user.js';
 
-export async function routes(app: FastifyInstance) {
-	app.register(authRoutes);
-	app.register(usersRoutes);
-	app.register(customerRoutes);
-	app.register(productRoute);
-	app.register(checkoutRoute);
-	app.register(purchaseRoute);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+export default async function registerRoutes(server: FastifyInstance) {
+	const routesDir = __dirname;
+	const folders = readdirSync(routesDir, { withFileTypes: true })
+		.filter((dirent) => dirent.isDirectory())
+		.map((dirent) => dirent.name);
+
+	const extension = import.meta.url.endsWith('.ts') ? '.ts' : '.js';
+
+	for (const folder of folders) {
+		const routeFile = `${folder}${extension}`;
+		const routePath = join(routesDir, folder, routeFile);
+
+		try {
+			const routeUrl = pathToFileURL(routePath).href;
+			const routeModule = await import(routeUrl);
+
+			if (typeof routeModule.default === 'function') {
+				server.register(routeModule.default, { prefix: `/api/${folder}` });
+				server.log.info(`Registered routes from: ${folder}/${routeFile}`);
+			}
+		} catch (error) {
+			console.log(error);
+			server.log.error(
+				`Failed to register routes from ${folder}/${routeFile}:`,
+			);
+		}
+	}
 }

@@ -1,13 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { getProductsController } from '../controllers/product.js';
-import { authenticate } from '../middleware/auth.js';
-import { ErrorSchema } from '../types/error.js';
-import { productSchema } from '../types/product.js';
+import { getProductsController } from '../../controllers/product.js';
+import { authenticate } from '../../middleware/auth.js';
+import { ErrorSchema } from '../../types/error.js';
+import { productSchema } from '../../types/product.js';
 
-export async function productRoute(server: FastifyInstance) {
+export default async function (server: FastifyInstance) {
 	server.get(
-		'/products',
+		'/',
 		{
 			preHandler: [authenticate],
 			schema: {

@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { usersController } from '../controllers/user.js';
-import { ErrorSchema } from '../types/error.js';
-import { userSchema } from '../types/user.js';
+import { usersController } from '../../controllers/user.js';
+import { ErrorSchema } from '../../types/error.js';
+import { userSchema } from '../../types/user.js';
 
-export async function usersRoutes(server: FastifyInstance) {
+export default async function (server: FastifyInstance) {
 	server.get(
-		'/users',
+		'/',
 		{
 			schema: {
 				description: 'Get all users',
@@ -21,7 +21,7 @@ export async function usersRoutes(server: FastifyInstance) {
 	);
 
 	server.get(
-		'/user/:id',
+		'/:id',
 		{
 			schema: {
 				description: 'Get a user by ID',

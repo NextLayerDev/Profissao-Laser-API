@@ -3,13 +3,13 @@ import { z } from 'zod';
 import {
 	getAllPurchasesController,
 	getPurchasesController,
-} from '../controllers/purchase.js';
-import { authenticate } from '../middleware/auth.js';
-import { ErrorSchema } from '../types/error.js';
+} from '../../controllers/purchase.js';
+import { authenticate } from '../../middleware/auth.js';
+import { ErrorSchema } from '../../types/error.js';
 
-export async function purchaseRoute(server: FastifyInstance) {
+export default async function (server: FastifyInstance) {
 	server.get(
-		'/purchases',
+		'/',
 		{
 			preHandler: [authenticate],
 			schema: {
@@ -37,7 +37,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 	);
 
 	server.get(
-		'/purchases/all',
+		'/all',
 		{
 			// preHandler: [authenticate],
 			schema: {
