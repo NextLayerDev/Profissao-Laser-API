@@ -4,7 +4,7 @@ const plugins = [
 		{
 			root: ['./dist'],
 			alias: {
-				'@': './src',
+				'@': './dist',
 			},
 			extensions: ['.js', '.jsx', '.ts', '.tsx'],
 		},
