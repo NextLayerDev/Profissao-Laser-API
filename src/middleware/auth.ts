@@ -26,7 +26,7 @@ export const authenticate = async (
 			throw new Error('User not found');
 		}
 
-		request.user = user;
+		request.body = user;
 	} catch (error) {
 		request.log.warn({ error }, 'Authentication error');
 		return reply.status(401).send({
