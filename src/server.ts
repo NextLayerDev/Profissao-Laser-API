@@ -70,12 +70,11 @@ const startServer = async () => {
 			reply.send(server.swagger());
 		});
 
-		await server.register(ScalarApiReference, {
+		await server.register(import('@fastify/swagger-ui'), {
 			routePrefix: '/docs',
-			configuration: {
-				spec: {
-					url: '/openapi.json',
-				},
+			uiConfig: {
+				docExpansion: 'list',
+				deepLinking: false,
 			},
 		});
 
@@ -92,6 +91,8 @@ const startServer = async () => {
 			port: Number(PORT),
 			host: '0.0.0.0',
 		});
+		await server.ready();
+
 		console.log(`🚀 Server ready at: ${address}`);
 		return address;
 	} catch (err) {
