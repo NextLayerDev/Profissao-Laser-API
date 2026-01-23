@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 10,
+      "includeFiles": "node_modules/@scalar/fastify-api-reference/dist/**"
+    },
+    "src/**/*.js": {
+      "includeFiles": "node_modules/@scalar/fastify-api-reference/dist/**"
+    }
+  }
+}
