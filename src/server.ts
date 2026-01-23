@@ -1,6 +1,7 @@
 import { fastifyCors } from '@fastify/cors';
 import { fastifyJwt } from '@fastify/jwt';
 import { fastifySwagger } from '@fastify/swagger';
+import ScalarApiReference from '@scalar/fastify-api-reference';
 import { fastify } from 'fastify';
 import fastifyRawBody from 'fastify-raw-body';
 
@@ -58,20 +59,8 @@ app.register(fastifySwagger, {
 	transform: jsonSchemaTransform,
 });
 
-app.register(async (instance) => {
-	try {
-		// Bypass TypeScript transpilation of dynamic import() to require()
-		// This is necessary because we compile to CJS, but this package is ESM-only.
-		const dynamicImport = new Function('specifier', 'return import(specifier)');
-		const ScalarApiReference = await dynamicImport(
-			'@scalar/fastify-api-reference',
-		);
-		instance.register(ScalarApiReference.default || ScalarApiReference, {
-			routePrefix: '/docs',
-		});
-	} catch (error) {
-		console.error('Failed to load Scalar API Reference:', error);
-	}
+app.register(ScalarApiReference, {
+	routePrefix: '/docs',
 });
 
 app.register(routes);
