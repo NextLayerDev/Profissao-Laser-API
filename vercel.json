@@ -1,11 +1,18 @@
 {
   "functions": {
-    "api/**/*.js": {
-      "maxDuration": 10,
+    "api/**/*.[jt]s": {
+      "maxDuration": 30,
       "includeFiles": "node_modules/@scalar/fastify-api-reference/dist/**"
     },
-    "src/**/*.js": {
+    "src/**/*.[jt]s": {
+      "maxDuration": 30,
       "includeFiles": "node_modules/@scalar/fastify-api-reference/dist/**"
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index.js"
+    }
+  ]
 }
