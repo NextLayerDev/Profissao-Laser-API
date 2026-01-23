@@ -9,7 +9,7 @@ export const createCheckoutSessionController = async (
 ) => {
 	try {
 		const { priceId, successUrl, cancelUrl } = request.body as CheckoutBody;
-		const user = request.user as User;
+		const user = request.body as User;
 
 		if (!user || !user.email) {
 			return reply.status(401).send({ message: 'User email not found' });
