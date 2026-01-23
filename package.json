@@ -5,8 +5,6 @@
 	"main": "server.js",
 	"scripts": {
 		"dev": "nodemon --watch src --ext ts,json --exec \"tsx --env-file=.env src/server.ts\"",
-		"start": "node --env-file=.env dist/server.js",
-		"build": "babel src --extensions \".js,.ts\" --out-dir dist --copy-files --no-copy-ignored",
 		"lint": "biome check --write .",
 		"prepare": "husky"
 	},
@@ -17,7 +15,7 @@
 		"@fastify/cors": "^11.2.0",
 		"@fastify/jwt": "^10.0.0",
 		"@fastify/swagger": "^9.6.1",
-		"@scalar/fastify-api-reference": "^1.43.4",
+		"@scalar/fastify-api-reference": "^1.43.11",
 		"@supabase/supabase-js": "^2.90.1",
 		"@types/node": "^25.0.8",
 		"babel-plugin-add-import-extension": "^1.6.0",
