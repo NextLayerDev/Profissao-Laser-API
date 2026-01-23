@@ -11,7 +11,7 @@ import {
 	type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 
-import { routes } from './routes';
+import { routes } from './routes/index';
 
 const app = fastify().withTypeProvider<ZodTypeProvider>();
 app.setValidatorCompiler(validatorCompiler);
