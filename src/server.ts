@@ -1,6 +1,7 @@
 import { fastifyCors } from '@fastify/cors';
 import { fastifyJwt } from '@fastify/jwt';
 import { fastifySwagger } from '@fastify/swagger';
+import ScalarApiReference from '@scalar/fastify-api-reference';
 import { fastify } from 'fastify';
 import fastifyRawBody from 'fastify-raw-body';
 
@@ -14,6 +15,7 @@ import {
 import { routes } from './routes/index.js';
 
 export const app = fastify().withTypeProvider<ZodTypeProvider>();
+
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
 
@@ -58,18 +60,26 @@ app.register(fastifySwagger, {
 	transform: jsonSchemaTransform,
 });
 
-app.register(async (instance) => {
-	const ScalarApiReference = await import('@scalar/fastify-api-reference');
-	await instance.register(ScalarApiReference.default, {
-		routePrefix: '/docs',
-	});
+app.get('/openapi.json', (_, reply) => {
+	reply.send(app.swagger());
+});
+
+app.register(ScalarApiReference, {
+	routePrefix: '/docs',
+	configuration: {
+		spec: {
+			url: '/openapi.json',
+		},
+	},
 });
 
 app.register(routes);
 
-app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
-	console.log('HTTP server running on http://localhost:3333!');
-	console.log('Docs available at http://localhost:3333/docs');
+const PORT = process.env.PORT || 3333;
+
+app.listen({ port: Number(PORT), host: '0.0.0.0' }).then((address) => {
+	console.log(`HTTP server running on ${address}`);
+	console.log(`Docs available at ${address}/docs`);
 });
 
 export default app;
