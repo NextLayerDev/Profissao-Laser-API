@@ -1,7 +1,6 @@
 import { fastifyCors } from '@fastify/cors';
 import { fastifyJwt } from '@fastify/jwt';
 import { fastifySwagger } from '@fastify/swagger';
-import ScalarApiReference from '@scalar/fastify-api-reference';
 import { fastify } from 'fastify';
 import fastifyRawBody from 'fastify-raw-body';
 
@@ -12,7 +11,7 @@ import {
 	type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 
-import { routes } from './routes/index.js';
+import { routes } from './routes';
 
 const app = fastify().withTypeProvider<ZodTypeProvider>();
 app.setValidatorCompiler(validatorCompiler);
@@ -59,15 +58,34 @@ app.register(fastifySwagger, {
 	transform: jsonSchemaTransform,
 });
 
-app.register(ScalarApiReference, {
-	routePrefix: '/docs',
-});
+if (process.env.NODE_ENV !== 'production') {
+	app.register(async (instance) => {
+		try {
+			// Bypass TypeScript transpilation of dynamic import() to require()
+			// This is necessary because we compile to CJS, but this package is ESM-only.
+			const dynamicImport = new Function(
+				'specifier',
+				'return import(specifier)',
+			);
+			const ScalarApiReference = await dynamicImport(
+				'@scalar/fastify-api-reference',
+			);
+			instance.register(ScalarApiReference.default || ScalarApiReference, {
+				routePrefix: '/docs',
+			});
+		} catch (error) {
+			console.error('Failed to load Scalar API Reference:', error);
+		}
+	});
+}
 
 app.register(routes);
 
-app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
-	console.log('HTTP server running on http://localhost:3333!');
-	console.log('Docs available at http://localhost:3333/docs');
-});
+if (require.main === module) {
+	app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
+		console.log('HTTP server running on http://localhost:3333!');
+		console.log('Docs available at http://localhost:3333/docs');
+	});
+}
 
-export default app;
+export { app };
