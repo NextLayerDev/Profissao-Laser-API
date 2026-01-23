@@ -10,7 +10,6 @@
 	},
 	"author": "tobias.bp2004@gmail.com",
 	"license": "ISC",
-	"type": "module",
 	"dependencies": {
 		"@fastify/cors": "^11.2.0",
 		"@fastify/jwt": "^10.0.0",
