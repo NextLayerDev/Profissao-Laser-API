@@ -2,17 +2,14 @@
 	"name": "profissao-laser-api",
 	"version": "1.0.0",
 	"description": "",
-	"main": "dist/server.js",
+	"main": "src/server.ts",
 	"scripts": {
 		"dev": "nodemon --watch src --ext ts,json --exec \"tsx --env-file=.env src/server.ts\"",
 		"lint": "biome check --write .",
-		"prepare": "husky",
-		"build": "babel src --out-dir dist --extensions \".ts,.js\" --source-maps inline",
-		"start": "node --env-file=.env dist/server.js"
+		"prepare": "husky"
 	},
 	"author": "tobias.bp2004@gmail.com",
 	"license": "ISC",
-	"type": "commonjs",
 	"dependencies": {
 		"@fastify/cors": "^11.2.0",
 		"@fastify/jwt": "^10.0.0",
