@@ -2,7 +2,7 @@ const plugins = [
 	[
 		'module-resolver',
 		{
-			root: ['./src'],
+			root: ['./dist'],
 			alias: {
 				'@': './src',
 			},

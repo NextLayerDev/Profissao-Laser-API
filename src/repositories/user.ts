@@ -1,5 +1,5 @@
-import { supabase } from '@/lib/supabase';
-import type { User, UserUpdate } from '@/types/user';
+import { supabase } from '../lib/supabase.ts';
+import type { User, UserUpdate } from '../types/user.ts';
 
 class UsersRepository {
 	async getAllUsers() {
