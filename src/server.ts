@@ -1,6 +1,7 @@
 import { fastifyCors } from '@fastify/cors';
 import { fastifyJwt } from '@fastify/jwt';
 import { fastifySwagger } from '@fastify/swagger';
+import { fastifySwaggerUi } from '@fastify/swagger-ui';
 import { fastify } from 'fastify';
 import fastifyRawBody from 'fastify-raw-body';
 
@@ -58,14 +59,9 @@ app.register(fastifySwagger, {
 	transform: jsonSchemaTransform,
 });
 
-if (process.env.NODE_ENV !== 'production') {
-	app.register(async (instance) => {
-		const ScalarApiReference = await import('@scalar/fastify-api-reference');
-		instance.register(ScalarApiReference.default || ScalarApiReference, {
-			routePrefix: '/docs',
-		});
-	});
-}
+app.register(fastifySwaggerUi, {
+	routePrefix: '/docs',
+});
 
 app.register(routes);
 
