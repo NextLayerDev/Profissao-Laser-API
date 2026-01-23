@@ -1,5 +1,5 @@
-import { supabase } from '../lib/supabase';
-import type { Customer, CustomerUpdate } from '../types/customer';
+import { supabase } from '../lib/supabase.js';
+import type { Customer, CustomerUpdate } from '../types/customer.js';
 
 class CustomerRepository {
 	async getCustomerById(id: string) {

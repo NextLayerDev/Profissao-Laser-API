@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { customerRepository } from '../repositories/customer';
+import { customerRepository } from '../repositories/customer.js';
 
 class CustomerController {
 	async getCustomerById(

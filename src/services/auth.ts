@@ -1,8 +1,8 @@
-import { supabase } from '../lib/supabase';
-import { customerRepository } from '../repositories/customer';
-import { usersRepository } from '../repositories/user';
-import type { CustomerRegister, Login, UserRegister } from '../types/auth';
-import type { Customer } from '../types/customer';
+import { supabase } from '../lib/supabase.js';
+import { customerRepository } from '../repositories/customer.js';
+import { usersRepository } from '../repositories/user.js';
+import type { CustomerRegister, Login, UserRegister } from '../types/auth.js';
+import type { Customer } from '../types/customer.js';
 
 export class AuthService {
 	async registerUser(userData: UserRegister) {

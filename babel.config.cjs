@@ -13,17 +13,17 @@ const plugins = [
 ];
 
 module.exports = {
-  presets: [
-    [
-      '@babel/preset-env',
-      {
-        targets: {
-          node: 'current',
-        },
-        modules: false,
-      },
-    ],
-    '@babel/preset-typescript',
-  ],
-  plugins,
+	presets: [
+		[
+			'@babel/preset-env',
+			{
+				targets: {
+					node: 'current',
+				},
+				modules: false,
+			},
+		],
+		'@babel/preset-typescript',
+	],
+	plugins,
 };

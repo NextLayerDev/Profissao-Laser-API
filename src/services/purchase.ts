@@ -1,4 +1,4 @@
-import { stripe } from '../lib/stripe';
+import { stripe } from '../lib/stripe.js';
 
 export class PurchaseService {
 	async listPurchases(email: string) {

@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { getProductsController } from '../controllers/product';
-import { authenticate } from '../middleware/auth';
-import { ErrorSchema } from '../types/error';
-import { productSchema } from '../types/product';
+import { getProductsController } from '../controllers/product.js';
+import { authenticate } from '../middleware/auth.js';
+import { ErrorSchema } from '../types/error.js';
+import { productSchema } from '../types/product.js';
 
 export async function productRoute(server: FastifyInstance) {
 	server.get(

@@ -1,4 +1,4 @@
-import { usersRepository } from '../repositories/user';
+import { usersRepository } from '../repositories/user.js';
 
 export class UsersService {
 	async getAllUsers() {
