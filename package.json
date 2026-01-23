@@ -2,7 +2,7 @@
 	"name": "profissao-laser-api",
 	"version": "1.0.0",
 	"description": "",
-	"main": "index.js",
+	"main": "server.js",
 	"scripts": {
 		"dev": "nodemon --watch src --ext ts,json --exec \"tsx --env-file=.env src/server.ts\"",
 		"start": "node dist/server.js",
