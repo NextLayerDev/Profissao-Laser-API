@@ -9,7 +9,7 @@ export default async function (server: FastifyInstance) {
 	server.get(
 		'/',
 		{
-			preHandler: [authenticate],
+			// preHandler: [authenticate],
 			schema: {
 				description:
 					'Retrieve a list of all active products with their respective monthly, annual, and lifetime prices at stripe.',

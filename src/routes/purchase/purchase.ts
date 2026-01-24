@@ -11,7 +11,7 @@ export default async function (server: FastifyInstance) {
 	server.get(
 		'/',
 		{
-			preHandler: [authenticate],
+			// preHandler: [authenticate],
 			schema: {
 				description:
 					'Retrieve the history of purchases made by the authenticated user.',

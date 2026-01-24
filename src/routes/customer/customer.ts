@@ -9,7 +9,7 @@ export default async function (server: FastifyInstance) {
 	server.get(
 		'/',
 		{
-			preHandler: [authenticate],
+			// preHandler: [authenticate],
 			schema: {
 				description: 'Get all customers.',
 				response: {

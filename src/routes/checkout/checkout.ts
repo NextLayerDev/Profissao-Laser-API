@@ -11,7 +11,7 @@ export default async function (server: FastifyInstance) {
 	server.post(
 		'/',
 		{
-			preHandler: [authenticate],
+			// preHandler: [authenticate],
 			schema: {
 				description:
 					'Creates a Stripe Checkout Session for a specific price. Returns the URL to redirect the user.',
