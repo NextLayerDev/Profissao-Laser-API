@@ -39,4 +39,20 @@ export default async function (server: FastifyInstance) {
 		},
 		customerController.getCustomerById,
 	);
+
+	server.get(
+		'/plans',
+		{
+			schema: {
+				description: 'Get the user plans',
+				params: z.object({ email: z.email() }),
+				response: {
+					200: z.boolean(),
+					404: ErrorSchema,
+				},
+				tags: ['Customer'],
+			},
+		},
+		customerController.getCustomerPlans,
+	);
 }

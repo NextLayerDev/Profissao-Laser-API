@@ -2,7 +2,6 @@ import 'dotenv/config';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import { fastifySwagger } from '@fastify/swagger';
-import ScalarApiReference from '@scalar/fastify-api-reference';
 import Fastify, { type FastifyError } from 'fastify';
 import {
 	jsonSchemaTransform,

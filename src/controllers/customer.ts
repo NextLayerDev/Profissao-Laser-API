@@ -39,6 +39,23 @@ class CustomerController {
 		if (!customer) reply.status(404).send({ message: 'Customer not found' });
 		reply.status(200).send(customer);
 	}
+
+	async getCustomerPlans(
+		request: FastifyRequest<{ Params: { email: string } }>,
+		reply: FastifyReply,
+	) {
+		const customer = await customerRepository.getCustomerPlan(
+			request.params.email,
+		);
+
+		const plan = customer.data;
+
+		if (!plan)
+			reply
+				.status(400)
+				.send({ message: 'Customer has no access in any course' });
+		reply.status(200).send(plan);
+	}
 }
 
 export const customerController = new CustomerController();

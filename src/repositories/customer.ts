@@ -26,6 +26,10 @@ class CustomerRepository {
 	async deleteCustomer(id: string) {
 		return await supabase.from('Customers').delete().eq('id', id);
 	}
+
+	async getCustomerPlan(email: string) {
+		return await supabase.from('Customer').select().eq('email', email).single();
+	}
 }
 
 export const customerRepository = new CustomerRepository();
