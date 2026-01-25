@@ -12,3 +12,30 @@ export const productSchema = z.object({
 	}),
 	currency: z.string(),
 });
+
+export const createProductSchema = z.object({
+	name: z.string(),
+	description: z.string().optional(),
+	prices: z.array(
+		z.object({
+			amount: z.number().int().positive(),
+			interval: z.enum(['month', 'year', 'one_time']),
+		}),
+	),
+});
+
+export const createdProductResponseSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	description: z.string().optional().nullable(),
+	stripe_product_id: z.string(),
+	stripe_price_ids: z.array(z.string()),
+});
+
+export type Product = {
+	id: string;
+	name: string;
+	description?: string;
+	stripe_product_id: string;
+	stripe_price_ids: string[]; // Changed to array
+};

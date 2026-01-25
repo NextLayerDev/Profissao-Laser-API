@@ -1,9 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { getProductsController } from '../../controllers/product.js';
+import {
+	createProductController,
+	getProductsController,
+} from '../../controllers/product.js';
 import { authenticate } from '../../middleware/auth.js';
 import { ErrorSchema } from '../../types/error.js';
-import { productSchema } from '../../types/product.js';
+import {
+	createdProductResponseSchema,
+	createProductSchema,
+	productSchema,
+} from '../../types/product.js';
 
 export default async function (server: FastifyInstance) {
 	server.get(
@@ -22,5 +29,24 @@ export default async function (server: FastifyInstance) {
 			},
 		},
 		getProductsController,
+	);
+
+	server.post(
+		'/',
+		{
+			// preHandler: [authenticate],
+			schema: {
+				description:
+					'Create a new product in Stripe and save its IDs in the database.',
+				body: createProductSchema,
+				response: {
+					201: createdProductResponseSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Products'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		createProductController,
 	);
 }
