@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { customerController } from '../../controllers/customer.js';
-import { authenticate } from '../../middleware/auth.js';
 import { customerSchema } from '../../types/customer.js';
 import { ErrorSchema } from '../../types/error.js';
 

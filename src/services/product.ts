@@ -40,6 +40,10 @@ export class ProductService {
 
 		return product;
 	}
+
+	async getProductsCatalog() {
+		return await productRepository.getProductsCatalog();
+	}
 }
 
 export const productService = new ProductService();

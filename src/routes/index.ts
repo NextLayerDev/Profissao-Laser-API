@@ -1,5 +1,5 @@
 import { readdirSync } from 'node:fs';
-import { dirname, join, parse } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 

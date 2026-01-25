@@ -13,6 +13,19 @@ export const productSchema = z.object({
 	currency: z.string(),
 });
 
+export const productIdsResponseSchema = z.array(z.string());
+
+export const catalogProductSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	description: z.string().nullable(),
+	stripe_product_id: z.string(),
+	stripe_price_ids: z.array(z.string()),
+	created_at: z.string(),
+});
+
+export const catalogProductsResponseSchema = z.array(catalogProductSchema);
+
 export const createProductSchema = z.object({
 	name: z.string(),
 	description: z.string().optional(),

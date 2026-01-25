@@ -36,3 +36,16 @@ export const createProductController = async (
 		return reply.status(500).send({ message });
 	}
 };
+
+export const getProductsCatalogController = async (
+	_request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	try {
+		const products = await productService.getProductsCatalog();
+		return reply.send(products);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};

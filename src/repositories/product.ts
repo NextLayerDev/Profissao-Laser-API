@@ -69,6 +69,16 @@ class ProductRepository {
 			};
 		});
 	}
+
+	async getProductsCatalog() {
+		const { data, error } = await supabase.from('Catalog').select('*');
+
+		if (error) {
+			throw new Error(error.message);
+		}
+
+		return data;
+	}
 }
 
 export const productRepository = new ProductRepository();

@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { createCheckoutSessionController } from '../../controllers/checkout.js';
-import { authenticate } from '../../middleware/auth.js';
 import {
 	checkoutBodySchema,
 	checkoutResponseSchema,

@@ -4,7 +4,6 @@ import {
 	getAllPurchasesController,
 	getPurchasesController,
 } from '../../controllers/purchase.js';
-import { authenticate } from '../../middleware/auth.js';
 import { ErrorSchema } from '../../types/error.js';
 
 export default async function (server: FastifyInstance) {

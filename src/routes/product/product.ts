@@ -2,11 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
 	createProductController,
+	getProductsCatalogController,
 	getProductsController,
 } from '../../controllers/product.js';
-import { authenticate } from '../../middleware/auth.js';
 import { ErrorSchema } from '../../types/error.js';
 import {
+	catalogProductsResponseSchema,
 	createdProductResponseSchema,
 	createProductSchema,
 	productSchema,
@@ -29,6 +30,23 @@ export default async function (server: FastifyInstance) {
 			},
 		},
 		getProductsController,
+	);
+
+	server.get(
+		'/catalog',
+		{
+			// preHandler: [authenticate],
+			schema: {
+				description: 'Retrieve all products from the Catalog table.',
+				response: {
+					200: catalogProductsResponseSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Products'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getProductsCatalogController,
 	);
 
 	server.post(
