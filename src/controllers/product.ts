@@ -43,6 +43,7 @@ export const getProductsCatalogController = async (
 ) => {
 	try {
 		const products = await productService.getProductsCatalog();
+
 		return reply.send(products);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';

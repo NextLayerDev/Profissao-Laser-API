@@ -21,7 +21,7 @@ export const catalogProductSchema = z.object({
 	description: z.string().nullable(),
 	stripe_product_id: z.string(),
 	stripe_price_ids: z.array(z.string()),
-	created_at: z.string(),
+	created_at: z.string().nullable(),
 });
 
 export const catalogProductsResponseSchema = z.array(catalogProductSchema);
