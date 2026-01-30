@@ -71,7 +71,9 @@ class ProductRepository {
 	}
 
 	async getProductsCatalog() {
-		const { data, error } = await supabase.from('Catalog').select('*');
+		const { data, error } = await supabase
+			.from('Catalog')
+			.select('*, Variants(*)');
 
 		if (error) {
 			throw new Error(error.message);

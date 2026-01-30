@@ -28,7 +28,11 @@ class CustomerRepository {
 	}
 
 	async getCustomerPlan(email: string) {
-		return await supabase.from('Customer').select().eq('email', email).single();
+		return await supabase
+			.from('Customers')
+			.select()
+			.eq('email', email)
+			.single();
 	}
 }
 

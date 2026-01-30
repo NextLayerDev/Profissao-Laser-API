@@ -4,6 +4,13 @@ import { customerController } from '../../controllers/customer.js';
 import { customerSchema } from '../../types/customer.js';
 import { ErrorSchema } from '../../types/error.js';
 
+const subscriptionSchema = z.object({
+	id: z.string(),
+	status: z.string(),
+	current_period_end: z.number(),
+	product_name: z.string(),
+});
+
 export default async function (server: FastifyInstance) {
 	server.get(
 		'/',
@@ -40,13 +47,13 @@ export default async function (server: FastifyInstance) {
 	);
 
 	server.get(
-		'/plans',
+		'/plans/:email',
 		{
 			schema: {
 				description: 'Get the user plans',
 				params: z.object({ email: z.email() }),
 				response: {
-					200: z.boolean(),
+					200: z.any(),
 					404: ErrorSchema,
 				},
 				tags: ['Customer'],

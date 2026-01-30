@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { customerRepository } from '../repositories/customer.js';
+import { purchaseService } from '../services/purchase.js';
 
 class CustomerController {
 	async getCustomerById(
@@ -44,17 +45,20 @@ class CustomerController {
 		request: FastifyRequest<{ Params: { email: string } }>,
 		reply: FastifyReply,
 	) {
-		const customer = await customerRepository.getCustomerPlan(
+		console.log(request.params.email);
+
+		const subscriptions = await purchaseService.listActiveSubscriptions(
 			request.params.email,
 		);
 
-		const plan = customer.data;
-
-		if (!plan)
+		if (subscriptions.length === 0) {
 			reply
-				.status(400)
-				.send({ message: 'Customer has no access in any course' });
-		reply.status(200).send(plan);
+				.status(404)
+				.send({ message: 'No active subscriptions found for this email.' });
+			return;
+		}
+
+		reply.status(200).send(subscriptions);
 	}
 }
 

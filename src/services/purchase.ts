@@ -65,6 +65,30 @@ export class PurchaseService {
 			};
 		});
 	}
+	async listActiveSubscriptions(email: string) {
+		const customers = await stripe.customers.list({
+			email: email,
+			limit: 1,
+		});
+
+		if (customers.data.length === 0) {
+			return [];
+		}
+
+		const customerId = customers.data[0].id;
+
+		const subscriptions = await stripe.subscriptions.list({
+			customer: customerId,
+			status: 'active',
+			expand: ['data.plan.product'], // Expand to get product details
+		});
+
+		return subscriptions.data.map((sub) => ({
+			id: sub.id,
+			status: sub.status,
+			product_name: (sub.plan?.product as Stripe.Product)?.name || 'Unknown',
+		}));
+	}
 }
 
 export const purchaseService = new PurchaseService();
