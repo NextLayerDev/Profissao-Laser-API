@@ -45,8 +45,6 @@ class CustomerController {
 		request: FastifyRequest<{ Params: { email: string } }>,
 		reply: FastifyReply,
 	) {
-		console.log(request.params.email);
-
 		const subscriptions = await purchaseService.listActiveSubscriptions(
 			request.params.email,
 		);

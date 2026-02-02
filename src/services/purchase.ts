@@ -47,7 +47,7 @@ export class PurchaseService {
 		return sessions.data.map((session) => {
 			const item = session.line_items?.data[0];
 			// biome-ignore lint/suspicious/noExplicitAny: Stripe.Customer can be an object or string, so we cast it to any.
-			const customer = session.customer as any; // Cast as Stripe.Customer or similar
+			const customer = session.customer as any;
 
 			return {
 				id: session.id,
@@ -65,6 +65,7 @@ export class PurchaseService {
 			};
 		});
 	}
+
 	async listActiveSubscriptions(email: string) {
 		const customers = await stripe.customers.list({
 			email: email,
@@ -80,7 +81,7 @@ export class PurchaseService {
 		const subscriptions = await stripe.subscriptions.list({
 			customer: customerId,
 			status: 'active',
-			expand: ['data.plan.product'], // Expand to get product details
+			expand: ['data.plan.product'],
 		});
 
 		return subscriptions.data.map((sub) => ({
