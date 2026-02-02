@@ -1,3 +1,4 @@
+import type Stripe from 'stripe';
 import { stripe } from '../lib/stripe.js';
 
 export class PurchaseService {
@@ -81,14 +82,17 @@ export class PurchaseService {
 		const subscriptions = await stripe.subscriptions.list({
 			customer: customerId,
 			status: 'active',
-			expand: ['data.plan.product'],
+			expand: ['data.items.data.plan.product'],
 		});
 
-		return subscriptions.data.map((sub) => ({
-			id: sub.id,
-			status: sub.status,
-			product_name: (sub.plan?.product as Stripe.Product)?.name || 'Unknown',
-		}));
+		return subscriptions.data.map((sub) => {
+			const plan = sub.items.data[0]?.plan;
+			return {
+				id: sub.id,
+				status: sub.status,
+				product_name: (plan?.product as Stripe.Product)?.name || 'Unknown',
+			};
+		});
 	}
 }
 
