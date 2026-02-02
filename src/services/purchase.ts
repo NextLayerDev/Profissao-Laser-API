@@ -82,17 +82,32 @@ export class PurchaseService {
 		const subscriptions = await stripe.subscriptions.list({
 			customer: customerId,
 			status: 'active',
-			expand: ['data.items.data.plan.product'],
+			expand: ['data.items.data.plan'],
 		});
 
-		return subscriptions.data.map((sub) => {
-			const plan = sub.items.data[0]?.plan;
-			return {
-				id: sub.id,
-				status: sub.status,
-				product_name: (plan?.product as Stripe.Product)?.name || 'Unknown',
-			};
-		});
+		return Promise.all(
+			subscriptions.data.map(async (sub) => {
+				const plan = sub.items.data[0]?.plan;
+				const productId =
+					typeof plan?.product === 'string' ? plan.product : plan?.product?.id;
+
+				let productName = 'Unknown';
+				if (productId) {
+					try {
+						const product = await stripe.products.retrieve(productId);
+						productName = product.name;
+					} catch {
+						// Ignore error
+					}
+				}
+
+				return {
+					id: sub.id,
+					status: sub.status,
+					product_name: productName,
+				};
+			}),
+		);
 	}
 }
 
