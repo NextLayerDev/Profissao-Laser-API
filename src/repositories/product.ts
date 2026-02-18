@@ -1,16 +1,19 @@
 import { stripe } from '../lib/stripe.js';
 import { supabase } from '../lib/supabase.js';
+import type { ProductCreate } from '../types/product.js';
 
-type ProductData = {
-	name: string;
-	description?: string;
-	stripe_product_id: string;
-	stripe_price_ids: string[]; // Changed to array
+type ProductData = Omit<ProductCreate, 'interval'> & {
+	id: string;
+	status: 'ativo' | 'excluido';
+	slug: string;
+	stripeProductId: string;
+	stripePriceId: string;
 };
+
 class ProductRepository {
 	async create(data: ProductData) {
 		const { data: product, error } = await supabase
-			.from('Catalog')
+			.from('pl_product')
 			.insert(data)
 			.select()
 			.single();
@@ -22,63 +25,71 @@ class ProductRepository {
 		return product;
 	}
 
-	async listActiveProducts() {
-		const [products, prices] = await Promise.all([
-			stripe.products.list({ active: true }),
-			stripe.prices.list({ active: true, limit: 100 }),
-		]);
+	async deleteProduct(id: string) {
+		const { data: product, error: findError } = await supabase
+			.from('pl_product')
+			.select('stripeProductId, stripePriceId')
+			.eq('id', id)
+			.single();
 
-		return products.data.map((product) => {
-			const productPrices = prices.data.filter(
-				(price) => price.product === product.id,
-			);
+		if (findError || !product) {
+			throw new Error('Product not found');
+		}
 
-			const monthlyPrice = productPrices.find(
-				(price) =>
-					price.type === 'recurring' && price.recurring?.interval === 'month',
-			);
-			const annualPrice = productPrices.find(
-				(price) =>
-					price.type === 'recurring' && price.recurring?.interval === 'year',
-			);
-			const lifetimePrice = productPrices.find(
-				(price) => price.type === 'one_time',
-			);
+		if (product.stripePriceId) {
+			await stripe.prices.update(product.stripePriceId as string, {
+				active: false,
+			});
+		}
 
-			return {
-				id: product.id,
-				name: product.name,
-				description: product.description,
-				image: product.images[0] || null,
-				prices: {
-					monthly: monthlyPrice?.unit_amount
-						? monthlyPrice.unit_amount / 100
-						: null,
-					annual: annualPrice?.unit_amount
-						? annualPrice.unit_amount / 100
-						: null,
-					lifetime: lifetimePrice?.unit_amount
-						? lifetimePrice.unit_amount / 100
-						: null,
-				},
-				currency:
-					monthlyPrice?.currency ||
-					annualPrice?.currency ||
-					lifetimePrice?.currency ||
-					'brl',
-			};
-		});
+		if (product.stripeProductId) {
+			await stripe.products.update(product.stripeProductId as string, {
+				active: false,
+			});
+		}
+
+		const { error: deleteError } = await supabase
+			.from('pl_product')
+			.delete()
+			.eq('id', id);
+
+		if (deleteError) {
+			throw new Error(deleteError.message);
+		}
 	}
 
-	async getProductsCatalog() {
+	async listActiveProducts() {
 		const { data, error } = await supabase
-			.from('Catalog')
-			.select('*, Variants(*)');
+			.from('pl_product')
+			.select('*')
+			.eq('status', 'ativo');
 
 		if (error) {
 			throw new Error(error.message);
 		}
 
+		return data;
+	}
+
+	async findByStripeProductId(stripeProductId: string) {
+		const { data, error } = await supabase
+			.from('pl_product')
+			.select('name, slug')
+			.eq('stripeProductId', stripeProductId)
+			.single();
+
+		return data;
+	}
+
+	async findBySlug(slug: string) {
+		const { data, error } = await supabase
+			.from('pl_product')
+			.select('*')
+			.eq('slug', slug)
+			.eq('status', 'ativo')
+			.single();
+
+		if (error) throw new Error('Product not found');
 		return data;
 	}
 }

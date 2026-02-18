@@ -20,16 +20,8 @@ export const createProductController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const { name, description, prices } = createProductSchema.parse(
-			request.body,
-		);
-
-		const product = await productService.createProduct({
-			name,
-			description,
-			prices,
-		});
-
+		const data = createProductSchema.parse(request.body);
+		const product = await productService.createProduct(data);
 		return reply.status(201).send(product);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
@@ -37,16 +29,16 @@ export const createProductController = async (
 	}
 };
 
-export const getProductsCatalogController = async (
-	_request: FastifyRequest,
+export const deleteProductController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
 ) => {
 	try {
-		const products = await productService.getProductsCatalog();
-
-		return reply.send(products);
+		await productService.deleteProduct(request.params.id);
+		return reply.status(204).send();
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
-		return reply.status(500).send({ message });
+		const status = message === 'Product not found' ? 404 : 500;
+		return reply.status(status).send({ message });
 	}
 };

@@ -1,23 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { authenticate } from '@/middleware/auth.js';
 import {
 	createProductController,
-	getProductsCatalogController,
+	deleteProductController,
 	getProductsController,
-} from '../../controllers/product.js';
-import { ErrorSchema } from '../../types/error.js';
+} from '../controllers/product.js';
+import { ErrorSchema } from '../types/error.js';
 import {
-	catalogProductsResponseSchema,
 	createdProductResponseSchema,
 	createProductSchema,
 	productSchema,
-} from '../../types/product.js';
+} from '../types/product.js';
 
-export default async function (server: FastifyInstance) {
+export async function productRoute(server: FastifyInstance) {
 	server.get(
-		'/',
+		'/products',
 		{
-			// preHandler: [authenticate],
 			schema: {
 				description:
 					'Retrieve a list of all active products with their respective monthly, annual, and lifetime prices at stripe.',
@@ -32,27 +31,10 @@ export default async function (server: FastifyInstance) {
 		getProductsController,
 	);
 
-	server.get(
-		'/catalog',
-		{
-			// preHandler: [authenticate],
-			schema: {
-				description: 'Retrieve all products from the Catalog table.',
-				response: {
-					200: catalogProductsResponseSchema,
-					500: ErrorSchema,
-				},
-				tags: ['Products'],
-				security: [{ bearerAuth: [] }],
-			},
-		},
-		getProductsCatalogController,
-	);
-
 	server.post(
-		'/',
+		'/product',
 		{
-			// preHandler: [authenticate],
+			preHandler: [authenticate],
 			schema: {
 				description:
 					'Create a new product in Stripe and save its IDs in the database.',
@@ -66,5 +48,25 @@ export default async function (server: FastifyInstance) {
 			},
 		},
 		createProductController,
+	);
+
+	server.delete(
+		'/product/:id',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Archive a product in Stripe (deactivates all prices) and delete it from the database.',
+				params: z.object({ id: z.string() }),
+				response: {
+					204: z.null(),
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Products'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		deleteProductController,
 	);
 }

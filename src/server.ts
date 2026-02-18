@@ -1,103 +1,63 @@
-import 'dotenv/config';
-import cors from '@fastify/cors';
-import multipart from '@fastify/multipart';
+import { fastifyCors } from '@fastify/cors';
+import { fastifyJwt } from '@fastify/jwt';
 import { fastifySwagger } from '@fastify/swagger';
-import Fastify, { type FastifyError } from 'fastify';
+import ScalarApiReference from '@scalar/fastify-api-reference';
+import { fastify } from 'fastify';
 import {
 	jsonSchemaTransform,
 	serializerCompiler,
 	validatorCompiler,
 	type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
-import registerRoutes from './routes/index.js';
 
-const startServer = async () => {
-	try {
-		const server = Fastify({
-			logger: false,
-		}).withTypeProvider<ZodTypeProvider>();
+import { routes } from './router.js';
 
-		server.setErrorHandler((error: FastifyError, request, reply) => {
-			reply
-				.header('Access-Control-Allow-Origin', request.headers.origin || '*')
-				.header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-				.header(
-					'Access-Control-Allow-Methods',
-					'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-				)
-				.status(error.statusCode ?? 500)
-				.send({
-					message: error.message,
-				});
-		});
+const app = fastify().withTypeProvider<ZodTypeProvider>();
+app.setValidatorCompiler(validatorCompiler);
+app.setSerializerCompiler(serializerCompiler);
 
-		server.setValidatorCompiler(validatorCompiler);
-		server.setSerializerCompiler(serializerCompiler);
+app.register(fastifyCors, {
+	origin: true,
+	methods: ['GET', 'PUT', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+});
 
-		await server.register(cors, {
-			origin: '*',
-		});
+if (!process.env.JWT_SECRET) {
+	throw new Error('JWT_SECRET is not defined in .env');
+}
 
-		await server.register(multipart);
+app.register(fastifyJwt, {
+	secret: process.env.JWT_SECRET,
+});
 
-		server.register(fastifySwagger, {
-			openapi: {
-				info: {
-					title: 'Profissão Lase API',
-					description: 'API documentation',
-					version: '1.0.0',
+app.register(fastifySwagger, {
+	openapi: {
+		info: {
+			title: 'Oi-Fit API',
+			description: 'API to manage products, orders, and users',
+			version: '1.0.0',
+		},
+		components: {
+			securitySchemes: {
+				bearerAuth: {
+					type: 'http',
+					scheme: 'bearer',
+					bearerFormat: 'JWT',
 				},
-				components: {
-					securitySchemes: {
-						bearerAuth: {
-							type: 'http',
-							scheme: 'bearer',
-							bearerFormat: 'JWT',
-						},
-					},
-				},
-				security: [
-					{
-						bearerAuth: [],
-					},
-				],
 			},
-			transform: jsonSchemaTransform,
-		});
+		},
+	},
+	transform: jsonSchemaTransform,
+});
 
-		server.get('/openapi.json', (_, reply) => {
-			reply.send(server.swagger());
-		});
+app.register(ScalarApiReference, {
+	routePrefix: '/docs',
+});
 
-		await server.register(import('@fastify/swagger-ui'), {
-			routePrefix: '/docs',
-			uiConfig: {
-				docExpansion: 'list',
-				deepLinking: false,
-			},
-		});
+app.decorateRequest('currentUser', null);
 
-		server.decorateRequest('dataSources', null);
+app.register(routes);
 
-		server.get('/api', async (_, __) => {
-			return { status: 'ok' };
-		});
-
-		await registerRoutes(server);
-
-		const PORT = process.env.PORT || 4000;
-		const address = await server.listen({
-			port: Number(PORT),
-			host: '0.0.0.0',
-		});
-		await server.ready();
-
-		console.log(`🚀 Server ready at: ${address}`);
-		return address;
-	} catch (err) {
-		console.error('Failed to start server:', err);
-		process.exit(1);
-	}
-};
-
-startServer();
+app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
+	console.log('HTTP server running on http://localhost:3333!');
+	console.log('Docs available at http://localhost:3333/docs');
+});

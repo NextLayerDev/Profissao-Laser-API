@@ -1,48 +1,146 @@
 import { stripe } from '../lib/stripe.js';
+import { lessonRepository } from '../repositories/lesson.js';
+import { moduleRepository } from '../repositories/module.js';
 import { productRepository } from '../repositories/product.js';
+import type { ProductCreate } from '../types/product.js';
 
-type CreateProductData = {
-	name: string;
-	description?: string;
-	prices: Array<{ amount: number; interval: 'month' | 'year' | 'one_time' }>;
-};
 export class ProductService {
 	async listProducts() {
 		return await productRepository.listActiveProducts();
 	}
 
-	async createProduct({ name, description, prices }: CreateProductData) {
+	async getCourseContent(slug: string) {
+		const product = await productRepository.findBySlug(slug);
+		const modules = await moduleRepository.listByProduct(product.id);
+		const lessons = await lessonRepository.listByProduct(product.id);
+
+		return {
+			id: product.id,
+			name: product.name,
+			description: product.description,
+			image: product.image,
+			slug: product.slug,
+			modules: modules.map((mod) => ({
+				id: mod.id,
+				title: mod.title,
+				description: mod.description,
+				order: mod.order,
+				lessons: lessons.filter((l) => l.moduleId === mod.id),
+			})),
+		};
+	}
+
+	async deleteProduct(id: string) {
+		return await productRepository.deleteProduct(id);
+	}
+
+	async createProduct(data: ProductCreate) {
 		const stripeProduct = await stripe.products.create({
-			name,
-			description: description ?? undefined,
+			name: data.name,
+			description: data.description || undefined,
 		});
 
-		const stripePriceIds: string[] = [];
-		for (const priceData of prices) {
-			const stripePrice = await stripe.prices.create({
-				product: stripeProduct.id,
-				unit_amount: priceData.amount,
-				currency: 'brl', // Assuming 'brl' as default currency
-				recurring:
-					priceData.interval !== 'one_time'
-						? { interval: priceData.interval }
-						: undefined,
-			});
-			stripePriceIds.push(stripePrice.id);
-		}
+		const stripePrice = await stripe.prices.create({
+			product: stripeProduct.id,
+			unit_amount: Math.round(data.price * 100),
+			currency: 'brl',
+			recurring:
+				data.interval !== 'one_time'
+					? { interval: data.interval as 'month' | 'year' }
+					: undefined,
+		});
+
+		const slug =
+			data.slug ??
+			data.name
+				.toLowerCase()
+				.normalize('NFD')
+				.replace(/[\u0300-\u036f]/g, '')
+				.replace(/\s+/g, '-')
+				.replace(/[^a-z0-9-]/g, '');
 
 		const product = await productRepository.create({
-			name,
-			description,
-			stripe_product_id: stripeProduct.id,
-			stripe_price_ids: stripePriceIds,
+			id: crypto.randomUUID(),
+			name: data.name,
+			type: data.type,
+			description: data.description,
+			image: data.image,
+			price: data.price,
+			status: 'ativo',
+			slug,
+			language: data.language,
+			country: data.country,
+			category: data.category,
+			refundDays: data.refundDays,
+			stripeProductId: stripeProduct.id,
+			stripePriceId: stripePrice.id,
 		});
 
 		return product;
 	}
 
-	async getProductsCatalog() {
-		return await productRepository.getProductsCatalog();
+	async createCoupon(data: {
+		product_id: string;
+		percent_off?: number;
+		amount_off?: number;
+		duration: 'once' | 'repeating' | 'forever';
+		duration_in_months?: number;
+		max_redemptions?: number;
+		redeem_by?: string;
+	}) {
+		const coupon = await stripe.coupons.create({
+			percent_off: data.percent_off,
+			amount_off: data.amount_off,
+			currency: data.amount_off ? 'brl' : undefined,
+			duration: data.duration,
+			duration_in_months:
+				data.duration === 'repeating' ? data.duration_in_months : undefined,
+			max_redemptions: data.max_redemptions,
+			redeem_by: data.redeem_by
+				? Math.floor(new Date(data.redeem_by).getTime() / 1000)
+				: undefined,
+			applies_to: { products: [data.product_id] },
+		});
+
+		return {
+			id: coupon.id,
+			percent_off: coupon.percent_off,
+			amount_off: coupon.amount_off,
+			currency: coupon.currency,
+			duration: coupon.duration,
+			duration_in_months: coupon.duration_in_months,
+			max_redemptions: coupon.max_redemptions,
+			redeem_by: coupon.redeem_by,
+			product_id: data.product_id,
+		};
+	}
+
+	async listCouponsByProduct(productId: string) {
+		const allCoupons = await stripe.coupons.list({ limit: 100 });
+
+		const filtered = allCoupons.data.filter((coupon) =>
+			coupon.applies_to?.products?.includes(productId),
+		);
+
+		if (!filtered.length) return [];
+
+		return filtered.map((coupon) => ({
+			id: coupon.id,
+			percent_off: coupon.percent_off,
+			amount_off: coupon.amount_off,
+			currency: coupon.currency,
+			duration: coupon.duration,
+			duration_in_months: coupon.duration_in_months,
+			max_redemptions: coupon.max_redemptions,
+			redeem_by: coupon.redeem_by,
+			times_redeemed: coupon.times_redeemed,
+			valid: coupon.valid,
+			product_id: productId,
+		}));
+	}
+
+	async deleteCoupon(couponId: string) {
+		return await stripe.coupons.del(couponId);
 	}
 }
 

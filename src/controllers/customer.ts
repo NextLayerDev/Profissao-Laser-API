@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { customerRepository } from '../repositories/customer.js';
+import { productRepository } from '../repositories/product.js';
 import { purchaseService } from '../services/purchase.js';
 
 class CustomerController {
@@ -56,7 +57,22 @@ class CustomerController {
 			return;
 		}
 
-		reply.status(200).send(subscriptions);
+		const result = await Promise.all(
+			subscriptions.map(async (sub) => {
+				const product = sub.stripeProductId
+					? await productRepository.findByStripeProductId(sub.stripeProductId)
+					: null;
+
+				return {
+					id: sub.id,
+					status: sub.status,
+					product_name: product?.name ?? 'Unknown',
+					slug: product?.slug ?? null,
+				};
+			}),
+		);
+
+		reply.status(200).send(result);
 	}
 }
 

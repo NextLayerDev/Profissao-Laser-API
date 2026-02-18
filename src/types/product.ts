@@ -1,54 +1,69 @@
 import { z } from 'zod';
 
 export const productSchema = z.object({
+	id: z.string().uuid(),
+	name: z.string(),
+	type: z.string(),
+	description: z.string().nullable(),
+	image: z.string().nullable(),
+	price: z.number(),
+	status: z.enum(['ativo', 'excluido']),
+	slug: z.string(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+	language: z.string(),
+	country: z.string(),
+	category: z.string().nullable(),
+	refundDays: z.number().nullable(),
+	stripeProductId: z.string().nullable(),
+	stripePriceId: z.string().nullable(),
+});
+
+export type Product = z.infer<typeof productSchema>;
+
+export const createProductSchema = z.object({
+	name: z.string(),
+	type: z.string().default('curso'),
+	description: z.string().optional(),
+	image: z.string().optional(),
+	price: z.number().positive(),
+	interval: z.enum(['month', 'year', 'one_time']).default('one_time'),
+	slug: z.string().optional(),
+	language: z.string().default('pt-BR'),
+	country: z.string().default('BR'),
+	category: z.string().optional(),
+	refundDays: z.number().int().positive().default(7),
+});
+
+export type ProductCreate = z.infer<typeof createProductSchema>;
+
+export const createdProductResponseSchema = productSchema;
+
+export const productListResponseSchema = z.array(productSchema);
+
+export const courseContentSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	description: z.string().nullable(),
 	image: z.string().nullable(),
-	prices: z.object({
-		monthly: z.number().nullable(),
-		annual: z.number().nullable(),
-		lifetime: z.number().nullable(),
-	}),
-	currency: z.string(),
-});
-
-export const productIdsResponseSchema = z.array(z.string());
-
-export const catalogProductSchema = z.object({
-	id: z.string(),
-	name: z.string(),
-	description: z.string().nullable(),
-	stripe_product_id: z.string(),
-	stripe_price_ids: z.array(z.string()),
-	created_at: z.string().nullable(),
-});
-
-export const catalogProductsResponseSchema = z.array(catalogProductSchema);
-
-export const createProductSchema = z.object({
-	name: z.string(),
-	description: z.string().optional(),
-	prices: z.array(
+	slug: z.string(),
+	modules: z.array(
 		z.object({
-			amount: z.number().int().positive(),
-			interval: z.enum(['month', 'year', 'one_time']),
+			id: z.string(),
+			title: z.string(),
+			description: z.string().nullable(),
+			order: z.number(),
+			lessons: z.array(
+				z.object({
+					id: z.string(),
+					title: z.string(),
+					description: z.string().nullable(),
+					videoUrl: z.string().nullable(),
+					duration: z.number().nullable(),
+					order: z.number(),
+					isFree: z.boolean(),
+				}),
+			),
 		}),
 	),
 });
-
-export const createdProductResponseSchema = z.object({
-	id: z.string(),
-	name: z.string(),
-	description: z.string().optional().nullable(),
-	stripe_product_id: z.string(),
-	stripe_price_ids: z.array(z.string()),
-});
-
-export type Product = {
-	id: string;
-	name: string;
-	description?: string;
-	stripe_product_id: string;
-	stripe_price_ids: string[]; // Changed to array
-};

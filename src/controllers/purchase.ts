@@ -1,4 +1,3 @@
-import type { User } from '@supabase/supabase-js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { purchaseService } from '../services/purchase.js';
 
@@ -7,7 +6,7 @@ export const getPurchasesController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const user = request.body as User;
+		const user = request.currentUser;
 
 		if (!user || !user.email) {
 			return reply.status(401).send({ message: 'User email not found' });
@@ -15,6 +14,28 @@ export const getPurchasesController = async (
 
 		const purchases = await purchaseService.listPurchases(user.email);
 		return reply.send(purchases);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
+export const createSubscriptionController = async (
+	request: FastifyRequest<{
+		Body: {
+			email: string;
+			stripeProductId: string;
+			amount: number;
+			interval: 'month' | 'year';
+			intervalCount: number;
+			endsAt: string;
+		};
+	}>,
+	reply: FastifyReply,
+) => {
+	try {
+		const subscription = await purchaseService.createSubscription(request.body);
+		return reply.status(201).send(subscription);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });

@@ -3,7 +3,6 @@ import { stripe } from '../lib/stripe.js';
 
 export class PurchaseService {
 	async listPurchases(email: string) {
-		// 1. Find the Stripe Customer ID by email
 		const customers = await stripe.customers.list({
 			email: email,
 			limit: 1,
@@ -15,14 +14,12 @@ export class PurchaseService {
 
 		const customerId = customers.data[0].id;
 
-		// 2. List successful checkout sessions for this customer
 		const sessions = await stripe.checkout.sessions.list({
 			customer: customerId,
 			status: 'complete',
 			expand: ['data.line_items'],
 		});
 
-		// 3. Map to a friendly format
 		return sessions.data.map((session) => {
 			const item = session.line_items?.data[0];
 			return {
@@ -32,13 +29,12 @@ export class PurchaseService {
 				currency: session.currency,
 				status: session.payment_status,
 				product: item?.description || 'Unknown Product',
-				receipt_url: session.url, // Or invoice_url if available
+				receipt_url: session.url,
 			};
 		});
 	}
 
 	async listAllPurchases() {
-		// List all successful checkout sessions
 		const sessions = await stripe.checkout.sessions.list({
 			status: 'complete',
 			expand: ['data.line_items', 'data.customer'],
@@ -67,6 +63,52 @@ export class PurchaseService {
 		});
 	}
 
+	async createSubscription(data: {
+		email: string;
+		stripeProductId: string;
+		amount: number;
+		interval: 'month' | 'year';
+		intervalCount: number;
+		endsAt: string;
+	}) {
+		const existing = await stripe.customers.list({
+			email: data.email,
+			limit: 1,
+		});
+
+		const customer =
+			existing.data.length > 0
+				? existing.data[0]
+				: await stripe.customers.create({ email: data.email });
+
+		const price = await stripe.prices.create({
+			product: data.stripeProductId,
+			unit_amount: Math.round(data.amount * 100),
+			currency: 'brl',
+			recurring: {
+				interval: data.interval,
+				interval_count: data.intervalCount,
+			},
+		});
+
+		const subscription = await stripe.subscriptions.create({
+			customer: customer.id,
+			items: [{ price: price.id }],
+			trial_end: Math.floor(new Date(data.endsAt).getTime() / 1000),
+		});
+
+		return {
+			id: subscription.id,
+			status: subscription.status,
+			customerId: customer.id,
+			email: data.email,
+			amount: data.amount,
+			interval: data.interval,
+			intervalCount: data.intervalCount,
+			endsAt: data.endsAt,
+		};
+	}
+
 	async listActiveSubscriptions(email: string) {
 		const customers = await stripe.customers.list({
 			email: email,
@@ -82,32 +124,18 @@ export class PurchaseService {
 		const subscriptions = await stripe.subscriptions.list({
 			customer: customerId,
 			status: 'active',
-			expand: ['data.items.data.plan'],
 		});
 
-		return Promise.all(
-			subscriptions.data.map(async (sub) => {
-				const plan = sub.items.data[0]?.plan;
-				const productId =
-					typeof plan?.product === 'string' ? plan.product : plan?.product?.id;
-
-				let productName = 'Unknown';
-				if (productId) {
-					try {
-						const product = await stripe.products.retrieve(productId);
-						productName = product.name;
-					} catch {
-						// Ignore error
-					}
-				}
-
-				return {
-					id: sub.id,
-					status: sub.status,
-					product_name: productName,
-				};
-			}),
-		);
+		return subscriptions.data.map((sub) => {
+			const item = sub.items.data[0];
+			const stripeProductId =
+				typeof item?.price?.product === 'string' ? item.price.product : null;
+			return {
+				id: sub.id,
+				status: sub.status,
+				stripeProductId,
+			};
+		});
 	}
 }
 
