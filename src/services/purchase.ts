@@ -1,4 +1,3 @@
-import type Stripe from 'stripe';
 import { stripe } from '../lib/stripe.js';
 
 export class PurchaseService {

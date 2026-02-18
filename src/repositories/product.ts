@@ -78,6 +78,10 @@ class ProductRepository {
 			.eq('stripeProductId', stripeProductId)
 			.single();
 
+		if (error) {
+			throw new Error(error.message);
+		}
+
 		return data;
 	}
 
