@@ -121,15 +121,25 @@ export class PurchaseService {
 
 		const customerId = customers.data[0].id;
 
-		const subscriptions = await stripe.subscriptions.list({
-			customer: customerId,
-			status: 'active',
-		});
+		const [active, trialing] = await Promise.all([
+			stripe.subscriptions.list({ customer: customerId, status: 'active' }),
+			stripe.subscriptions.list({ customer: customerId, status: 'trialing' }),
+		]);
 
-		return subscriptions.data.map((sub) => {
+		const subscriptions = [...active.data, ...trialing.data];
+
+		return subscriptions.map((sub) => {
 			const item = sub.items.data[0];
+			const productRef = item?.price?.product;
 			const stripeProductId =
-				typeof item?.price?.product === 'string' ? item.price.product : null;
+				typeof productRef === 'string'
+					? productRef
+					: productRef != null &&
+							typeof productRef === 'object' &&
+							'id' in productRef
+						? (productRef as { id: string }).id
+						: null;
+
 			return {
 				id: sub.id,
 				status: sub.status,
