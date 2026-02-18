@@ -2,12 +2,43 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate } from '@/middleware/auth.js';
 import {
+	createPurchaseController,
 	createSubscriptionController,
 	getAllPurchasesController,
 } from '../controllers/purchase.js';
 import { ErrorSchema } from '../types/error.js';
 
 export async function purchaseRoute(server: FastifyInstance) {
+	server.post(
+		'/purchase',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Create a Stripe checkout session for a product purchase.',
+				body: z.object({
+					productId: z.uuid(),
+					amount: z.number().positive(),
+					recorrencia: z.enum(['one_time', 'month', 'year']),
+				}),
+				response: {
+					201: z.object({
+						id: z.string(),
+						checkoutUrl: z.string().nullable(),
+						status: z.string().nullable(),
+						amount: z.number(),
+						recorrencia: z.string(),
+						productName: z.string(),
+					}),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		createPurchaseController,
+	);
+
 	server.post(
 		'/subscription',
 		{

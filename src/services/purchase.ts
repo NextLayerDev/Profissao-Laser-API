@@ -1,4 +1,5 @@
 import { stripe } from '../lib/stripe.js';
+import { productRepository } from '../repositories/product.js';
 
 export class PurchaseService {
 	async listPurchases(email: string) {
@@ -105,6 +106,58 @@ export class PurchaseService {
 			interval: data.interval,
 			intervalCount: data.intervalCount,
 			endsAt: data.endsAt,
+		};
+	}
+
+	async createPurchase(data: {
+		email: string;
+		productId: string;
+		amount: number;
+		recorrencia: 'one_time' | 'month' | 'year';
+	}) {
+		const product = await productRepository.findById(data.productId);
+
+		if (!product.stripeProductId) {
+			throw new Error('Product is not configured for payments');
+		}
+
+		const existing = await stripe.customers.list({
+			email: data.email,
+			limit: 1,
+		});
+
+		const customer =
+			existing.data.length > 0
+				? existing.data[0]
+				: await stripe.customers.create({ email: data.email });
+
+		const priceParams: Parameters<typeof stripe.prices.create>[0] = {
+			product: product.stripeProductId,
+			unit_amount: Math.round(data.amount * 100),
+			currency: 'brl',
+		};
+
+		if (data.recorrencia !== 'one_time') {
+			priceParams.recurring = { interval: data.recorrencia };
+		}
+
+		const price = await stripe.prices.create(priceParams);
+
+		const session = await stripe.checkout.sessions.create({
+			customer: customer.id,
+			line_items: [{ price: price.id, quantity: 1 }],
+			mode: data.recorrencia === 'one_time' ? 'payment' : 'subscription',
+			success_url: process.env.SUCCESS_URL ?? 'http://localhost:3000/course',
+			cancel_url: process.env.CANCEL_URL ?? 'http://localhost:3000/cancelado',
+		});
+
+		return {
+			id: session.id,
+			checkoutUrl: session.url,
+			status: session.status,
+			amount: data.amount,
+			recorrencia: data.recorrencia,
+			productName: product.name,
 		};
 	}
 

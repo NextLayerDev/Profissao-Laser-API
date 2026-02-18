@@ -7,6 +7,9 @@ export const getCourseContentController = async (
 ) => {
 	try {
 		const course = await productService.getCourseContent(request.params.slug);
+
+		console.log(course);
+
 		return reply.send(course);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';

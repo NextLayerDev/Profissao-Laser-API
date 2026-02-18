@@ -76,12 +76,26 @@ class ProductRepository {
 			.from('pl_product')
 			.select('name, slug')
 			.eq('stripeProductId', stripeProductId)
-			.single();
+			.eq('status', 'ativo')
+			.limit(1)
+			.maybeSingle();
 
 		if (error) {
 			throw new Error(error.message);
 		}
 
+		return data;
+	}
+
+	async findById(id: string) {
+		const { data, error } = await supabase
+			.from('pl_product')
+			.select('*')
+			.eq('id', id)
+			.eq('status', 'ativo')
+			.single();
+
+		if (error || !data) throw new Error('Product not found');
 		return data;
 	}
 
