@@ -32,7 +32,7 @@ app.register(fastifyJwt, {
 app.register(fastifySwagger, {
 	openapi: {
 		info: {
-			title: 'Oi-Fit API',
+			title: 'Profissão Laser API',
 			description: 'API to manage products, orders, and users',
 			version: '1.0.0',
 		},
