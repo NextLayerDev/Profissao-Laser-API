@@ -37,14 +37,21 @@ export class PurchaseService {
 	async listAllPurchases() {
 		const sessions = await stripe.checkout.sessions.list({
 			status: 'complete',
-			expand: ['data.line_items', 'data.customer'],
+			expand: [
+				'data.line_items',
+				'data.customer',
+				'data.payment_intent.latest_charge',
+			],
 			limit: 100,
 		});
 
 		return sessions.data.map((session) => {
 			const item = session.line_items?.data[0];
-			// biome-ignore lint/suspicious/noExplicitAny: Stripe.Customer can be an object or string, so we cast it to any.
+			// biome-ignore lint/suspicious/noExplicitAny: Stripe types require any for expanded nested objects.
 			const customer = session.customer as any;
+			// biome-ignore lint/suspicious/noExplicitAny: payment_intent is expanded with latest_charge.
+			const paymentIntent = session.payment_intent as any;
+			const receiptUrl = paymentIntent?.latest_charge?.receipt_url ?? null;
 
 			return {
 				id: session.id,
@@ -58,7 +65,7 @@ export class PurchaseService {
 					email:
 						customer?.email || session.customer_details?.email || 'No email',
 				},
-				receipt_url: session.url,
+				receipt_url: receiptUrl,
 			};
 		});
 	}

@@ -9,7 +9,7 @@ export async function courseRoute(server: FastifyInstance) {
 	server.get(
 		'/course/:slug',
 		{
-			// preHandler: [authenticate],
+			preHandler: [authenticate],
 			schema: {
 				description:
 					'Get course content with modules and lessons for a given slug.',
