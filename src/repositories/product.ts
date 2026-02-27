@@ -58,11 +58,11 @@ class ProductRepository {
 		}
 	}
 
-	async listActiveProducts() {
+	async listAllProducts() {
 		const { data, error } = await supabase
 			.from('pl_product')
 			.select('*')
-			.eq('status', 'ativo');
+			.in('status', ['ativo', 'inativo']);
 
 		if (error) {
 			throw new Error(error.message);

@@ -6,7 +6,7 @@ import type { ProductCreate } from '../types/product.js';
 
 export class ProductService {
 	async listProducts() {
-		return await productRepository.listActiveProducts();
+		return await productRepository.listAllProducts();
 	}
 
 	async getCourseContent(slug: string) {
