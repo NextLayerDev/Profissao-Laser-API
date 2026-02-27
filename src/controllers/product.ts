@@ -1,6 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { productService } from '../services/product.js';
-import { createProductSchema } from '../types/product.js';
+import {
+	createProductSchema,
+	updateProductStatusSchema,
+} from '../types/product.js';
 
 export const getProductsController = async (
 	_request: FastifyRequest,
@@ -26,6 +29,24 @@ export const createProductController = async (
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
+	}
+};
+
+export const updateProductStatusController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { active } = updateProductStatusSchema.parse(request.body);
+		const product = await productService.updateProductStatus(
+			request.params.id,
+			active,
+		);
+		return reply.send(product);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		const status = message === 'Product not found' ? 404 : 500;
+		return reply.status(status).send({ message });
 	}
 };
 

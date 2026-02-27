@@ -4,7 +4,7 @@ import type { ProductCreate } from '../types/product.js';
 
 type ProductData = Omit<ProductCreate, 'interval'> & {
 	id: string;
-	status: 'ativo' | 'excluido';
+	status: 'ativo' | 'excluido' | 'inativo';
 	slug: string;
 	stripeProductId: string;
 	stripePriceId: string;
@@ -96,6 +96,35 @@ class ProductRepository {
 			.single();
 
 		if (error || !data) throw new Error('Product not found');
+		return data;
+	}
+
+	async updateStatus(id: string, active: boolean) {
+		const { data: product, error: findError } = await supabase
+			.from('pl_product')
+			.select('stripeProductId')
+			.eq('id', id)
+			.neq('status', 'excluido')
+			.single();
+
+		if (findError || !product) {
+			throw new Error('Product not found');
+		}
+
+		if (product.stripeProductId) {
+			await stripe.products.update(product.stripeProductId as string, {
+				active,
+			});
+		}
+
+		const { data, error } = await supabase
+			.from('pl_product')
+			.update({ status: active ? 'ativo' : 'inativo' })
+			.eq('id', id)
+			.select()
+			.single();
+
+		if (error) throw new Error(error.message);
 		return data;
 	}
 

@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
 export const productSchema = z.object({
-	id: z.string().uuid(),
+	id: z.uuid(),
 	name: z.string(),
 	type: z.string(),
 	description: z.string().nullable(),
 	image: z.string().nullable(),
 	price: z.number(),
-	status: z.enum(['ativo', 'excluido']),
+	status: z.enum(['ativo', 'excluido', 'inativo']),
 	slug: z.string(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
@@ -36,6 +36,12 @@ export const createProductSchema = z.object({
 });
 
 export type ProductCreate = z.infer<typeof createProductSchema>;
+
+export const updateProductStatusSchema = z.object({
+	active: z.boolean(),
+});
+
+export type ProductUpdateStatus = z.infer<typeof updateProductStatusSchema>;
 
 export const createdProductResponseSchema = productSchema;
 

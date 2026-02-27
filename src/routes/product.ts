@@ -5,12 +5,14 @@ import {
 	createProductController,
 	deleteProductController,
 	getProductsController,
+	updateProductStatusController,
 } from '../controllers/product.js';
 import { ErrorSchema } from '../types/error.js';
 import {
 	createdProductResponseSchema,
 	createProductSchema,
 	productSchema,
+	updateProductStatusSchema,
 } from '../types/product.js';
 
 export async function productRoute(server: FastifyInstance) {
@@ -48,6 +50,27 @@ export async function productRoute(server: FastifyInstance) {
 			},
 		},
 		createProductController,
+	);
+
+	server.patch(
+		'/product/:id/status',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Activate or deactivate a product (also syncs with Stripe).',
+				params: z.object({ id: z.string() }),
+				body: updateProductStatusSchema,
+				response: {
+					200: productSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Products'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		updateProductStatusController,
 	);
 
 	server.delete(

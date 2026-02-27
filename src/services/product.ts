@@ -34,6 +34,10 @@ export class ProductService {
 		return await productRepository.deleteProduct(id);
 	}
 
+	async updateProductStatus(id: string, active: boolean) {
+		return await productRepository.updateStatus(id, active);
+	}
+
 	async createProduct(data: ProductCreate) {
 		const stripeProduct = await stripe.products.create({
 			name: data.name,
