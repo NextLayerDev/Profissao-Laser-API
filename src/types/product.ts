@@ -37,6 +37,16 @@ export const createProductSchema = z.object({
 
 export type ProductCreate = z.infer<typeof createProductSchema>;
 
+export const updateProductSchema = z.object({
+	name: z.string().optional(),
+	description: z.string().optional(),
+	category: z.string().optional(),
+	price: z.number().positive().optional(),
+	refundDays: z.number().int().positive().optional(),
+});
+
+export type ProductUpdate = z.infer<typeof updateProductSchema>;
+
 export const updateProductStatusSchema = z.object({
 	active: z.boolean(),
 });

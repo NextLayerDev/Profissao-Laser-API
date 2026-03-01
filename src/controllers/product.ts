@@ -1,7 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { uploadCourseImage } from '../lib/storage.js';
+import { productRepository } from '../repositories/product.js';
 import { productService } from '../services/product.js';
 import {
 	createProductSchema,
+	updateProductSchema,
 	updateProductStatusSchema,
 } from '../types/product.js';
 
@@ -42,6 +45,44 @@ export const updateProductStatusController = async (
 			request.params.id,
 			active,
 		);
+		return reply.send(product);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		const status = message === 'Product not found' ? 404 : 500;
+		return reply.status(status).send({ message });
+	}
+};
+
+export const updateProductController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const data = updateProductSchema.parse(request.body);
+		const product = await productService.updateProduct(request.params.id, data);
+		return reply.send(product);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		const status = message === 'Product not found' ? 404 : 500;
+		return reply.status(status).send({ message });
+	}
+};
+
+export const uploadProductImageController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const file = await request.file();
+		if (!file) return reply.status(400).send({ message: 'No file provided' });
+
+		const buffer = await file.toBuffer();
+		const ext = file.filename.split('.').pop() ?? 'jpg';
+		const storagePath = `${request.params.id}/${crypto.randomUUID()}.${ext}`;
+
+		const url = await uploadCourseImage(buffer, storagePath, file.mimetype);
+		const product = await productRepository.updateImage(request.params.id, url);
+
 		return reply.send(product);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';

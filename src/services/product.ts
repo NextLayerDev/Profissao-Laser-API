@@ -30,6 +30,43 @@ export class ProductService {
 		};
 	}
 
+	async updateProduct(
+		id: string,
+		data: import('../types/product.js').ProductUpdate,
+	) {
+		const existing = await productRepository.findById(id);
+
+		if (data.name && existing.stripeProductId) {
+			await stripe.products.update(existing.stripeProductId as string, {
+				name: data.name,
+				...(data.description !== undefined && {
+					description: data.description,
+				}),
+			});
+		}
+
+		let stripePriceId: string | undefined;
+		if (
+			data.price !== undefined &&
+			existing.stripePriceId &&
+			existing.stripeProductId
+		) {
+			await stripe.prices.update(existing.stripePriceId as string, {
+				active: false,
+			});
+
+			const newPrice = await stripe.prices.create({
+				product: existing.stripeProductId as string,
+				unit_amount: Math.round(data.price * 100),
+				currency: 'brl',
+			});
+
+			stripePriceId = newPrice.id;
+		}
+
+		return await productRepository.update(id, { ...data, stripePriceId });
+	}
+
 	async deleteProduct(id: string) {
 		return await productRepository.deleteProduct(id);
 	}

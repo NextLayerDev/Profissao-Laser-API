@@ -92,7 +92,7 @@ class ProductRepository {
 			.from('pl_product')
 			.select('*')
 			.eq('id', id)
-			.eq('status', 'ativo')
+			.neq('status', 'excluido')
 			.single();
 
 		if (error || !data) throw new Error('Product not found');
@@ -125,6 +125,42 @@ class ProductRepository {
 			.single();
 
 		if (error) throw new Error(error.message);
+		return data;
+	}
+
+	async update(
+		id: string,
+		data: {
+			name?: string;
+			description?: string;
+			category?: string;
+			price?: number;
+			refundDays?: number;
+			stripePriceId?: string;
+		},
+	) {
+		const { data: product, error } = await supabase
+			.from('pl_product')
+			.update({ ...data, updatedAt: new Date().toISOString() })
+			.eq('id', id)
+			.neq('status', 'excluido')
+			.select()
+			.single();
+
+		if (error || !product) throw new Error('Product not found');
+		return product;
+	}
+
+	async updateImage(id: string, imageUrl: string) {
+		const { data, error } = await supabase
+			.from('pl_product')
+			.update({ image: imageUrl })
+			.eq('id', id)
+			.neq('status', 'excluido')
+			.select()
+			.single();
+
+		if (error || !data) throw new Error('Product not found');
 		return data;
 	}
 
