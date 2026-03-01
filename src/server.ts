@@ -1,5 +1,6 @@
 import { fastifyCors } from '@fastify/cors';
 import { fastifyJwt } from '@fastify/jwt';
+import multipart from '@fastify/multipart';
 import { fastifySwagger } from '@fastify/swagger';
 import ScalarApiReference from '@scalar/fastify-api-reference';
 import { fastify } from 'fastify';
@@ -15,6 +16,8 @@ import { routes } from './router.js';
 const app = fastify().withTypeProvider<ZodTypeProvider>();
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
+
+app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024 } }); // 500 MB
 
 app.register(fastifyCors, {
 	origin: true,
