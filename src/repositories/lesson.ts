@@ -64,6 +64,30 @@ class LessonRepository {
 		if (error) throw new Error(error.message);
 		return data;
 	}
+
+	async updateVideo(id: string, videoUrl: string) {
+		const { data, error } = await supabase
+			.from('pl_lesson')
+			.update({ videoUrl, updatedAt: new Date().toISOString() })
+			.eq('id', id)
+			.select()
+			.single();
+
+		if (error || !data) throw new Error('Lesson not found');
+		return data;
+	}
+
+	async reorder(lessonIds: string[]) {
+		const now = new Date().toISOString();
+		await Promise.all(
+			lessonIds.map((id, index) =>
+				supabase
+					.from('pl_lesson')
+					.update({ order: index, updatedAt: now })
+					.eq('id', id),
+			),
+		);
+	}
 }
 
 export const lessonRepository = new LessonRepository();

@@ -5,12 +5,14 @@ import {
 	createModuleController,
 	deleteModuleController,
 	listModulesController,
+	reorderModulesController,
 	updateModuleController,
 } from '../controllers/module.js';
 import { ErrorSchema } from '../types/error.js';
 import {
 	createModuleSchema,
 	moduleSchema,
+	reorderModulesSchema,
 	updateModuleSchema,
 } from '../types/module.js';
 
@@ -69,6 +71,24 @@ export async function moduleRoute(server: FastifyInstance) {
 			},
 		},
 		updateModuleController,
+	);
+
+	server.patch(
+		'/module/reorder',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Reorder modules by position in the given array.',
+				body: reorderModulesSchema,
+				response: {
+					204: z.null(),
+					500: ErrorSchema,
+				},
+				tags: ['Modules'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		reorderModulesController,
 	);
 
 	server.delete(

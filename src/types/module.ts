@@ -28,3 +28,8 @@ export const updateModuleSchema = z.object({
 });
 
 export type ModuleUpdate = z.infer<typeof updateModuleSchema>;
+
+export const reorderModulesSchema = z.object({
+	productId: z.string(),
+	moduleIds: z.array(z.string()).min(1),
+});

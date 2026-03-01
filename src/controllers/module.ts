@@ -1,6 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { moduleService } from '../services/module.js';
-import { createModuleSchema, updateModuleSchema } from '../types/module.js';
+import {
+	createModuleSchema,
+	reorderModulesSchema,
+	updateModuleSchema,
+} from '../types/module.js';
 
 export const createModuleController = async (
 	request: FastifyRequest,
@@ -52,6 +56,20 @@ export const listModulesController = async (
 	try {
 		const modules = await moduleService.listByProduct(request.params.productId);
 		return reply.send(modules);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
+export const reorderModulesController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	try {
+		const { moduleIds } = reorderModulesSchema.parse(request.body);
+		await moduleService.reorder(moduleIds);
+		return reply.status(204).send();
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });

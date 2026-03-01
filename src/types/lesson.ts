@@ -39,3 +39,8 @@ export const updateLessonSchema = z.object({
 });
 
 export type LessonUpdate = z.infer<typeof updateLessonSchema>;
+
+export const reorderLessonsSchema = z.object({
+	moduleId: z.string(),
+	lessonIds: z.array(z.string()).min(1),
+});

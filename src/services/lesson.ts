@@ -19,6 +19,10 @@ class LessonService {
 	async listByModule(moduleId: string) {
 		return await lessonRepository.listByModule(moduleId);
 	}
+
+	async reorder(lessonIds: string[]) {
+		return await lessonRepository.reorder(lessonIds);
+	}
 }
 
 export const lessonService = new LessonService();

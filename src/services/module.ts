@@ -19,6 +19,10 @@ class ModuleService {
 	async listByProduct(productId: string) {
 		return await moduleRepository.listByProduct(productId);
 	}
+
+	async reorder(moduleIds: string[]) {
+		return await moduleRepository.reorder(moduleIds);
+	}
 }
 
 export const moduleService = new ModuleService();

@@ -53,6 +53,18 @@ class ModuleRepository {
 		if (error) throw new Error(error.message);
 		return data;
 	}
+
+	async reorder(moduleIds: string[]) {
+		const now = new Date().toISOString();
+		await Promise.all(
+			moduleIds.map((id, index) =>
+				supabase
+					.from('pl_module')
+					.update({ order: index, updatedAt: now })
+					.eq('id', id),
+			),
+		);
+	}
 }
 
 export const moduleRepository = new ModuleRepository();
