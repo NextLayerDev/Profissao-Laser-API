@@ -90,35 +90,73 @@ docker run -p 3333:3333 --env-file .env profissao-laser-api
 
 ### Products
 
-| Method | Route          | Auth | Description              |
-|--------|----------------|------|--------------------------|
-| GET    | `/products`    | No   | List all active products |
-| POST   | `/product`     | Yes  | Create product           |
-| DELETE | `/product/:id` | Yes  | Archive product          |
+| Method | Route                  | Auth | Description                        |
+|--------|------------------------|------|------------------------------------|
+| GET    | `/products`            | No   | List all active products           |
+| POST   | `/product`             | Yes  | Create product                     |
+| PATCH  | `/product/:id`         | Yes  | Update product                     |
+| PATCH  | `/product/:id/status`  | Yes  | Activate or deactivate product     |
+| POST   | `/product/:id/image`   | Yes  | Upload product cover image         |
+| DELETE | `/product/:id`         | Yes  | Archive product                    |
 
 ### Courses
 
-| Method | Route           | Auth | Description                      |
-|--------|-----------------|------|----------------------------------|
-| GET    | `/course/:slug` | Yes  | Get course with modules & lessons|
+| Method | Route           | Auth | Description                       |
+|--------|-----------------|------|-----------------------------------|
+| GET    | `/course/:slug` | Yes  | Get course with modules & lessons |
 
 ### Modules
 
-| Method | Route                 | Auth | Description          |
-|--------|-----------------------|------|----------------------|
-| GET    | `/module/:productId`  | Yes  | List modules         |
-| POST   | `/module`             | Yes  | Create module        |
-| PUT    | `/module/:id`         | Yes  | Update module        |
-| DELETE | `/module/:id`         | Yes  | Delete module        |
+| Method | Route                  | Auth | Description              |
+|--------|------------------------|------|--------------------------|
+| GET    | `/module/:productId`   | Yes  | List modules             |
+| POST   | `/module`              | Yes  | Create module            |
+| PUT    | `/module/:id`          | Yes  | Update module            |
+| PATCH  | `/module/reorder`      | Yes  | Reorder modules          |
+| DELETE | `/module/:id`          | Yes  | Delete module            |
 
 ### Lessons
 
-| Method | Route                       | Auth | Description      |
-|--------|-----------------------------|------|------------------|
-| GET    | `/module/:moduleId/lessons` | Yes  | List lessons     |
-| POST   | `/lesson`                   | Yes  | Create lesson    |
-| PUT    | `/lesson/:id`               | Yes  | Update lesson    |
-| DELETE | `/lesson/:id`               | Yes  | Delete lesson    |
+| Method | Route                       | Auth | Description              |
+|--------|-----------------------------|------|--------------------------|
+| GET    | `/module/:moduleId/lessons` | Yes  | List lessons             |
+| POST   | `/lesson`                   | Yes  | Create lesson            |
+| PUT    | `/lesson/:id`               | Yes  | Update lesson            |
+| POST   | `/lesson/:id/video`         | Yes  | Upload lesson video      |
+| PATCH  | `/lesson/reorder`           | Yes  | Reorder lessons          |
+| DELETE | `/lesson/:id`               | Yes  | Delete lesson            |
+
+### Materials
+
+| Method | Route                                    | Auth | Description                   |
+|--------|------------------------------------------|------|-------------------------------|
+| GET    | `/lesson/:lessonId/materials`            | Yes  | List lesson materials         |
+| POST   | `/lesson/:lessonId/material`             | Yes  | Upload support material       |
+| POST   | `/lesson/:lessonId/file`                 | Yes  | Upload document file          |
+| DELETE | `/lesson/:lessonId/material/:materialId` | Yes  | Remove material from lesson   |
+
+### Quiz
+
+| Method | Route                        | Auth | Description                   |
+|--------|------------------------------|------|-------------------------------|
+| GET    | `/lesson/:lessonId/quiz`     | Yes  | Get quiz with questions       |
+| POST   | `/lesson/:lessonId/quiz`     | Yes  | Create quiz for lesson        |
+| DELETE | `/quiz/:quizId`              | Yes  | Delete quiz                   |
+| POST   | `/quiz/:quizId/question`     | Yes  | Add question to quiz          |
+| PATCH  | `/question/:questionId`      | Yes  | Update question               |
+| DELETE | `/question/:questionId`      | Yes  | Delete question               |
+
+### Classes
+
+| Method | Route                              | Auth | Description                   |
+|--------|------------------------------------|------|-------------------------------|
+| GET    | `/classes`                         | Yes  | List all classes              |
+| GET    | `/class/:id`                       | Yes  | Get class by ID               |
+| POST   | `/class`                           | Yes  | Create class                  |
+| PATCH  | `/class/:id`                       | Yes  | Update class                  |
+| DELETE | `/class/:id`                       | Yes  | Delete class                  |
+| POST   | `/class/:id/product`               | Yes  | Add product to class          |
+| DELETE | `/class/:id/product/:productId`    | Yes  | Remove product from class     |
 
 ### Coupons
 
@@ -130,10 +168,11 @@ docker run -p 3333:3333 --env-file .env profissao-laser-api
 
 ### Purchases
 
-| Method | Route           | Auth | Description          |
-|--------|-----------------|------|----------------------|
-| POST   | `/subscription` | No   | Create subscription  |
-| GET    | `/sales`        | Yes  | List all purchases   |
+| Method | Route           | Auth | Description                          |
+|--------|-----------------|------|--------------------------------------|
+| POST   | `/purchase`     | Yes  | Create Stripe checkout session       |
+| POST   | `/subscription` | No   | Create Stripe subscription by email  |
+| GET    | `/sales`        | Yes  | List all purchases                   |
 
 ### Users & Customers
 
