@@ -6,6 +6,10 @@ class ClassService {
 		return await classRepository.listAll();
 	}
 
+	async getClassById(id: string) {
+		return await classRepository.findById(id);
+	}
+
 	async createClass(data: ClassCreate) {
 		return await classRepository.create(data);
 	}

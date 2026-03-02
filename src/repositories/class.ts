@@ -24,6 +24,29 @@ class ClassRepository {
 		}));
 	}
 
+	async findById(id: string) {
+		const { data, error } = await supabase
+			.from('pl_class')
+			.select(`
+				*,
+				pl_class_product (
+					pl_product (*)
+				)
+			`)
+			.eq('id', id)
+			.single();
+
+		if (error || !data) throw new Error('Class not found');
+
+		return {
+			...data,
+			products: data.pl_class_product.map(
+				(cp: { pl_product: unknown }) => cp.pl_product,
+			),
+			pl_class_product: undefined,
+		};
+	}
+
 	async create(data: ClassCreate) {
 		const { data: cls, error } = await supabase
 			.from('pl_class')

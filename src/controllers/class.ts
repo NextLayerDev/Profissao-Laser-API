@@ -19,6 +19,20 @@ export const getClassesController = async (
 	}
 };
 
+export const getClassByIdController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const cls = await classService.getClassById(request.params.id);
+		return reply.send(cls);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		const status = message === 'Class not found' ? 404 : 500;
+		return reply.status(status).send({ message });
+	}
+};
+
 export const createClassController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,

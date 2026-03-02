@@ -7,6 +7,11 @@ export const classSchema = z.object({
 	tier: z.enum(['prata', 'ouro', 'platina']),
 	description: z.string().nullable(),
 	status: z.enum(['ativo', 'inativo']),
+	aula: z.boolean(),
+	chat: z.boolean(),
+	vetorizacao: z.boolean(),
+	suporte: z.boolean(),
+	comunidade: z.boolean(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 });
@@ -20,6 +25,11 @@ export const createClassSchema = z.object({
 	tier: z.enum(['prata', 'ouro', 'platina']),
 	description: z.string().optional(),
 	status: z.enum(['ativo', 'inativo']).default('ativo'),
+	aula: z.boolean().default(false),
+	chat: z.boolean().default(false),
+	vetorizacao: z.boolean().default(false),
+	suporte: z.boolean().default(false),
+	comunidade: z.boolean().default(false),
 });
 
 export const updateClassSchema = z.object({
@@ -27,6 +37,11 @@ export const updateClassSchema = z.object({
 	tier: z.enum(['prata', 'ouro', 'platina']).optional(),
 	description: z.string().optional(),
 	status: z.enum(['ativo', 'inativo']).optional(),
+	aula: z.boolean().optional(),
+	chat: z.boolean().optional(),
+	vetorizacao: z.boolean().optional(),
+	suporte: z.boolean().optional(),
+	comunidade: z.boolean().optional(),
 });
 
 export const addProductToClassSchema = z.object({

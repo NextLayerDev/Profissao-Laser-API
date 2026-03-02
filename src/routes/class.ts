@@ -5,6 +5,7 @@ import {
 	addProductToClassController,
 	createClassController,
 	deleteClassController,
+	getClassByIdController,
 	getClassesController,
 	removeProductFromClassController,
 	updateClassController,
@@ -34,6 +35,25 @@ export async function classRoute(server: FastifyInstance) {
 			},
 		},
 		getClassesController,
+	);
+
+	server.get(
+		'/class/:id',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Get a class by ID with its included products.',
+				params: z.object({ id: z.string().uuid() }),
+				response: {
+					200: classWithProductsSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Classes'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getClassByIdController,
 	);
 
 	server.post(
