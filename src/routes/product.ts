@@ -103,8 +103,18 @@ export async function productRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticate],
 			schema: {
-				description:
-					'Update a product via multipart/form-data. Accepts text fields (name, description, category, price, refundDays) and an optional image file.',
+				description: [
+					'Update a product via **multipart/form-data**. All fields are optional.',
+					'',
+					'| Field | Type | Required | Description |',
+					'|-------|------|:--------:|-------------|',
+					'| `name` | string | — | Product name (synced with Stripe) |',
+					'| `description` | string | — | Product description |',
+					'| `category` | string | — | Product category |',
+					'| `price` | number (as string) | — | Price in BRL (synced with Stripe) |',
+					'| `refundDays` | number (as string) | — | Refund window in days |',
+					'| `file` | **binary** | — | Product cover image (JPEG, PNG, WebP) |',
+				].join('\n'),
 				params: z.object({ id: z.string() }),
 				consumes: ['multipart/form-data'],
 				response: {
@@ -125,8 +135,13 @@ export async function productRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticate],
 			schema: {
-				description:
-					'Upload a cover image for a product. Send as multipart/form-data with a single field: file.',
+				description: [
+					'Upload a cover image for a product via **multipart/form-data**.',
+					'',
+					'| Field | Type | Required | Description |',
+					'|-------|------|:--------:|-------------|',
+					'| `file` | **binary** | ✓ | Image file (JPEG, PNG, WebP, etc.) |',
+				].join('\n'),
 				params: z.object({ id: z.string() }),
 				consumes: ['multipart/form-data'],
 				response: {

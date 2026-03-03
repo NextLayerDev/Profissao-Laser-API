@@ -86,8 +86,13 @@ export async function lessonRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticate],
 			schema: {
-				description:
-					'Upload a video for a lesson. Send as multipart/form-data with a single field: file.',
+				description: [
+					'Upload a video for a lesson via **multipart/form-data**.',
+					'',
+					'| Field | Type | Required | Description |',
+					'|-------|------|:--------:|-------------|',
+					'| `file` | **binary** | ✓ | Video file (MP4, MOV, AVI, etc.) |',
+				].join('\n'),
 				params: z.object({ id: z.string() }),
 				consumes: ['multipart/form-data'],
 				response: {
@@ -164,8 +169,14 @@ export async function lessonRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticate],
 			schema: {
-				description:
-					'Upload a support material (PDF, Word, image) to a lesson. Send as multipart/form-data with fields: file (required), name (optional).',
+				description: [
+					'Upload a support material to a lesson via **multipart/form-data**.',
+					'',
+					'| Field | Type | Required | Description |',
+					'|-------|------|:--------:|-------------|',
+					'| `file` | **binary** | ✓ | Material file (PDF, Word, image, etc.) |',
+					'| `name` | string | — | Display name for the material (defaults to filename) |',
+				].join('\n'),
 				params: z.object({ lessonId: z.string() }),
 				consumes: ['multipart/form-data'],
 				response: {
@@ -185,8 +196,14 @@ export async function lessonRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticate],
 			schema: {
-				description:
-					'Upload a document file (PDF, Word, ODT or any file) to a lesson. Send as multipart/form-data with fields: file (required), name (optional).',
+				description: [
+					'Upload a document file to a lesson via **multipart/form-data**.',
+					'',
+					'| Field | Type | Required | Description |',
+					'|-------|------|:--------:|-------------|',
+					'| `file` | **binary** | ✓ | Document file (PDF, Word, ODT, or any file) |',
+					'| `name` | string | — | Display name for the file (defaults to filename) |',
+				].join('\n'),
 				params: z.object({ lessonId: z.string() }),
 				consumes: ['multipart/form-data'],
 				response: {
