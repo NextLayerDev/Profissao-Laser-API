@@ -42,7 +42,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 	server.post(
 		'/subscription',
 		{
-			// preHandler: [authenticate],
+			preHandler: [authenticate],
 			schema: {
 				description: 'Create a Stripe subscription for a user by email.',
 				body: z.object({
