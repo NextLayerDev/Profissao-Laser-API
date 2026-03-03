@@ -5,13 +5,11 @@ import type { CustomerRegister, Login, UserRegister } from '../types/auth.js';
 
 export class AuthService {
 	async registerUser(userData: UserRegister) {
-		const permissionMap: Record<string, number> = {
-			'Super Admin': 1,
-			admin: 1,
-			Financial: 2,
-			colaborador: 2,
-		};
-		const permissionId = permissionMap[userData.role] ?? 1;
+		const { data: permissionData, error: permissionError } =
+			await usersRepository.getPermissionByRole(userData.role);
+
+		if (permissionError || !permissionData)
+			throw new Error(`No permission found for role: ${userData.role}`);
 
 		const { data: authData, error: authError } =
 			await supabase.auth.admin.createUser({
@@ -32,7 +30,7 @@ export class AuthService {
 		const userToCreate = {
 			...rest,
 			id: authData.user.id,
-			Permissions: permissionId,
+			Permissions: permissionData.id,
 		};
 
 		await usersRepository.createUser(userToCreate);

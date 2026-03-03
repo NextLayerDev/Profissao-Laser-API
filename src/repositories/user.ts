@@ -25,6 +25,22 @@ class UsersRepository {
 	async deleteUser(userId: string) {
 		return await supabase.from('Users').delete().eq('id', userId);
 	}
+
+	async getPermissionByRole(role: string) {
+		return await supabase
+			.from('Permissions')
+			.select('id')
+			.eq('role', role)
+			.single();
+	}
+
+	async getUserPermissions(userId: string) {
+		return await supabase
+			.from('Users')
+			.select('Permissions(canEdit, canView, canAdmin, canPrice)')
+			.eq('id', userId)
+			.single();
+	}
 }
 
 export const usersRepository = new UsersRepository();

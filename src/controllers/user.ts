@@ -54,6 +54,22 @@ export class UsersController {
 			reply.status(200).send({ message: 'User deleted' });
 		}
 	}
+
+	async getUserPermissions(
+		request: FastifyRequest<{ Params: { id: string } }>,
+		reply: FastifyReply,
+	) {
+		const { id } = request.params;
+		const { data, error } = await usersService.getUserPermissions(id);
+
+		if (error) {
+			reply.status(500).send({ error });
+		} else if (!data) {
+			reply.status(404).send({ error: 'User not found' });
+		} else {
+			reply.status(200).send(data);
+		}
+	}
 }
 
 export const usersController = new UsersController();

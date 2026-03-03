@@ -76,4 +76,29 @@ export async function userRoute(server: FastifyInstance) {
 		},
 		usersController.deleteUser,
 	);
+
+	server.get(
+		'/user/:id/permissions',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Get permissions of a user',
+				params: z.object({ id: z.uuid() }),
+				response: {
+					200: z.object({
+						Permissions: z.object({
+							canEdit: z.boolean(),
+							canView: z.boolean(),
+							canAdmin: z.boolean(),
+							canPrice: z.boolean(),
+						}),
+					}),
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Users'],
+			},
+		},
+		usersController.getUserPermissions,
+	);
 }

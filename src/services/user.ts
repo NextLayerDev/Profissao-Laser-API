@@ -17,6 +17,10 @@ export class UsersService {
 	async deleteUser(id: string) {
 		return await usersRepository.deleteUser(id);
 	}
+
+	async getUserPermissions(id: string) {
+		return await usersRepository.getUserPermissions(id);
+	}
 }
 
 export const usersService = new UsersService();
