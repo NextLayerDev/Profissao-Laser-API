@@ -79,6 +79,15 @@ export const authenticateCommunity = async (
 
 	const user = request.currentUser;
 
+	// Users (staff) have unrestricted community access
+	const { data: platformUser } = await supabase
+		.from('Users')
+		.select('id')
+		.or(`id.eq.${user.id},email.eq.${user.email}`)
+		.maybeSingle();
+
+	if (platformUser) return;
+
 	// Fetch customer from pl_customer
 	const { data: customer, error: customerError } = await supabase
 		.from('pl_customer')
@@ -101,7 +110,7 @@ export const authenticateCommunity = async (
 	}
 
 	// Verify active subscription in a class with comunidade: true
-	const { data: subscription } = await supabase
+	const { data: subscriptions } = await supabase
 		.from('pl_subscription')
 		.select(`
 			status,
@@ -114,11 +123,9 @@ export const authenticateCommunity = async (
 			)
 		`)
 		.eq('userId', customer.id)
-		.eq('status', 'active')
-		.maybeSingle();
+		.eq('status', 'active');
 
-	const hasCommunityAccess = (() => {
-		if (!subscription) return false;
+	const hasCommunityAccess = (subscriptions ?? []).some((subscription) => {
 		// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
 		const product = (subscription as any).pl_product;
 		if (!product) return false;
@@ -129,7 +136,7 @@ export const authenticateCommunity = async (
 			// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
 			(cp: any) => cp.pl_class?.comunidade === true,
 		);
-	})();
+	});
 
 	if (!hasCommunityAccess) {
 		return reply.status(403).send({
