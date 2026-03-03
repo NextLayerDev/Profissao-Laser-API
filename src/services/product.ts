@@ -93,14 +93,15 @@ export class ProductService {
 
 		const id = crypto.randomUUID();
 
-		const slug =
+		const baseSlug =
 			data.slug ??
-			`${data.name
+			data.name
 				.toLowerCase()
 				.normalize('NFD')
 				.replace(/[\u0300-\u036f]/g, '')
 				.replace(/\s+/g, '-')
-				.replace(/[^a-z0-9-]/g, '')}-${id.split('-')[0]}`;
+				.replace(/[^a-z0-9-]/g, '');
+		const slug = `${baseSlug}-${id.split('-')[0]}`;
 
 		const product = await productRepository.create({
 			id,
