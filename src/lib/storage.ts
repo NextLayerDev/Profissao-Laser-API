@@ -1,9 +1,8 @@
-import type { Readable } from 'node:stream';
 import { supabase } from './supabase.js';
 
 async function upload(
 	bucket: string,
-	body: Buffer | Readable,
+	body: Buffer,
 	path: string,
 	mimetype: string,
 ): Promise<string> {
@@ -26,11 +25,11 @@ export async function uploadMaterialFile(
 }
 
 export async function uploadLessonVideo(
-	stream: Readable,
+	buffer: Buffer,
 	path: string,
 	mimetype: string,
 ): Promise<string> {
-	return upload('lesson-materials', stream, path, mimetype);
+	return upload('lesson-materials', buffer, path, mimetype);
 }
 
 export async function uploadCourseImage(
