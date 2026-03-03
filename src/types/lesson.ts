@@ -44,3 +44,11 @@ export const reorderLessonsSchema = z.object({
 	moduleId: z.string(),
 	lessonIds: z.array(z.string()).min(1),
 });
+
+export const presignedVideoUrlSchema = z.object({
+	filename: z.string().optional(),
+});
+
+export const confirmVideoUploadSchema = z.object({
+	path: z.string().min(1, 'Path is required'),
+});

@@ -13,7 +13,13 @@ import {
 
 import { routes } from './router.js';
 
-const app = fastify().withTypeProvider<ZodTypeProvider>();
+const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+
+const app = fastify({
+	connectionTimeout: 0,
+	requestTimeout: THIRTY_MINUTES_MS,
+	keepAliveTimeout: THIRTY_MINUTES_MS,
+}).withTypeProvider<ZodTypeProvider>();
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
 

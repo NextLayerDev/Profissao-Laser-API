@@ -2,7 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate } from '@/middleware/auth.js';
 import {
+	confirmVideoUploadController,
 	createLessonController,
+	createPresignedVideoUrlController,
 	deleteLessonController,
 	listLessonsController,
 	reorderLessonsController,
@@ -17,8 +19,10 @@ import {
 } from '../controllers/material.js';
 import { ErrorSchema } from '../types/error.js';
 import {
+	confirmVideoUploadSchema,
 	createLessonSchema,
 	lessonSchema,
+	presignedVideoUrlSchema,
 	reorderLessonsSchema,
 	updateLessonSchema,
 } from '../types/lesson.js';
@@ -82,12 +86,65 @@ export async function lessonRoute(server: FastifyInstance) {
 	);
 
 	server.post(
+		'/lesson/:id/video/presigned-url',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: [
+					'Get a signed upload URL for direct video upload to Supabase Storage.',
+					'Use this for large videos to avoid 502/timeouts. Flow: 1) Call this endpoint, 2) Upload file to Supabase using `uploadToSignedUrl(path, token, file)` from Supabase client, 3) Call PATCH `/lesson/:id/video/confirm` with the path.',
+					'',
+					'| Field | Type | Required | Description |',
+					'|-------|------|:--------:|-------------|',
+					'| `filename` | string | — | Original filename (used for extension, defaults to .mp4) |',
+				].join('\n'),
+				params: z.object({ id: z.string() }),
+				body: presignedVideoUrlSchema.optional(),
+				response: {
+					200: z.object({
+						path: z.string(),
+						token: z.string(),
+						bucket: z.string(),
+					}),
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Lessons'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		createPresignedVideoUrlController,
+	);
+
+	server.patch(
+		'/lesson/:id/video/confirm',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Confirm video upload after direct upload to Supabase. Call after uploading via presigned URL.',
+				params: z.object({ id: z.string() }),
+				body: confirmVideoUploadSchema,
+				response: {
+					200: lessonSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Lessons'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		confirmVideoUploadController,
+	);
+
+	server.post(
 		'/lesson/:id/video',
 		{
 			preHandler: [authenticate],
 			schema: {
 				description: [
 					'Upload a video for a lesson via **multipart/form-data**.',
+					'For large videos, prefer POST `/lesson/:id/video/presigned-url` + direct upload.',
 					'',
 					'| Field | Type | Required | Description |',
 					'|-------|------|:--------:|-------------|',

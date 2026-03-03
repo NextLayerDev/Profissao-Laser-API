@@ -1,5 +1,26 @@
 import { supabase } from './supabase.js';
 
+const LESSON_MATERIALS_BUCKET = 'lesson-materials';
+
+export async function createSignedUploadUrl(
+	path: string,
+): Promise<{ path: string; token: string }> {
+	const { data, error } = await supabase.storage
+		.from(LESSON_MATERIALS_BUCKET)
+		.createSignedUploadUrl(path);
+
+	if (error) throw new Error(error.message);
+	if (!data?.path || !data?.token) throw new Error('Invalid signed upload URL response');
+	return { path: data.path, token: data.token };
+}
+
+export function getLessonVideoPublicUrl(path: string): string {
+	const { data } = supabase.storage
+		.from(LESSON_MATERIALS_BUCKET)
+		.getPublicUrl(path);
+	return data.publicUrl;
+}
+
 async function upload(
 	bucket: string,
 	body: Buffer,
