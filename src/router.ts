@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { authRoute } from './routes/auth.js';
 import { classRoute } from './routes/class.js';
+import { communityRoute } from './routes/community.js';
 import { couponRoute } from './routes/coupon.js';
 import { courseRoute } from './routes/course.js';
 import { customerRoute } from './routes/customer.js';
@@ -14,6 +15,7 @@ import { userRoute } from './routes/user.js';
 export const routes = async (app: FastifyInstance) => {
 	app.register(authRoute);
 	app.register(classRoute);
+	app.register(communityRoute);
 	app.register(couponRoute);
 	app.register(courseRoute);
 	app.register(customerRoute);
