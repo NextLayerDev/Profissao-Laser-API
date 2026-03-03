@@ -72,11 +72,10 @@ export const uploadLessonVideoController = async (
 		const file = await request.file();
 		if (!file) return reply.status(400).send({ message: 'No file provided' });
 
-		const buffer = await file.toBuffer();
 		const ext = file.filename.split('.').pop() ?? 'mp4';
 		const storagePath = `${request.params.id}/video/${crypto.randomUUID()}.${ext}`;
 
-		const url = await uploadLessonVideo(buffer, storagePath, file.mimetype);
+		const url = await uploadLessonVideo(file.file, storagePath, file.mimetype);
 		const lesson = await lessonRepository.updateVideo(request.params.id, url);
 
 		return reply.send(lesson);

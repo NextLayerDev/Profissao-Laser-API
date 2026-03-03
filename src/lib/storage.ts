@@ -1,14 +1,15 @@
+import type { Readable } from 'node:stream';
 import { supabase } from './supabase.js';
 
 async function upload(
 	bucket: string,
-	buffer: Buffer,
+	body: Buffer | Readable,
 	path: string,
 	mimetype: string,
 ): Promise<string> {
 	const { error } = await supabase.storage
 		.from(bucket)
-		.upload(path, buffer, { contentType: mimetype, upsert: false });
+		.upload(path, body, { contentType: mimetype, upsert: false });
 
 	if (error) throw new Error(error.message);
 
@@ -25,11 +26,11 @@ export async function uploadMaterialFile(
 }
 
 export async function uploadLessonVideo(
-	buffer: Buffer,
+	stream: Readable,
 	path: string,
 	mimetype: string,
 ): Promise<string> {
-	return upload('lesson-materials', buffer, path, mimetype);
+	return upload('lesson-materials', stream, path, mimetype);
 }
 
 export async function uploadCourseImage(
