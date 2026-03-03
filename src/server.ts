@@ -17,7 +17,7 @@ const app = fastify().withTypeProvider<ZodTypeProvider>();
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
 
-app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024 } }); // 500 MB
+app.register(multipart, { limits: { fileSize: 1000 * 1024 * 1024 } }); // 500 MB
 
 app.register(fastifyCors, {
 	origin: true,
