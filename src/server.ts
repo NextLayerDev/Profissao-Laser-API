@@ -20,8 +20,9 @@ app.setSerializerCompiler(serializerCompiler);
 app.register(multipart, { limits: { fileSize: 1000 * 1024 * 1024 } }); // 500 MB
 
 app.register(fastifyCors, {
-	origin: true,
+	origin: 'https://profissao-laser-profissao-laser-front.1nwz76.easypanel.host',
 	methods: ['GET', 'PUT', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+	allowedHeaders: ['Content-Type', 'Authorization'],
 });
 
 if (!process.env.JWT_SECRET) {
