@@ -5,9 +5,13 @@ import type { CustomerRegister, Login, UserRegister } from '../types/auth.js';
 
 export class AuthService {
 	async registerUser(userData: UserRegister) {
-		let permissionId = 1; // Default to Super Admin or handle error
-		if (userData.role === 'Financial') permissionId = 2;
-		if (userData.role === 'Super Admin') permissionId = 1;
+		const permissionMap: Record<string, number> = {
+			'Super Admin': 1,
+			admin: 1,
+			Financial: 2,
+			colaborador: 2,
+		};
+		const permissionId = permissionMap[userData.role] ?? 1;
 
 		const { data: authData, error: authError } =
 			await supabase.auth.admin.createUser({

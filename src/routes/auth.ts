@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { authenticate } from '@/middleware/auth.js';
 import { authController } from '../controllers/auth.js';
 import { registerCustomerSchema, registerUserSchema } from '../types/auth.js';
 import { ErrorSchema } from '../types/error.js';
@@ -45,6 +46,7 @@ export async function authRoute(server: FastifyInstance) {
 	server.post(
 		'/register/user',
 		{
+			preHandler: [authenticate],
 			schema: {
 				description: 'Register a new user',
 				body: registerUserSchema,

@@ -9,5 +9,9 @@ export const userSchema = z.object({
 	created_at: z.string().optional(),
 });
 
+export const userUpdateSchema = userSchema
+	.omit({ id: true, created_at: true })
+	.partial();
+
 export type User = z.infer<typeof userSchema>;
-export type UserUpdate = Partial<User>;
+export type UserUpdate = z.infer<typeof userUpdateSchema>;

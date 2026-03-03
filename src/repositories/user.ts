@@ -21,6 +21,10 @@ class UsersRepository {
 			.eq('id', userId)
 			.single();
 	}
+
+	async deleteUser(userId: string) {
+		return await supabase.from('Users').delete().eq('id', userId);
+	}
 }
 
 export const usersRepository = new UsersRepository();

@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { usersService } from '../services/user.js';
+import type { UserUpdate } from '../types/user.js';
 
 export class UsersController {
 	async getAllUsers(_request: FastifyRequest, reply: FastifyReply) {
@@ -23,6 +24,34 @@ export class UsersController {
 			reply.status(500).send({ error });
 		} else {
 			reply.status(200).send(data);
+		}
+	}
+
+	async updateUser(
+		request: FastifyRequest<{ Params: { id: string }; Body: UserUpdate }>,
+		reply: FastifyReply,
+	) {
+		const { id } = request.params;
+		const { data, error } = await usersService.updateUser(id, request.body);
+
+		if (error) {
+			reply.status(500).send({ error });
+		} else {
+			reply.status(200).send(data);
+		}
+	}
+
+	async deleteUser(
+		request: FastifyRequest<{ Params: { id: string } }>,
+		reply: FastifyReply,
+	) {
+		const { id } = request.params;
+		const { error } = await usersService.deleteUser(id);
+
+		if (error) {
+			reply.status(500).send({ error });
+		} else {
+			reply.status(200).send({ message: 'User deleted' });
 		}
 	}
 }

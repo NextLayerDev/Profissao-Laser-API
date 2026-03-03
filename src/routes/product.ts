@@ -6,6 +6,7 @@ import {
 	deleteProductController,
 	getProductsController,
 	updateProductController,
+	updateProductFormController,
 	updateProductStatusController,
 	uploadProductImageController,
 } from '../controllers/product.js';
@@ -95,6 +96,28 @@ export async function productRoute(server: FastifyInstance) {
 			},
 		},
 		updateProductStatusController,
+	);
+
+	server.patch(
+		'/product/:id/form',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Update a product via multipart/form-data. Accepts text fields (name, description, category, price, refundDays) and an optional image file.',
+				params: z.object({ id: z.string() }),
+				consumes: ['multipart/form-data'],
+				response: {
+					200: productSchema,
+					400: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Products'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		updateProductFormController,
 	);
 
 	server.post(

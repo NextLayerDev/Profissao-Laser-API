@@ -6,7 +6,7 @@ export const loginSchema = z.object({
 });
 
 export const registerUserSchema = z.object({
-	role: z.string(),
+	role: z.enum(['Super Admin', 'Financial', 'admin', 'colaborador']),
 	email: z.email('Invalid email'),
 	name: z.string().min(2, 'Name must be at least 2 characters long'),
 	password: z.string().min(6, 'Password must be at least 6 characters long'),
