@@ -38,6 +38,37 @@ export const authenticate = async (
 	}
 };
 
+export const authenticateCustomer = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	await authenticate(request, reply);
+
+	if (!request.currentUser) return;
+
+	const user = request.currentUser;
+
+	const { data: customer, error: customerError } = await supabase
+		.from('pl_customer')
+		.select('id, name')
+		.or(`id.eq.${user.id},email.eq.${user.email}`)
+		.maybeSingle();
+
+	if (customerError || !customer) {
+		return reply.status(403).send({
+			statusCode: 403,
+			error: 'Forbidden',
+			message: 'Customer not found',
+		});
+	}
+
+	request.currentCustomer = {
+		id: customer.id,
+		name: customer.name,
+		image: null,
+	};
+};
+
 export const authenticateCommunity = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
