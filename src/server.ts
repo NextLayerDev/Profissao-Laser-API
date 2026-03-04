@@ -23,7 +23,7 @@ const app = fastify({
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
 
-app.register(multipart, { limits: { fileSize: 1000 * 1024 * 1024 } }); // 1 gb
+app.register(multipart, { limits: { fileSize: 1500 * 1024 * 1024 } }); // 1.5 gb
 
 app.register(fastifyCors, {
 	origin: true,

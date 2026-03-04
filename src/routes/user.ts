@@ -77,6 +77,45 @@ export async function userRoute(server: FastifyInstance) {
 		usersController.deleteUser,
 	);
 
+	server.patch(
+		'/colaborador/:id',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Update a colaborador by ID',
+				params: z.object({ id: z.uuid() }),
+				body: userUpdateSchema,
+				response: {
+					200: userSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Colaboradores'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		usersController.updateUser,
+	);
+
+	server.delete(
+		'/colaborador/:id',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Delete a colaborador by ID',
+				params: z.object({ id: z.uuid() }),
+				response: {
+					200: z.object({ message: z.string() }),
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Colaboradores'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		usersController.deleteUser,
+	);
+
 	server.get(
 		'/user/:id/permissions',
 		{

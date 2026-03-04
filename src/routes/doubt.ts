@@ -24,7 +24,7 @@ export async function doubtRoute(server: FastifyInstance) {
 	server.get(
 		'/lesson/:lessonId/doubts',
 		{
-			preHandler: [authenticateCustomer],
+			preHandler: [authenticate],
 			schema: {
 				description: 'List all doubts and replies for a lesson.',
 				params: z.object({ lessonId: z.string() }),
