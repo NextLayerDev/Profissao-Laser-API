@@ -13,8 +13,10 @@ import { purchaseRoute } from './routes/purchase.js';
 import { quizRoute } from './routes/quiz.js';
 import { userRoute } from './routes/user.js';
 import { vectorRoute } from './routes/vector.js';
+import { webhookRoute } from './routes/webhook.js';
 
 export const routes = async (app: FastifyInstance) => {
+	app.register(webhookRoute);
 	app.register(authRoute);
 	app.register(classRoute);
 	app.register(communityRoute);

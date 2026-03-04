@@ -164,6 +164,16 @@ class ProductRepository {
 		return data;
 	}
 
+	async findByStripePriceId(stripePriceId: string) {
+		const { data, error } = await supabase
+			.from('pl_product')
+			.select('id, name')
+			.eq('stripePriceId', stripePriceId)
+			.single();
+		if (error || !data) throw new Error('Product not found');
+		return data;
+	}
+
 	async findBySlug(slug: string) {
 		const { data, error } = await supabase
 			.from('pl_product')
