@@ -8,9 +8,7 @@ class DoubtRepository {
 				id,
 				content,
 				created_at,
-				pl_customer!customer_id (
-					name
-				),
+				customer_id,
 				pl_lesson_doubt_reply (
 					id,
 					content,
@@ -23,37 +21,43 @@ class DoubtRepository {
 
 		if (error) throw new Error(error.message);
 
-		return (data ?? []).map(
-			(row: {
-				id: string;
-				content: string;
-				created_at: string;
-				pl_customer: { name: string } | { name: string }[] | null;
-				pl_lesson_doubt_reply: {
+		const rows = data ?? [];
+
+		const customerIds = [
+			...new Set(rows.map((r) => r.customer_id).filter(Boolean)),
+		];
+
+		const customerMap: Record<string, string> = {};
+		if (customerIds.length > 0) {
+			const { data: customers } = await supabase
+				.from('Customer')
+				.select('id, name')
+				.in('id', customerIds);
+			for (const c of customers ?? []) {
+				customerMap[c.id] = c.name;
+			}
+		}
+
+		return rows.map((row) => ({
+			id: row.id,
+			content: row.content,
+			authorName: customerMap[row.customer_id] ?? 'Aluno',
+			createdAt: row.created_at,
+			replies: (row.pl_lesson_doubt_reply ?? []).map(
+				(reply: {
 					id: string;
 					content: string;
 					author_name: string;
 					created_at: string;
-				}[];
-			}) => {
-				const customer = Array.isArray(row.pl_customer)
-					? row.pl_customer[0]
-					: row.pl_customer;
-				return {
-					id: row.id,
-					content: row.content,
-					authorName: customer?.name ?? 'Aluno',
-					createdAt: row.created_at,
-					replies: (row.pl_lesson_doubt_reply ?? []).map((reply) => ({
-						id: reply.id,
-						content: reply.content,
-						authorName: reply.author_name,
-						createdAt: reply.created_at,
-						isInstructor: true as const,
-					})),
-				};
-			},
-		);
+				}) => ({
+					id: reply.id,
+					content: reply.content,
+					authorName: reply.author_name,
+					createdAt: reply.created_at,
+					isInstructor: true as const,
+				}),
+			),
+		}));
 	}
 
 	async create(lessonId: string, customerId: string, content: string) {
@@ -64,26 +68,21 @@ class DoubtRepository {
 				customer_id: customerId,
 				content,
 			})
-			.select(`
-				id,
-				content,
-				created_at,
-				pl_customer!customer_id (
-					name
-				)
-			`)
+			.select('id, content, created_at')
 			.single();
 
 		if (error) throw new Error(error.message);
 
-		const customer = Array.isArray(data.pl_customer)
-			? data.pl_customer[0]
-			: data.pl_customer;
+		const { data: customer } = await supabase
+			.from('Customer')
+			.select('name')
+			.eq('id', customerId)
+			.maybeSingle();
 
 		return {
 			id: data.id,
 			content: data.content,
-			authorName: (customer as { name: string } | null)?.name ?? 'Aluno',
+			authorName: customer?.name ?? 'Aluno',
 			createdAt: data.created_at,
 			replies: [] as never[],
 		};

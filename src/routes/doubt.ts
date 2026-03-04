@@ -88,7 +88,7 @@ export async function doubtRoute(server: FastifyInstance) {
 	server.get(
 		'/lesson/:lessonId/rating',
 		{
-			preHandler: [authenticateCustomer],
+			preHandler: [authenticate],
 			schema: {
 				description: 'Get the current customer rating and lesson average.',
 				params: z.object({ lessonId: z.string() }),
