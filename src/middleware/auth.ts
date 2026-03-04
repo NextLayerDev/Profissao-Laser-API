@@ -69,6 +69,82 @@ export const authenticateCustomer = async (
 	};
 };
 
+export const authenticateVectorizacao = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	await authenticate(request, reply);
+
+	if (!request.currentUser) return;
+
+	const user = request.currentUser;
+
+	// Platform users (staff) have unrestricted access
+	const { data: platformUser } = await supabase
+		.from('Users')
+		.select('id')
+		.or(`id.eq.${user.id},email.eq.${user.email}`)
+		.maybeSingle();
+
+	if (platformUser) return;
+
+	const { data: customer, error: customerError } = await supabase
+		.from('Customers')
+		.select('id, name')
+		.or(`id.eq.${user.id},email.eq.${user.email}`)
+		.maybeSingle();
+
+	if (customerError || !customer) {
+		return reply.status(403).send({
+			statusCode: 403,
+			error: 'Forbidden',
+			message: 'Customer not found',
+		});
+	}
+
+	const { data: subscriptions } = await supabase
+		.from('pl_subscription')
+		.select(`
+			status,
+			pl_product!inner (
+				pl_class_product!inner (
+					pl_class!inner (
+						vetorizacao
+					)
+				)
+			)
+		`)
+		.eq('userId', customer.id)
+		.eq('status', 'active');
+
+	const hasVectorizacaoAccess = (subscriptions ?? []).some((subscription) => {
+		// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
+		const product = (subscription as any).pl_product;
+		if (!product) return false;
+		// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
+		const classProducts = (product as any).pl_class_product;
+		if (!Array.isArray(classProducts)) return false;
+		return classProducts.some(
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
+			(cp: any) => cp.pl_class?.vetorizacao === true,
+		);
+	});
+
+	if (!hasVectorizacaoAccess) {
+		return reply.status(403).send({
+			statusCode: 403,
+			error: 'Forbidden',
+			message: 'Vectorization access required',
+		});
+	}
+
+	request.currentCustomer = {
+		id: customer.id,
+		name: customer.name,
+		image: null,
+	};
+};
+
 export const authenticateCommunity = async (
 	request: FastifyRequest,
 	reply: FastifyReply,

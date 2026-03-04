@@ -61,3 +61,20 @@ export async function uploadCourseImage(
 ): Promise<string> {
 	return upload('courses-images', buffer, path, mimetype);
 }
+
+export async function uploadSvgFile(
+	svgContent: string,
+	path: string,
+): Promise<string> {
+	const buffer = Buffer.from(svgContent, 'utf-8');
+	return upload('vectors', buffer, path, 'image/svg+xml');
+}
+
+export async function deleteSvgByUrl(url: string): Promise<void> {
+	const marker = '/object/public/vectors/';
+	const idx = url.indexOf(marker);
+	if (idx === -1) return;
+	const filePath = url.slice(idx + marker.length);
+	const { error } = await supabase.storage.from('vectors').remove([filePath]);
+	if (error) throw new Error(error.message);
+}
