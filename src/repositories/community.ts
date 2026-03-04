@@ -203,7 +203,7 @@ class CommunityRepository {
 	// ── Members ───────────────────────────────────────────────────────────────
 
 	async listMembers(search?: string, category?: string) {
-		let query = supabase.from('pl_customer').select(`
+		let query = supabase.from('Customers').select(`
 				id,
 				name,
 				pl_community_profile (

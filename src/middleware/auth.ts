@@ -49,7 +49,7 @@ export const authenticateCustomer = async (
 	const user = request.currentUser;
 
 	const { data: customer, error: customerError } = await supabase
-		.from('pl_customer')
+		.from('Customers')
 		.select('id, name')
 		.or(`id.eq.${user.id},email.eq.${user.email}`)
 		.maybeSingle();
@@ -90,7 +90,7 @@ export const authenticateCommunity = async (
 
 	// Fetch customer from pl_customer
 	const { data: customer, error: customerError } = await supabase
-		.from('pl_customer')
+		.from('Customers')
 		.select(`
 			id,
 			name,

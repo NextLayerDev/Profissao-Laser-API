@@ -30,7 +30,7 @@ class DoubtRepository {
 		const customerMap: Record<string, string> = {};
 		if (customerIds.length > 0) {
 			const { data: customers } = await supabase
-				.from('Customer')
+				.from('Customers')
 				.select('id, name')
 				.in('id', customerIds);
 			for (const c of customers ?? []) {
@@ -74,7 +74,7 @@ class DoubtRepository {
 		if (error) throw new Error(error.message);
 
 		const { data: customer } = await supabase
-			.from('Customer')
+			.from('Customers')
 			.select('name')
 			.eq('id', customerId)
 			.maybeSingle();
