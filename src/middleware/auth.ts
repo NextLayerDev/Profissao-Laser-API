@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { stripe } from '../lib/stripe.js';
 import { supabase } from '../lib/supabase.js';
 
 export const authenticate = async (
@@ -90,7 +91,7 @@ export const authenticateVectorizacao = async (
 
 	const { data: customer, error: customerError } = await supabase
 		.from('Customers')
-		.select('id, name')
+		.select('id, name, email')
 		.or(`id.eq.${user.id},email.eq.${user.email}`)
 		.maybeSingle();
 
@@ -102,33 +103,64 @@ export const authenticateVectorizacao = async (
 		});
 	}
 
-	const { data: subscriptions } = await supabase
-		.from('pl_subscription')
-		.select(`
-			status,
-			pl_product!inner (
-				pl_class_product!inner (
-					pl_class!inner (
-						vetorizacao
-					)
-				)
-			)
-		`)
-		.eq('userId', customer.id)
-		.eq('status', 'active');
+	const customerEmail =
+		(customer as unknown as { email: string }).email ?? user.email;
 
-	const hasVectorizacaoAccess = (subscriptions ?? []).some((subscription) => {
-		// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-		const product = (subscription as any).pl_product;
-		if (!product) return false;
-		// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-		const classProducts = (product as any).pl_class_product;
-		if (!Array.isArray(classProducts)) return false;
-		return classProducts.some(
-			// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-			(cp: any) => cp.pl_class?.vetorizacao === true,
-		);
+	// Fetch active/trialing Stripe subscriptions for this customer
+	const stripeCustomers = await stripe.customers.list({
+		email: customerEmail,
+		limit: 1,
 	});
+	let hasVectorizacaoAccess = false;
+
+	if (stripeCustomers.data.length > 0) {
+		const stripeCustomerId = stripeCustomers.data[0].id;
+
+		const [activeSubs, trialingSubs] = await Promise.all([
+			stripe.subscriptions.list({
+				customer: stripeCustomerId,
+				status: 'active',
+			}),
+			stripe.subscriptions.list({
+				customer: stripeCustomerId,
+				status: 'trialing',
+			}),
+		]);
+
+		const stripeProductIds = [...activeSubs.data, ...trialingSubs.data]
+			.flatMap((sub) =>
+				sub.items.data.map((item) => {
+					const productRef = item.price?.product;
+					return typeof productRef === 'string'
+						? productRef
+						: ((productRef as { id: string } | null)?.id ?? null);
+				}),
+			)
+			.filter(Boolean) as string[];
+
+		if (stripeProductIds.length > 0) {
+			const { data: classData } = await supabase
+				.from('pl_product')
+				.select(`
+					pl_class_product!inner (
+						pl_class!inner (
+							vetorizacao
+						)
+					)
+				`)
+				.in('stripeProductId', stripeProductIds);
+
+			hasVectorizacaoAccess = (classData ?? []).some((product) => {
+				// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
+				const classProducts = (product as any).pl_class_product;
+				if (!Array.isArray(classProducts)) return false;
+				// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
+				return classProducts.some(
+					(cp: any) => cp.pl_class?.vetorizacao === true,
+				);
+			});
+		}
+	}
 
 	if (!hasVectorizacaoAccess) {
 		return reply.status(403).send({
@@ -203,15 +235,24 @@ export const authenticateCommunity = async (
 
 	const hasCommunityAccess = (subscriptions ?? []).some((subscription) => {
 		// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-		const product = (subscription as any).pl_product;
-		if (!product) return false;
+		const productRaw = (subscription as any).pl_product;
+		if (!productRaw) return false;
+
+		// Supabase may return pl_product as object or array depending on FK naming
 		// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-		const classProducts = (product as any).pl_class_product;
-		if (!Array.isArray(classProducts)) return false;
-		return classProducts.some(
+		const products: any[] = Array.isArray(productRaw)
+			? productRaw
+			: [productRaw];
+
+		return products.some((product) => {
 			// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-			(cp: any) => cp.pl_class?.comunidade === true,
-		);
+			const classProducts = (product as any).pl_class_product;
+			if (!Array.isArray(classProducts)) return false;
+			return classProducts.some(
+				// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
+				(cp: any) => cp.pl_class?.comunidade === true,
+			);
+		});
 	});
 
 	if (!hasCommunityAccess) {
