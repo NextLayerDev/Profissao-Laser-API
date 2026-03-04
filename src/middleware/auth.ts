@@ -177,6 +177,46 @@ export const authenticateVectorizacao = async (
 	};
 };
 
+export const authenticateProgress = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	await authenticate(request, reply);
+	if (!request.currentUser) return;
+
+	const user = request.currentUser;
+
+	// Staff have unrestricted access (pass customerId via query/body)
+	const { data: platformUser } = await supabase
+		.from('Users')
+		.select('id')
+		.or(`id.eq.${user.id},email.eq.${user.email}`)
+		.maybeSingle();
+
+	if (platformUser) return;
+
+	// Customer: set currentCustomer
+	const { data: customer, error } = await supabase
+		.from('Customers')
+		.select('id, name')
+		.or(`id.eq.${user.id},email.eq.${user.email}`)
+		.maybeSingle();
+
+	if (error || !customer) {
+		return reply.status(403).send({
+			statusCode: 403,
+			error: 'Forbidden',
+			message: 'Customer not found',
+		});
+	}
+
+	request.currentCustomer = {
+		id: customer.id,
+		name: customer.name,
+		image: null,
+	};
+};
+
 export const authenticateCommunity = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
