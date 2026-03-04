@@ -10,7 +10,8 @@ export async function createSignedUploadUrl(
 		.createSignedUploadUrl(path);
 
 	if (error) throw new Error(error.message);
-	if (!data?.path || !data?.token) throw new Error('Invalid signed upload URL response');
+	if (!data?.path || !data?.token)
+		throw new Error('Invalid signed upload URL response');
 	return { path: data.path, token: data.token };
 }
 

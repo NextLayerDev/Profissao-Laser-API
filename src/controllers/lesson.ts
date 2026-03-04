@@ -71,7 +71,10 @@ export const listLessonsController = async (
 };
 
 export const createPresignedVideoUrlController = async (
-	request: FastifyRequest<{ Params: { id: string }; Body: { filename?: string } }>,
+	request: FastifyRequest<{
+		Params: { id: string };
+		Body: { filename?: string };
+	}>,
 	reply: FastifyReply,
 ) => {
 	try {
@@ -79,8 +82,7 @@ export const createPresignedVideoUrlController = async (
 		const lesson = await lessonRepository.findById(request.params.id);
 		if (!lesson) return reply.status(404).send({ message: 'Lesson not found' });
 
-		const ext =
-			(request.body?.filename ?? '').split('.').pop() || 'mp4';
+		const ext = (request.body?.filename ?? '').split('.').pop() || 'mp4';
 		const storagePath = `${request.params.id}/video/${crypto.randomUUID()}.${ext}`;
 
 		const { path, token } = await createSignedUploadUrl(storagePath);
