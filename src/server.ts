@@ -20,7 +20,7 @@ const lokiTransport = process.env.LOKI_HOST
 			transport: {
 				target: 'pino-loki',
 				options: {
-					host: process.env.LOKI_HOST,
+					// host: process.env.LOKI_HOST,
 					labels: { app: 'profissao-laser-api' },
 					batching: true,
 					interval: 5,
