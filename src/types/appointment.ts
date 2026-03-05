@@ -29,7 +29,14 @@ export const updateAppointmentStatusSchema = z.object({
 	status: z.enum(['pendente', 'confirmado', 'cancelado', 'concluido']),
 });
 
+export const updateAppointmentTechnicianSchema = z.object({
+	technicianId: z.string().uuid(),
+});
+
 export type AppointmentCreate = z.infer<typeof createAppointmentSchema>;
 export type AppointmentStatusUpdate = z.infer<
 	typeof updateAppointmentStatusSchema
+>;
+export type AppointmentTechnicianUpdate = z.infer<
+	typeof updateAppointmentTechnicianSchema
 >;

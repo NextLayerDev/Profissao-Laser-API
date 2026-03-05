@@ -74,6 +74,19 @@ class AppointmentRepository {
 		return data;
 	}
 
+	async updateTechnician(id: string, technicianId: string) {
+		const { data, error } = await supabase
+			.from('pl_appointment')
+			.update({ technicianId })
+			.eq('id', id)
+			.select()
+			.single();
+
+		if (error) throw new Error(error.message);
+		if (!data) throw new Error('Appointment not found');
+		return data;
+	}
+
 	async delete(id: string) {
 		const { data: existing, error: findError } = await supabase
 			.from('pl_appointment')

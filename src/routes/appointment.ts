@@ -9,11 +9,13 @@ import {
 	getAppointmentsController,
 	getMyAppointmentsController,
 	updateAppointmentStatusController,
+	updateAppointmentTechnicianController,
 } from '../controllers/appointment.js';
 import {
 	appointmentSchema,
 	createAppointmentSchema,
 	updateAppointmentStatusSchema,
+	updateAppointmentTechnicianSchema,
 } from '../types/appointment.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -133,6 +135,27 @@ export async function appointmentRoute(server: FastifyInstance) {
 			},
 		},
 		updateAppointmentStatusController,
+	);
+
+	server.patch(
+		'/appointment/:id',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Transfer appointment to another technician (admin only).',
+				params: z.object({ id: z.uuid() }),
+				body: updateAppointmentTechnicianSchema,
+				response: {
+					200: appointmentSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Appointments'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		updateAppointmentTechnicianController,
 	);
 
 	server.delete(

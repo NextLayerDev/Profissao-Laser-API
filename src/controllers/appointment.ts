@@ -4,6 +4,7 @@ import { appointmentRepository } from '../repositories/appointment.js';
 import {
 	createAppointmentSchema,
 	updateAppointmentStatusSchema,
+	updateAppointmentTechnicianSchema,
 } from '../types/appointment.js';
 
 export const getAppointmentsController = async (
@@ -146,6 +147,36 @@ export const getAppointmentsByTechnicianController = async (
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
+	}
+};
+
+export const updateAppointmentTechnicianController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { data: staffUser } = await supabase
+			.from('Users')
+			.select('id')
+			.eq('id', request.currentUser.id)
+			.maybeSingle();
+
+		if (!staffUser) {
+			return reply.status(403).send({ message: 'Forbidden' });
+		}
+
+		const { technicianId } = updateAppointmentTechnicianSchema.parse(
+			request.body,
+		);
+		const appointment = await appointmentRepository.updateTechnician(
+			request.params.id,
+			technicianId,
+		);
+		return reply.send(appointment);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		const status = message === 'Appointment not found' ? 404 : 500;
+		return reply.status(status).send({ message });
 	}
 };
 
