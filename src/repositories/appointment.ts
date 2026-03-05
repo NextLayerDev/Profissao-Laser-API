@@ -53,6 +53,16 @@ class AppointmentRepository {
 		return data;
 	}
 
+	async listByCustomerId(customerId: string) {
+		const { data: authUser, error: authError } =
+			await supabase.auth.admin.getUserById(customerId);
+
+		if (authError || !authUser?.user?.email)
+			throw new Error('Customer not found');
+
+		return this.listByEmail(authUser.user.email);
+	}
+
 	async delete(id: string) {
 		const { data: existing, error: findError } = await supabase
 			.from('pl_appointment')

@@ -31,6 +31,32 @@ export const getAppointmentsController = async (
 	}
 };
 
+export const getAppointmentsByCustomerController = async (
+	request: FastifyRequest<{ Params: { id_customer: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { data: staffUser } = await supabase
+			.from('Users')
+			.select('id')
+			.eq('id', request.currentUser.id)
+			.maybeSingle();
+
+		if (!staffUser) {
+			return reply.status(403).send({ message: 'Forbidden' });
+		}
+
+		const appointments = await appointmentRepository.listByCustomerId(
+			request.params.id_customer,
+		);
+		return reply.send(appointments);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		const status = message === 'Customer not found' ? 404 : 500;
+		return reply.status(status).send({ message });
+	}
+};
+
 export const createAppointmentController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,

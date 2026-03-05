@@ -4,6 +4,7 @@ import { authenticate } from '@/middleware/auth.js';
 import {
 	createAppointmentController,
 	deleteAppointmentController,
+	getAppointmentsByCustomerController,
 	getAppointmentsController,
 	updateAppointmentStatusController,
 } from '../controllers/appointment.js';
@@ -31,6 +32,26 @@ export async function appointmentRoute(server: FastifyInstance) {
 			},
 		},
 		getAppointmentsController,
+	);
+
+	server.get(
+		'/appointments/:id_customer',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'List appointments for a specific customer (admin only).',
+				params: z.object({ id_customer: z.string().uuid() }),
+				response: {
+					200: z.array(appointmentSchema),
+					403: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Appointments'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getAppointmentsByCustomerController,
 	);
 
 	server.post(
