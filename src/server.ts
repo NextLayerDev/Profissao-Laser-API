@@ -15,10 +15,28 @@ import { routes } from './router.js';
 
 const THIRTY_MINUTES_MS = 30 * 60 * 1000;
 
+const lokiTransport = process.env.LOKI_HOST
+	? {
+			transport: {
+				target: 'pino-loki',
+				options: {
+					host: process.env.LOKI_HOST,
+					labels: { app: 'profissao-laser-api' },
+					batching: true,
+					interval: 5,
+				},
+			},
+		}
+	: {};
+
 const app = fastify({
 	connectionTimeout: 0,
 	requestTimeout: THIRTY_MINUTES_MS,
 	keepAliveTimeout: THIRTY_MINUTES_MS,
+	logger: {
+		level: 'info',
+		...lokiTransport,
+	},
 }).withTypeProvider<ZodTypeProvider>();
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);

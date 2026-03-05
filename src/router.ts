@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { appointmentRoute } from './routes/appointment.js';
 import { authRoute } from './routes/auth.js';
 import { classRoute } from './routes/class.js';
 import { communityRoute } from './routes/community.js';
@@ -19,6 +20,7 @@ import { webhookRoute } from './routes/webhook.js';
 export const routes = async (app: FastifyInstance) => {
 	app.register(webhookRoute);
 	app.register(authRoute);
+	app.register(appointmentRoute);
 	app.register(classRoute);
 	app.register(communityRoute);
 	app.register(couponRoute);
