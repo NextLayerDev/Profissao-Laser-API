@@ -99,6 +99,56 @@ export const updateAppointmentStatusController = async (
 	}
 };
 
+export const getMyAppointmentsController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	try {
+		const { data: staffUser } = await supabase
+			.from('Users')
+			.select('id')
+			.eq('id', request.currentUser.id)
+			.maybeSingle();
+
+		if (!staffUser) {
+			return reply.status(403).send({ message: 'Forbidden' });
+		}
+
+		const appointments = await appointmentRepository.listByTechnicianId(
+			request.currentUser.id,
+		);
+		return reply.send(appointments);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
+export const getAppointmentsByTechnicianController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { data: staffUser } = await supabase
+			.from('Users')
+			.select('id')
+			.eq('id', request.currentUser.id)
+			.maybeSingle();
+
+		if (!staffUser) {
+			return reply.status(403).send({ message: 'Forbidden' });
+		}
+
+		const appointments = await appointmentRepository.listByTechnicianId(
+			request.params.id,
+		);
+		return reply.send(appointments);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
 export const deleteAppointmentController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,

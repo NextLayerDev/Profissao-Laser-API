@@ -63,6 +63,17 @@ class AppointmentRepository {
 		return this.listByEmail(authUser.user.email);
 	}
 
+	async listByTechnicianId(technicianId: string) {
+		const { data, error } = await supabase
+			.from('pl_appointment')
+			.select('*')
+			.eq('technicianId', technicianId)
+			.order('createdAt', { ascending: false });
+
+		if (error) throw new Error(error.message);
+		return data;
+	}
+
 	async delete(id: string) {
 		const { data: existing, error: findError } = await supabase
 			.from('pl_appointment')

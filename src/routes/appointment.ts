@@ -5,7 +5,9 @@ import {
 	createAppointmentController,
 	deleteAppointmentController,
 	getAppointmentsByCustomerController,
+	getAppointmentsByTechnicianController,
 	getAppointmentsController,
+	getMyAppointmentsController,
 	updateAppointmentStatusController,
 } from '../controllers/appointment.js';
 import {
@@ -52,6 +54,46 @@ export async function appointmentRoute(server: FastifyInstance) {
 			},
 		},
 		getAppointmentsByCustomerController,
+	);
+
+	server.get(
+		'/technician/appointments',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'List appointments for the authenticated technician (staff only).',
+				response: {
+					200: z.array(appointmentSchema),
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Appointments'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getMyAppointmentsController,
+	);
+
+	server.get(
+		'/appointments/technician/:id',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'List appointments for a specific technician (admin only).',
+				params: z.object({ id: z.uuid() }),
+				response: {
+					200: z.array(appointmentSchema),
+					403: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Appointments'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getAppointmentsByTechnicianController,
 	);
 
 	server.post(
