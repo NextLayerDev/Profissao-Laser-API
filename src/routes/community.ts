@@ -25,7 +25,6 @@ import {
 	createChannelSchema,
 	createPostSchema,
 	createProjectSchema,
-	sendMessageSchema,
 } from '../types/community.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -137,9 +136,9 @@ export async function communityRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticateCommunity],
 			schema: {
-				description: 'Send a message to a channel.',
+				description:
+					'Send a message to a channel (multipart/form-data). Fields: content (text), file (any file).',
 				params: z.object({ channelId: z.string() }),
-				body: sendMessageSchema,
 				response: {
 					201: z.object({ id: z.string() }).passthrough(),
 					400: ErrorSchema,

@@ -70,6 +70,14 @@ export async function uploadSvgFile(
 	return upload('vectors', buffer, path, 'image/svg+xml');
 }
 
+export async function uploadCommunityFile(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('community-files', buffer, path, mimetype);
+}
+
 export async function deleteSvgByUrl(url: string): Promise<void> {
 	const marker = '/object/public/vectors/';
 	const idx = url.indexOf(marker);

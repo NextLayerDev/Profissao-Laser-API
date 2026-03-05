@@ -55,12 +55,14 @@ class CommunityService {
 		channelId: string,
 		data: SendMessage,
 		author: { id: string; name: string; avatar: string | null },
+		fileUrl?: string,
 	) {
 		return communityRepository.createMessage(channelId, {
 			...data,
 			authorId: author.id,
 			authorName: author.name,
 			authorAvatar: author.avatar,
+			fileUrl,
 		});
 	}
 

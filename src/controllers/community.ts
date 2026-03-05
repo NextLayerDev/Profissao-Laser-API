@@ -1,10 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { uploadCommunityFile } from '../lib/storage.js';
 import { communityService } from '../services/community.js';
 import {
 	createChannelSchema,
 	createPostSchema,
 	createProjectSchema,
-	sendMessageSchema,
 } from '../types/community.js';
 
 // ── Posts ──────────────────────────────────────────────────────────────────
@@ -107,14 +107,37 @@ export const sendMessageController = async (
 ) => {
 	try {
 		const { channelId } = request.params;
-		const data = sendMessageSchema.parse(request.body);
+		const parts = request.parts();
+		let content = '';
+		let fileUrl: string | undefined;
+
+		for await (const part of parts) {
+			if (part.type === 'field' && part.fieldname === 'content') {
+				content = part.value as string;
+			} else if (part.type === 'file' && part.fieldname === 'file') {
+				const buffer = await part.toBuffer();
+				const ext = part.filename?.split('.').pop() ?? 'bin';
+				const path = `${channelId}/${crypto.randomUUID()}.${ext}`;
+				fileUrl = await uploadCommunityFile(buffer, path, part.mimetype);
+			}
+		}
+
+		if (!content && !fileUrl) {
+			return reply.status(400).send({ message: 'Content or file is required' });
+		}
+
 		const userId = request.currentUser?.id ?? '';
 		const customer = request.currentCustomer;
-		const msg = await communityService.sendMessage(channelId, data, {
-			id: userId,
-			name: customer?.name ?? request.currentUser?.email ?? 'Membro',
-			avatar: customer?.image ?? null,
-		});
+		const msg = await communityService.sendMessage(
+			channelId,
+			{ content },
+			{
+				id: userId,
+				name: customer?.name ?? request.currentUser?.email ?? 'Membro',
+				avatar: customer?.image ?? null,
+			},
+			fileUrl,
+		);
 		return reply.status(201).send(msg);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';

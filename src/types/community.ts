@@ -36,10 +36,11 @@ export const communityMessageSchema = z.object({
 	content: z.string(),
 	time: z.string(),
 	isMe: z.boolean(),
+	fileUrl: z.string().nullable().optional(),
 });
 
 export const sendMessageSchema = z.object({
-	content: z.string().min(1),
+	content: z.string().optional(),
 });
 
 export const communityMemberSchema = z.object({

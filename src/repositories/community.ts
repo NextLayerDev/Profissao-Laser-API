@@ -164,6 +164,7 @@ class CommunityRepository {
 					authorId: string;
 					content: string;
 					createdAt: string;
+					fileUrl: string | null;
 				}) => ({
 					id: msg.id,
 					user: msg.authorName,
@@ -171,6 +172,7 @@ class CommunityRepository {
 					content: msg.content,
 					time: msg.createdAt,
 					isMe: msg.authorId === currentUserId,
+					fileUrl: msg.fileUrl,
 				}),
 			);
 	}
@@ -181,6 +183,7 @@ class CommunityRepository {
 			authorId: string;
 			authorName: string;
 			authorAvatar: string | null;
+			fileUrl?: string;
 		},
 	) {
 		const { data: msg, error } = await supabase
@@ -192,6 +195,7 @@ class CommunityRepository {
 				authorName: data.authorName,
 				authorAvatar: data.authorAvatar,
 				content: data.content,
+				fileUrl: data.fileUrl ?? null,
 			})
 			.select()
 			.single();
