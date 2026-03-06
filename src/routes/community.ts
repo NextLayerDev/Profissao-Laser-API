@@ -5,6 +5,8 @@ import {
 	createChannelController,
 	createPostController,
 	createProjectController,
+	deleteChannelController,
+	deleteMessageController,
 	getChannelsController,
 	getEventsController,
 	getMembersController,
@@ -13,6 +15,7 @@ import {
 	getProjectsController,
 	getRankingController,
 	sendMessageController,
+	updateChannelController,
 } from '../controllers/community.js';
 import {
 	communityChannelSchema,
@@ -25,6 +28,7 @@ import {
 	createChannelSchema,
 	createPostSchema,
 	createProjectSchema,
+	updateChannelSchema,
 } from '../types/community.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -107,6 +111,43 @@ export async function communityRoute(server: FastifyInstance) {
 		createChannelController,
 	);
 
+	server.patch(
+		'/community/channels/:channelId',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Update a community channel.',
+				params: z.object({ channelId: z.string() }),
+				body: updateChannelSchema,
+				response: {
+					200: communityChannelSchema,
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		updateChannelController,
+	);
+
+	server.delete(
+		'/community/channels/:channelId',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Delete a community channel and all its messages.',
+				params: z.object({ channelId: z.string() }),
+				response: {
+					204: z.null(),
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		deleteChannelController,
+	);
+
 	// ── Messages ──────────────────────────────────────────────────────────────
 
 	server.get(
@@ -148,6 +189,24 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		sendMessageController,
+	);
+
+	server.delete(
+		'/community/channels/:channelId/messages/:messageId',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Delete a message from a channel.',
+				params: z.object({ channelId: z.string(), messageId: z.string() }),
+				response: {
+					204: z.null(),
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		deleteMessageController,
 	);
 
 	// ── Members ───────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import type {
 	CreatePost,
 	CreateProject,
 	SendMessage,
+	UpdateChannel,
 } from '../types/community.js';
 
 class CommunityService {
@@ -35,6 +36,14 @@ class CommunityService {
 		return communityRepository.createChannel(data);
 	}
 
+	async updateChannel(id: string, data: UpdateChannel) {
+		return communityRepository.updateChannel(id, data);
+	}
+
+	async deleteChannel(id: string) {
+		return communityRepository.deleteChannel(id);
+	}
+
 	// ── Messages ──────────────────────────────────────────────────────────────
 
 	async listMessages(
@@ -49,6 +58,10 @@ class CommunityService {
 			limit,
 			currentUserId,
 		);
+	}
+
+	async deleteMessage(channelId: string, messageId: string) {
+		return communityRepository.deleteMessage(channelId, messageId);
 	}
 
 	async sendMessage(

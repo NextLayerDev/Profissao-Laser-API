@@ -4,6 +4,7 @@ import type {
 	CreatePost,
 	CreateProject,
 	SendMessage,
+	UpdateChannel,
 } from '../types/community.js';
 
 class CommunityRepository {
@@ -132,6 +133,33 @@ class CommunityRepository {
 		return channel;
 	}
 
+	async updateChannel(id: string, data: UpdateChannel) {
+		const updates: Record<string, string> = {};
+		if (data.name !== undefined) updates.label = data.name;
+		if (data.description !== undefined) updates.description = data.description;
+
+		const { data: channel, error } = await supabase
+			.from('pl_community_channel')
+			.update(updates)
+			.eq('id', id)
+			.select()
+			.single();
+
+		if (error) throw new Error(error.message);
+		return channel;
+	}
+
+	async deleteChannel(id: string) {
+		await supabase.from('pl_community_message').delete().eq('channelId', id);
+
+		const { error } = await supabase
+			.from('pl_community_channel')
+			.delete()
+			.eq('id', id);
+
+		if (error) throw new Error(error.message);
+	}
+
 	// ── Messages ──────────────────────────────────────────────────────────────
 
 	async listMessages(
@@ -202,6 +230,16 @@ class CommunityRepository {
 
 		if (error) throw new Error(error.message);
 		return msg;
+	}
+
+	async deleteMessage(channelId: string, messageId: string) {
+		const { error } = await supabase
+			.from('pl_community_message')
+			.delete()
+			.eq('id', messageId)
+			.eq('channelId', channelId);
+
+		if (error) throw new Error(error.message);
 	}
 
 	// ── Members ───────────────────────────────────────────────────────────────

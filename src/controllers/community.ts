@@ -5,6 +5,7 @@ import {
 	createChannelSchema,
 	createPostSchema,
 	createProjectSchema,
+	updateChannelSchema,
 } from '../types/community.js';
 
 // ── Posts ──────────────────────────────────────────────────────────────────
@@ -68,6 +69,35 @@ export const createChannelController = async (
 		const data = createChannelSchema.parse(request.body);
 		const channel = await communityService.createChannel(data);
 		return reply.status(201).send(channel);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
+export const updateChannelController = async (
+	request: FastifyRequest<{ Params: { channelId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { channelId } = request.params;
+		const data = updateChannelSchema.parse(request.body);
+		const channel = await communityService.updateChannel(channelId, data);
+		return reply.send(channel);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
+export const deleteChannelController = async (
+	request: FastifyRequest<{ Params: { channelId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { channelId } = request.params;
+		await communityService.deleteChannel(channelId);
+		return reply.status(204).send();
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(400).send({ message });
@@ -139,6 +169,20 @@ export const sendMessageController = async (
 			fileUrl,
 		);
 		return reply.status(201).send(msg);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
+export const deleteMessageController = async (
+	request: FastifyRequest<{ Params: { channelId: string; messageId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { channelId, messageId } = request.params;
+		await communityService.deleteMessage(channelId, messageId);
+		return reply.status(204).send();
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(400).send({ message });

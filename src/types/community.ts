@@ -29,6 +29,11 @@ export const createChannelSchema = z.object({
 	name: z.string().min(1),
 });
 
+export const updateChannelSchema = z.object({
+	name: z.string().min(1).optional(),
+	description: z.string().optional(),
+});
+
 export const communityMessageSchema = z.object({
 	id: z.string(),
 	user: z.string(),
@@ -95,5 +100,6 @@ export const communityRankingSchema = z.object({
 
 export type CreatePost = z.infer<typeof createPostSchema>;
 export type CreateChannel = z.infer<typeof createChannelSchema>;
+export type UpdateChannel = z.infer<typeof updateChannelSchema>;
 export type SendMessage = z.infer<typeof sendMessageSchema>;
 export type CreateProject = z.infer<typeof createProjectSchema>;
