@@ -1,10 +1,12 @@
 import { communityRepository } from '../repositories/community.js';
 import type {
 	CreateChannel,
+	CreateEvent,
 	CreatePost,
 	CreateProject,
 	SendMessage,
 	UpdateChannel,
+	UpdateEvent,
 } from '../types/community.js';
 
 class CommunityService {
@@ -99,6 +101,18 @@ class CommunityService {
 
 	async listEvents(from?: string, to?: string) {
 		return communityRepository.listEvents(from, to);
+	}
+
+	async createEvent(data: CreateEvent) {
+		return communityRepository.createEvent(data);
+	}
+
+	async updateEvent(id: string, data: UpdateEvent) {
+		return communityRepository.updateEvent(id, data);
+	}
+
+	async deleteEvent(id: string) {
+		return communityRepository.deleteEvent(id);
 	}
 
 	// ── Ranking ───────────────────────────────────────────────────────────────

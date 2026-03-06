@@ -3,9 +3,11 @@ import { uploadCommunityFile } from '../lib/storage.js';
 import { communityService } from '../services/community.js';
 import {
 	createChannelSchema,
+	createEventSchema,
 	createPostSchema,
 	createProjectSchema,
 	updateChannelSchema,
+	updateEventSchema,
 } from '../types/community.js';
 
 // ── Posts ──────────────────────────────────────────────────────────────────
@@ -252,6 +254,49 @@ export const getEventsController = async (
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
+	}
+};
+
+export const createEventController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	try {
+		const data = createEventSchema.parse(request.body);
+		const event = await communityService.createEvent(data);
+		return reply.status(201).send(event);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
+export const updateEventController = async (
+	request: FastifyRequest<{ Params: { eventId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { eventId } = request.params;
+		const data = updateEventSchema.parse(request.body);
+		const event = await communityService.updateEvent(eventId, data);
+		return reply.send(event);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
+export const deleteEventController = async (
+	request: FastifyRequest<{ Params: { eventId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { eventId } = request.params;
+		await communityService.deleteEvent(eventId);
+		return reply.status(204).send();
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
 	}
 };
 

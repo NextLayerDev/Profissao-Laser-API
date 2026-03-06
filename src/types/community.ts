@@ -98,8 +98,26 @@ export const communityRankingSchema = z.object({
 	rest: z.array(communityRankingEntrySchema),
 });
 
+export const createEventSchema = z.object({
+	title: z.string().min(1),
+	description: z.string().optional(),
+	date: z.string().min(1),
+	time: z.string().optional(),
+	type: z.enum(['workshop', 'live', 'qa']),
+});
+
+export const updateEventSchema = z.object({
+	title: z.string().min(1).optional(),
+	description: z.string().optional(),
+	date: z.string().optional(),
+	time: z.string().optional(),
+	type: z.enum(['workshop', 'live', 'qa']).optional(),
+});
+
 export type CreatePost = z.infer<typeof createPostSchema>;
 export type CreateChannel = z.infer<typeof createChannelSchema>;
 export type UpdateChannel = z.infer<typeof updateChannelSchema>;
 export type SendMessage = z.infer<typeof sendMessageSchema>;
 export type CreateProject = z.infer<typeof createProjectSchema>;
+export type CreateEvent = z.infer<typeof createEventSchema>;
+export type UpdateEvent = z.infer<typeof updateEventSchema>;

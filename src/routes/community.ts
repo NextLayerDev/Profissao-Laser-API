@@ -3,9 +3,11 @@ import { z } from 'zod';
 import { authenticateCommunity } from '@/middleware/auth.js';
 import {
 	createChannelController,
+	createEventController,
 	createPostController,
 	createProjectController,
 	deleteChannelController,
+	deleteEventController,
 	deleteMessageController,
 	getChannelsController,
 	getEventsController,
@@ -16,6 +18,7 @@ import {
 	getRankingController,
 	sendMessageController,
 	updateChannelController,
+	updateEventController,
 } from '../controllers/community.js';
 import {
 	communityChannelSchema,
@@ -26,9 +29,11 @@ import {
 	communityProjectSchema,
 	communityRankingSchema,
 	createChannelSchema,
+	createEventSchema,
 	createPostSchema,
 	createProjectSchema,
 	updateChannelSchema,
+	updateEventSchema,
 } from '../types/community.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -296,6 +301,61 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		getEventsController,
+	);
+
+	server.post(
+		'/community/events',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Create a new community event.',
+				body: createEventSchema,
+				response: {
+					201: communityEventSchema,
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		createEventController,
+	);
+
+	server.patch(
+		'/community/events/:eventId',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Update a community event.',
+				params: z.object({ eventId: z.string() }),
+				body: updateEventSchema,
+				response: {
+					200: communityEventSchema,
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		updateEventController,
+	);
+
+	server.delete(
+		'/community/events/:eventId',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Delete a community event.',
+				params: z.object({ eventId: z.string() }),
+				response: {
+					204: z.null(),
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		deleteEventController,
 	);
 
 	// ── Ranking ────────────────────────────────────────────────────────────────

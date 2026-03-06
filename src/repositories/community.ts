@@ -1,10 +1,12 @@
 import { supabase } from '../lib/supabase.js';
 import type {
 	CreateChannel,
+	CreateEvent,
 	CreatePost,
 	CreateProject,
 	SendMessage,
 	UpdateChannel,
+	UpdateEvent,
 } from '../types/community.js';
 
 class CommunityRepository {
@@ -382,6 +384,35 @@ class CommunityRepository {
 				description: e.description,
 			}),
 		);
+	}
+
+	async createEvent(data: CreateEvent) {
+		const { data: event, error } = await supabase
+			.from('pl_community_event')
+			.insert({ id: crypto.randomUUID(), ...data })
+			.select()
+			.single();
+		if (error) throw new Error(error.message);
+		return event;
+	}
+
+	async updateEvent(id: string, data: UpdateEvent) {
+		const { data: event, error } = await supabase
+			.from('pl_community_event')
+			.update(data)
+			.eq('id', id)
+			.select()
+			.single();
+		if (error) throw new Error(error.message);
+		return event;
+	}
+
+	async deleteEvent(id: string) {
+		const { error } = await supabase
+			.from('pl_community_event')
+			.delete()
+			.eq('id', id);
+		if (error) throw new Error(error.message);
 	}
 
 	// ── Ranking ───────────────────────────────────────────────────────────────
