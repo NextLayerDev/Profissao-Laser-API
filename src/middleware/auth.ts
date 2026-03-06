@@ -49,6 +49,15 @@ export const authenticateCustomer = async (
 
 	const user = request.currentUser;
 
+	// Staff (Users table) have unrestricted access
+	const { data: platformUser } = await supabase
+		.from('Users')
+		.select('id')
+		.or(`id.eq.${user.id},email.eq.${user.email}`)
+		.maybeSingle();
+
+	if (platformUser) return;
+
 	const { data: customer, error: customerError } = await supabase
 		.from('Customers')
 		.select('id, name')
