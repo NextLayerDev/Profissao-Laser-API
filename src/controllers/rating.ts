@@ -8,7 +8,8 @@ export const getRatingController = async (
 ) => {
 	try {
 		const { lessonId } = request.params;
-		const customerId = request.currentCustomer?.id ?? '';
+		const customerId =
+			request.currentCustomer?.id ?? request.currentUser?.id ?? '';
 		const [myRating, stats] = await Promise.all([
 			ratingRepository.findByLessonAndCustomer(lessonId, customerId),
 			ratingRepository.getAllByLesson(lessonId),
@@ -31,7 +32,8 @@ export const upsertRatingController = async (
 	try {
 		const { lessonId } = request.params;
 		const { stars } = createRatingSchema.parse(request.body);
-		const customerId = request.currentCustomer?.id ?? '';
+		const customerId =
+			request.currentCustomer?.id ?? request.currentUser?.id ?? '';
 		await ratingRepository.upsert(lessonId, customerId, stars);
 		const [myRating, stats] = await Promise.all([
 			ratingRepository.findByLessonAndCustomer(lessonId, customerId),
