@@ -81,7 +81,7 @@ export const getAvailableSlotsController = async (
 		const booked = await appointmentRepository.listByDate(date);
 		const bookedTimes = new Set(booked.map((a) => a.time));
 		const available = ALL_SLOTS.filter((slot) => !bookedTimes.has(slot));
-		return reply.send({ date, available });
+		return reply.send(available);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });

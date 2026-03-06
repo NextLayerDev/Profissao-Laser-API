@@ -109,7 +109,7 @@ export async function appointmentRoute(server: FastifyInstance) {
 					date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 				}),
 				response: {
-					200: z.object({ date: z.string(), available: z.array(z.string()) }),
+					200: z.array(z.string()),
 					500: ErrorSchema,
 				},
 				tags: ['Appointments'],
