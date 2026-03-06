@@ -58,6 +58,36 @@ export const getAppointmentsByCustomerController = async (
 	}
 };
 
+const ALL_SLOTS = [
+	'08:00',
+	'09:00',
+	'10:00',
+	'11:00',
+	'12:00',
+	'13:00',
+	'14:00',
+	'15:00',
+	'16:00',
+	'17:00',
+	'18:00',
+];
+
+export const getAvailableSlotsController = async (
+	request: FastifyRequest<{ Querystring: { date: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { date } = request.query;
+		const booked = await appointmentRepository.listByDate(date);
+		const bookedTimes = new Set(booked.map((a) => a.time));
+		const available = ALL_SLOTS.filter((slot) => !bookedTimes.has(slot));
+		return reply.send({ date, available });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
 export const createAppointmentController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
@@ -68,6 +98,8 @@ export const createAppointmentController = async (
 		return reply.status(201).send(appointment);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
+		if (message === 'Time slot already booked')
+			return reply.status(409).send({ message });
 		return reply.status(500).send({ message });
 	}
 };

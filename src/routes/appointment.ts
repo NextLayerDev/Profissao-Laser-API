@@ -7,6 +7,7 @@ import {
 	getAppointmentsByCustomerController,
 	getAppointmentsByTechnicianController,
 	getAppointmentsController,
+	getAvailableSlotsController,
 	getMyAppointmentsController,
 	updateAppointmentStatusController,
 	updateAppointmentTechnicianController,
@@ -98,6 +99,26 @@ export async function appointmentRoute(server: FastifyInstance) {
 		getAppointmentsByTechnicianController,
 	);
 
+	server.get(
+		'/appointments/available-slots',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'List available time slots for a given date.',
+				querystring: z.object({
+					date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+				}),
+				response: {
+					200: z.object({ date: z.string(), available: z.array(z.string()) }),
+					500: ErrorSchema,
+				},
+				tags: ['Appointments'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getAvailableSlotsController,
+	);
+
 	server.post(
 		'/appointment',
 		{
@@ -107,6 +128,7 @@ export async function appointmentRoute(server: FastifyInstance) {
 				body: createAppointmentSchema,
 				response: {
 					201: appointmentSchema,
+					409: ErrorSchema,
 					500: ErrorSchema,
 				},
 				tags: ['Appointments'],
