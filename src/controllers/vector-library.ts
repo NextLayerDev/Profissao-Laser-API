@@ -13,13 +13,11 @@ async function requireAdmin(
 ): Promise<boolean> {
 	const user = request.currentUser;
 	if (!user) {
-		reply
-			.status(401)
-			.send({
-				statusCode: 401,
-				error: 'Unauthorized',
-				message: 'Not authenticated',
-			});
+		reply.status(401).send({
+			statusCode: 401,
+			error: 'Unauthorized',
+			message: 'Not authenticated',
+		});
 		return false;
 	}
 
@@ -30,13 +28,11 @@ async function requireAdmin(
 		.maybeSingle();
 
 	if (!platformUser) {
-		reply
-			.status(403)
-			.send({
-				statusCode: 403,
-				error: 'Forbidden',
-				message: 'Admin access required',
-			});
+		reply.status(403).send({
+			statusCode: 403,
+			error: 'Forbidden',
+			message: 'Admin access required',
+		});
 		return false;
 	}
 
