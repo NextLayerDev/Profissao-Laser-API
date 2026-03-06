@@ -1,12 +1,14 @@
 import { communityRepository } from '../repositories/community.js';
 import type {
 	CreateChannel,
+	CreateComment,
 	CreateEvent,
 	CreatePost,
 	CreateProject,
 	SendMessage,
 	UpdateChannel,
 	UpdateEvent,
+	UpdateProject,
 } from '../types/community.js';
 
 class CommunityService {
@@ -89,12 +91,53 @@ class CommunityService {
 
 	// ── Projects ──────────────────────────────────────────────────────────────
 
-	async listProjects(page: number, limit: number) {
-		return communityRepository.listProjects(page, limit);
+	async listProjects(
+		page: number,
+		limit: number,
+		filters?: {
+			material?: string;
+			technique?: string;
+			search?: string;
+			sort?: string;
+		},
+	) {
+		return communityRepository.listProjects(page, limit, filters);
+	}
+
+	async getProject(id: string) {
+		return communityRepository.getProject(id);
 	}
 
 	async createProject(data: CreateProject, authorId: string) {
 		return communityRepository.createProject({ ...data, authorId });
+	}
+
+	async updateProject(id: string, data: UpdateProject) {
+		return communityRepository.updateProject(id, data);
+	}
+
+	async deleteProject(id: string) {
+		return communityRepository.deleteProject(id);
+	}
+
+	async listProjectComments(projectId: string, page: number, limit: number) {
+		return communityRepository.listProjectComments(projectId, page, limit);
+	}
+
+	async createProjectComment(
+		projectId: string,
+		data: CreateComment,
+		author: {
+			authorId: string;
+			authorName: string;
+			authorAvatar: string | null;
+			isAdmin: boolean;
+		},
+	) {
+		return communityRepository.createProjectComment(projectId, {
+			...data,
+			...author,
+		});
 	}
 
 	// ── Events ────────────────────────────────────────────────────────────────

@@ -5,20 +5,25 @@ import {
 	createChannelController,
 	createEventController,
 	createPostController,
+	createProjectCommentController,
 	createProjectController,
 	deleteChannelController,
 	deleteEventController,
 	deleteMessageController,
+	deleteProjectController,
 	getChannelsController,
 	getEventsController,
 	getMembersController,
 	getMessagesController,
 	getPostsController,
+	getProjectCommentsController,
+	getProjectController,
 	getProjectsController,
 	getRankingController,
 	sendMessageController,
 	updateChannelController,
 	updateEventController,
+	updateProjectController,
 } from '../controllers/community.js';
 import {
 	communityChannelSchema,
@@ -29,11 +34,15 @@ import {
 	communityProjectSchema,
 	communityRankingSchema,
 	createChannelSchema,
+	createCommentSchema,
 	createEventSchema,
 	createPostSchema,
 	createProjectSchema,
+	projectCommentSchema,
+	projectDetailSchema,
 	updateChannelSchema,
 	updateEventSchema,
+	updateProjectSchema,
 } from '../types/community.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -249,6 +258,10 @@ export async function communityRoute(server: FastifyInstance) {
 				querystring: z.object({
 					page: z.string().optional(),
 					limit: z.string().optional(),
+					material: z.string().optional(),
+					technique: z.string().optional(),
+					search: z.string().optional(),
+					sort: z.enum(['recent', 'likes']).optional(),
 				}),
 				response: {
 					200: z.array(communityProjectSchema),
@@ -277,6 +290,105 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		createProjectController,
+	);
+
+	server.get(
+		'/community/projects/:projectId',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Get a single community project with its comments.',
+				params: z.object({ projectId: z.string() }),
+				response: {
+					200: projectDetailSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getProjectController,
+	);
+
+	server.patch(
+		'/community/projects/:projectId',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Update a community project (admin only).',
+				params: z.object({ projectId: z.string() }),
+				body: updateProjectSchema,
+				response: {
+					200: communityProjectSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		updateProjectController,
+	);
+
+	server.delete(
+		'/community/projects/:projectId',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Delete a community project (admin only).',
+				params: z.object({ projectId: z.string() }),
+				response: {
+					204: z.null(),
+					400: ErrorSchema,
+					403: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		deleteProjectController,
+	);
+
+	server.get(
+		'/community/projects/:projectId/comments',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'List comments for a community project.',
+				params: z.object({ projectId: z.string() }),
+				querystring: z.object({
+					page: z.string().optional(),
+					limit: z.string().optional(),
+				}),
+				response: {
+					200: z.array(projectCommentSchema),
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getProjectCommentsController,
+	);
+
+	server.post(
+		'/community/projects/:projectId/comments',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Add a comment to a community project.',
+				params: z.object({ projectId: z.string() }),
+				body: createCommentSchema,
+				response: {
+					201: projectCommentSchema,
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		createProjectCommentController,
 	);
 
 	// ── Events ─────────────────────────────────────────────────────────────────

@@ -1,12 +1,14 @@
 import { supabase } from '../lib/supabase.js';
 import type {
 	CreateChannel,
+	CreateComment,
 	CreateEvent,
 	CreatePost,
 	CreateProject,
 	SendMessage,
 	UpdateChannel,
 	UpdateEvent,
+	UpdateProject,
 } from '../types/community.js';
 
 class CommunityRepository {
@@ -294,16 +296,37 @@ class CommunityRepository {
 
 	// ── Projects ──────────────────────────────────────────────────────────────
 
-	async listProjects(page: number, limit: number) {
+	async listProjects(
+		page: number,
+		limit: number,
+		filters?: {
+			material?: string;
+			technique?: string;
+			search?: string;
+			sort?: string;
+		},
+	) {
 		const from = (page - 1) * limit;
 		const to = from + limit - 1;
 
-		const { data, error } = await supabase
+		let query = supabase
 			.from('pl_community_project')
 			.select('*')
-			.order('createdAt', { ascending: false })
 			.range(from, to);
 
+		if (filters?.material) query = query.eq('material', filters.material);
+		if (filters?.technique) query = query.eq('technique', filters.technique);
+		if (filters?.search)
+			query = query.or(
+				`title.ilike.%${filters.search}%,authorName.ilike.%${filters.search}%`,
+			);
+
+		query =
+			filters?.sort === 'likes'
+				? query.order('likes', { ascending: false })
+				: query.order('createdAt', { ascending: false });
+
+		const { data, error } = await query;
 		if (error) throw new Error(error.message);
 
 		return (data ?? []).map(
@@ -331,6 +354,144 @@ class CommunityRepository {
 				comments: p.comments,
 			}),
 		);
+	}
+
+	private mapProject(p: {
+		id: string;
+		title: string;
+		authorName: string;
+		img: string | null;
+		description: string | null;
+		material: string | null;
+		technique: string | null;
+		createdAt: string;
+		likes: number;
+		comments: number;
+	}) {
+		return {
+			id: p.id,
+			title: p.title,
+			author: p.authorName,
+			img: p.img,
+			description: p.description,
+			material: p.material,
+			technique: p.technique,
+			time: p.createdAt,
+			likes: p.likes,
+			comments: p.comments,
+		};
+	}
+
+	async getProject(id: string) {
+		const [{ data: project, error }, comments] = await Promise.all([
+			supabase.from('pl_community_project').select('*').eq('id', id).single(),
+			this.listProjectComments(id, 1, 100),
+		]);
+		if (error) throw new Error(error.message);
+		if (!project) return null;
+		return { ...this.mapProject(project), commentList: comments };
+	}
+
+	async updateProject(id: string, data: UpdateProject) {
+		const updates: Record<string, unknown> = {};
+		if (data.title !== undefined) updates.title = data.title;
+		if (data.description !== undefined) updates.description = data.description;
+		if (data.img !== undefined) updates.img = data.img;
+		if (data.material !== undefined) updates.material = data.material;
+		if (data.technique !== undefined) updates.technique = data.technique;
+
+		const { data: project, error } = await supabase
+			.from('pl_community_project')
+			.update(updates)
+			.eq('id', id)
+			.select()
+			.single();
+		if (error) throw new Error(error.message);
+		return this.mapProject(project);
+	}
+
+	async deleteProject(id: string) {
+		const { error } = await supabase
+			.from('pl_community_project')
+			.delete()
+			.eq('id', id);
+		if (error) throw new Error(error.message);
+	}
+
+	async listProjectComments(projectId: string, page: number, limit: number) {
+		const from = (page - 1) * limit;
+		const to = from + limit - 1;
+
+		const { data, error } = await supabase
+			.from('pl_community_project_comment')
+			.select('*')
+			.eq('projectId', projectId)
+			.order('createdAt', { ascending: true })
+			.range(from, to);
+		if (error) throw new Error(error.message);
+
+		return (data ?? []).map(
+			(c: {
+				id: string;
+				projectId: string;
+				authorName: string;
+				content: string;
+				createdAt: string;
+				isAdmin: boolean;
+			}) => ({
+				id: c.id,
+				projectId: c.projectId,
+				author: c.authorName,
+				content: c.content,
+				time: c.createdAt,
+				isAdmin: c.isAdmin,
+			}),
+		);
+	}
+
+	async createProjectComment(
+		projectId: string,
+		data: CreateComment & {
+			authorId: string;
+			authorName: string;
+			authorAvatar: string | null;
+			isAdmin: boolean;
+		},
+	) {
+		const { data: comment, error } = await supabase
+			.from('pl_community_project_comment')
+			.insert({
+				id: crypto.randomUUID(),
+				projectId,
+				content: data.content,
+				authorId: data.authorId,
+				authorName: data.authorName,
+				authorAvatar: data.authorAvatar,
+				isAdmin: data.isAdmin,
+			})
+			.select()
+			.single();
+		if (error) throw new Error(error.message);
+
+		// Increment comments counter
+		const { data: proj } = await supabase
+			.from('pl_community_project')
+			.select('comments')
+			.eq('id', projectId)
+			.single();
+		await supabase
+			.from('pl_community_project')
+			.update({ comments: (proj?.comments ?? 0) + 1 })
+			.eq('id', projectId);
+
+		return {
+			id: comment.id,
+			projectId,
+			author: data.authorName,
+			content: data.content,
+			time: comment.createdAt,
+			isAdmin: data.isAdmin,
+		};
 	}
 
 	async createProject(data: CreateProject & { authorId: string }) {

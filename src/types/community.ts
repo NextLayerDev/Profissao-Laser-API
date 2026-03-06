@@ -78,6 +78,31 @@ export const createProjectSchema = z.object({
 	technique: z.string().optional(),
 });
 
+export const updateProjectSchema = z.object({
+	title: z.string().min(1).optional(),
+	description: z.string().optional(),
+	img: z.string().optional(),
+	material: z.string().optional(),
+	technique: z.string().optional(),
+});
+
+export const projectCommentSchema = z.object({
+	id: z.string(),
+	projectId: z.string(),
+	author: z.string(),
+	content: z.string(),
+	time: z.string(),
+	isAdmin: z.boolean(),
+});
+
+export const createCommentSchema = z.object({
+	content: z.string().min(1),
+});
+
+export const projectDetailSchema = communityProjectSchema.extend({
+	commentList: z.array(projectCommentSchema),
+});
+
 export const communityEventSchema = z.object({
 	id: z.string(),
 	title: z.string(),
@@ -119,5 +144,7 @@ export type CreateChannel = z.infer<typeof createChannelSchema>;
 export type UpdateChannel = z.infer<typeof updateChannelSchema>;
 export type SendMessage = z.infer<typeof sendMessageSchema>;
 export type CreateProject = z.infer<typeof createProjectSchema>;
+export type UpdateProject = z.infer<typeof updateProjectSchema>;
+export type CreateComment = z.infer<typeof createCommentSchema>;
 export type CreateEvent = z.infer<typeof createEventSchema>;
 export type UpdateEvent = z.infer<typeof updateEventSchema>;

@@ -3,11 +3,13 @@ import { uploadCommunityFile } from '../lib/storage.js';
 import { communityService } from '../services/community.js';
 import {
 	createChannelSchema,
+	createCommentSchema,
 	createEventSchema,
 	createPostSchema,
 	createProjectSchema,
 	updateChannelSchema,
 	updateEventSchema,
+	updateProjectSchema,
 } from '../types/community.js';
 
 // ── Posts ──────────────────────────────────────────────────────────────────
@@ -212,17 +214,132 @@ export const getMembersController = async (
 // ── Projects ───────────────────────────────────────────────────────────────
 
 export const getProjectsController = async (
-	request: FastifyRequest<{ Querystring: { page?: string; limit?: string } }>,
+	request: FastifyRequest<{
+		Querystring: {
+			page?: string;
+			limit?: string;
+			material?: string;
+			technique?: string;
+			search?: string;
+			sort?: string;
+		};
+	}>,
 	reply: FastifyReply,
 ) => {
 	try {
-		const page = Number(request.query.page ?? 1);
-		const limit = Number(request.query.limit ?? 20);
-		const projects = await communityService.listProjects(page, limit);
+		const { page, limit, material, technique, search, sort } = request.query;
+		const projects = await communityService.listProjects(
+			Number(page ?? 1),
+			Number(limit ?? 20),
+			{ material, technique, search, sort },
+		);
 		return reply.send(projects);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
+	}
+};
+
+export const getProjectController = async (
+	request: FastifyRequest<{ Params: { projectId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { projectId } = request.params;
+		const project = await communityService.getProject(projectId);
+		if (!project) return reply.status(404).send({ message: 'Not found' });
+		return reply.send(project);
+	} catch (err) {
+		return reply
+			.status(500)
+			.send({ message: err instanceof Error ? err.message : 'Unknown error' });
+	}
+};
+
+export const updateProjectController = async (
+	request: FastifyRequest<{ Params: { projectId: string } }>,
+	reply: FastifyReply,
+) => {
+	if (request.currentCustomer)
+		return reply.status(403).send({ message: 'Admin access required' });
+	try {
+		const { projectId } = request.params;
+		const data = updateProjectSchema.parse(request.body);
+		const project = await communityService.updateProject(projectId, data);
+		return reply.send(project);
+	} catch (err) {
+		return reply
+			.status(400)
+			.send({ message: err instanceof Error ? err.message : 'Unknown error' });
+	}
+};
+
+export const deleteProjectController = async (
+	request: FastifyRequest<{ Params: { projectId: string } }>,
+	reply: FastifyReply,
+) => {
+	if (request.currentCustomer)
+		return reply.status(403).send({ message: 'Admin access required' });
+	try {
+		const { projectId } = request.params;
+		await communityService.deleteProject(projectId);
+		return reply.status(204).send();
+	} catch (err) {
+		return reply
+			.status(400)
+			.send({ message: err instanceof Error ? err.message : 'Unknown error' });
+	}
+};
+
+export const getProjectCommentsController = async (
+	request: FastifyRequest<{
+		Params: { projectId: string };
+		Querystring: { page?: string; limit?: string };
+	}>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { projectId } = request.params;
+		const page = Number(request.query.page ?? 1);
+		const limit = Number(request.query.limit ?? 20);
+		const comments = await communityService.listProjectComments(
+			projectId,
+			page,
+			limit,
+		);
+		return reply.send(comments);
+	} catch (err) {
+		return reply
+			.status(500)
+			.send({ message: err instanceof Error ? err.message : 'Unknown error' });
+	}
+};
+
+export const createProjectCommentController = async (
+	request: FastifyRequest<{ Params: { projectId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { projectId } = request.params;
+		const data = createCommentSchema.parse(request.body);
+		const isAdmin = !request.currentCustomer;
+		const userId = request.currentUser?.id ?? '';
+		const customer = request.currentCustomer;
+		const comment = await communityService.createProjectComment(
+			projectId,
+			data,
+			{
+				authorId: userId,
+				authorName: customer?.name ?? request.currentUser?.email ?? 'Admin',
+				authorAvatar: customer?.image ?? null,
+				isAdmin,
+			},
+		);
+		return reply.status(201).send(comment);
+	} catch (err) {
+		return reply
+			.status(400)
+			.send({ message: err instanceof Error ? err.message : 'Unknown error' });
 	}
 };
 
