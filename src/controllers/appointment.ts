@@ -165,12 +165,13 @@ export const updateAppointmentTechnicianController = async (
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 
-		const { technicianId } = updateAppointmentTechnicianSchema.parse(
+		const { technicianId, machine } = updateAppointmentTechnicianSchema.parse(
 			request.body,
 		);
 		const appointment = await appointmentRepository.updateTechnician(
 			request.params.id,
 			technicianId,
+			machine,
 		);
 		return reply.send(appointment);
 	} catch (err) {

@@ -74,10 +74,13 @@ class AppointmentRepository {
 		return data;
 	}
 
-	async updateTechnician(id: string, technicianId: string) {
+	async updateTechnician(id: string, technicianId: string, machine?: string) {
+		const updates: Record<string, unknown> = { technicianId };
+		if (machine !== undefined) updates.machine = machine;
+
 		const { data, error } = await supabase
 			.from('pl_appointment')
-			.update({ technicianId })
+			.update(updates)
 			.eq('id', id)
 			.select()
 			.single();

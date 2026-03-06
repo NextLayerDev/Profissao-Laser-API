@@ -11,6 +11,7 @@ export const appointmentSchema = z.object({
 	status: z.enum(['pendente', 'confirmado', 'cancelado', 'concluido']),
 	notes: z.string().nullable(),
 	technicianId: z.string().uuid().nullable(),
+	machine: z.string().nullable(),
 	createdAt: z.string(),
 });
 
@@ -23,6 +24,7 @@ export const createAppointmentSchema = z.object({
 	time: z.string(),
 	notes: z.string().optional(),
 	technicianId: z.string().uuid().optional(),
+	machine: z.string().optional(),
 });
 
 export const updateAppointmentStatusSchema = z.object({
@@ -31,6 +33,7 @@ export const updateAppointmentStatusSchema = z.object({
 
 export const updateAppointmentTechnicianSchema = z.object({
 	technicianId: z.string().uuid(),
+	machine: z.string().optional(),
 });
 
 export type AppointmentCreate = z.infer<typeof createAppointmentSchema>;
