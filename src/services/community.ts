@@ -36,6 +36,10 @@ class CommunityService {
 		return communityRepository.listChannels();
 	}
 
+	async getChannel(id: string) {
+		return communityRepository.getChannel(id);
+	}
+
 	async createChannel(data: CreateChannel) {
 		return communityRepository.createChannel(data);
 	}

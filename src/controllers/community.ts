@@ -141,6 +141,16 @@ export const sendMessageController = async (
 ) => {
 	try {
 		const { channelId } = request.params;
+
+		const channel = await communityService.getChannel(channelId);
+		if (channel?.adminOnly && request.currentCustomer) {
+			return reply
+				.status(403)
+				.send({
+					message: 'Apenas administradores podem enviar mensagens neste canal',
+				});
+		}
+
 		const parts = request.parts();
 		let content = '';
 		let fileUrl: string | undefined;

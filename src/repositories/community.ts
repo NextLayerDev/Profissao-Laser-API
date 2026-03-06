@@ -113,13 +113,31 @@ class CommunityRepository {
 				label: string;
 				description: string | null;
 				category: string;
+				adminOnly: boolean;
 			}) => ({
 				id: ch.id,
 				label: ch.label,
 				description: ch.description,
 				category: ch.category,
+				adminOnly: ch.adminOnly ?? false,
 			}),
 		);
+	}
+
+	async getChannel(id: string) {
+		const { data, error } = await supabase
+			.from('pl_community_channel')
+			.select('*')
+			.eq('id', id)
+			.single();
+		if (error) throw new Error(error.message);
+		return data as {
+			id: string;
+			label: string;
+			description: string | null;
+			category: string;
+			adminOnly: boolean;
+		} | null;
 	}
 
 	async createChannel(data: CreateChannel) {
@@ -129,6 +147,7 @@ class CommunityRepository {
 				id: crypto.randomUUID(),
 				label: data.name,
 				category: 'geral',
+				adminOnly: data.adminOnly ?? false,
 			})
 			.select()
 			.single();
@@ -138,9 +157,10 @@ class CommunityRepository {
 	}
 
 	async updateChannel(id: string, data: UpdateChannel) {
-		const updates: Record<string, string> = {};
+		const updates: Record<string, unknown> = {};
 		if (data.name !== undefined) updates.label = data.name;
 		if (data.description !== undefined) updates.description = data.description;
+		if (data.adminOnly !== undefined) updates.adminOnly = data.adminOnly;
 
 		const { data: channel, error } = await supabase
 			.from('pl_community_channel')
