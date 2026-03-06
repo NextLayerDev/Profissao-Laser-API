@@ -73,12 +73,14 @@ const ALL_SLOTS = [
 ];
 
 export const getAvailableSlotsController = async (
-	request: FastifyRequest<{ Querystring: { date: string } }>,
+	request: FastifyRequest<{
+		Querystring: { date: string; technicianId?: string };
+	}>,
 	reply: FastifyReply,
 ) => {
 	try {
-		const { date } = request.query;
-		const booked = await appointmentRepository.listByDate(date);
+		const { date, technicianId } = request.query;
+		const booked = await appointmentRepository.listByDate(date, technicianId);
 		const bookedTimes = new Set(booked.map((a) => a.time));
 		const available = ALL_SLOTS.filter((slot) => !bookedTimes.has(slot));
 		return reply.send(available);

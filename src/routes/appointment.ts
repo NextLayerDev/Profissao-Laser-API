@@ -107,6 +107,7 @@ export async function appointmentRoute(server: FastifyInstance) {
 				description: 'List available time slots for a given date.',
 				querystring: z.object({
 					date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+					technicianId: z.string().uuid().optional(),
 				}),
 				response: {
 					200: z.array(z.string()),

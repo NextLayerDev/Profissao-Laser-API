@@ -26,19 +26,24 @@ class AppointmentRepository {
 		return data;
 	}
 
-	async listByDate(date: string) {
-		const { data, error } = await supabase
+	async listByDate(date: string, technicianId?: string) {
+		let query = supabase
 			.from('pl_appointment')
 			.select('time')
 			.eq('date', date)
 			.neq('status', 'cancelado');
 
+		if (technicianId) {
+			query = query.eq('technicianId', technicianId);
+		}
+
+		const { data, error } = await query;
 		if (error) throw new Error(error.message);
 		return data;
 	}
 
 	async create(data: AppointmentCreate) {
-		const existing = await this.listByDate(data.date);
+		const existing = await this.listByDate(data.date, data.technicianId);
 		const conflict = existing.some((a) => a.time === data.time);
 		if (conflict) throw new Error('Time slot already booked');
 
