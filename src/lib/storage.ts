@@ -78,6 +78,25 @@ export async function uploadCommunityFile(
 	return upload('community-files', buffer, path, mimetype);
 }
 
+export async function uploadVectorLibraryFile(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('vector-library', buffer, path, mimetype);
+}
+
+export async function deleteVectorLibraryFileByUrl(url: string): Promise<void> {
+	const marker = '/object/public/vector-library/';
+	const idx = url.indexOf(marker);
+	if (idx === -1) return;
+	const filePath = url.slice(idx + marker.length);
+	const { error } = await supabase.storage
+		.from('vector-library')
+		.remove([filePath]);
+	if (error) throw new Error(error.message);
+}
+
 export async function deleteSvgByUrl(url: string): Promise<void> {
 	const marker = '/object/public/vectors/';
 	const idx = url.indexOf(marker);

@@ -17,6 +17,7 @@ import { quizRoute } from './routes/quiz.js';
 import { savedLessonRoute } from './routes/saved-lesson.js';
 import { userRoute } from './routes/user.js';
 import { vectorRoute } from './routes/vector.js';
+import { vectorLibraryRoute } from './routes/vector-library.js';
 import { webhookRoute } from './routes/webhook.js';
 
 export const routes = async (app: FastifyInstance) => {
@@ -39,4 +40,5 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(progressRoute);
 	app.register(savedLessonRoute);
 	app.register(vectorRoute);
+	app.register(vectorLibraryRoute);
 };
