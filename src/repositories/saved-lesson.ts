@@ -74,6 +74,7 @@ class SavedLessonRepository {
 			.eq('userId', customerId)
 			.eq('productId', lesson.productId)
 			.eq('status', 'active')
+			.limit(1)
 			.maybeSingle();
 
 		if (subError) throw new Error(subError.message);
