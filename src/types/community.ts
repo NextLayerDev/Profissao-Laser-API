@@ -24,17 +24,20 @@ export const communityChannelSchema = z.object({
 	description: z.string().nullable().optional(),
 	category: z.string(),
 	adminOnly: z.boolean(),
+	order: z.number().int(),
 });
 
 export const createChannelSchema = z.object({
 	name: z.string().min(1),
 	adminOnly: z.boolean().optional(),
+	order: z.number().int().optional(),
 });
 
 export const updateChannelSchema = z.object({
 	name: z.string().min(1).optional(),
 	description: z.string().optional(),
 	adminOnly: z.boolean().optional(),
+	order: z.number().int().optional(),
 });
 
 export const communityMessageSchema = z.object({

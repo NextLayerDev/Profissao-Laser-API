@@ -104,7 +104,7 @@ class CommunityRepository {
 		const { data, error } = await supabase
 			.from('pl_community_channel')
 			.select('*')
-			.order('createdAt', { ascending: true });
+			.order('order', { ascending: true });
 
 		if (error) throw new Error(error.message);
 		return (data ?? []).map(
@@ -114,12 +114,14 @@ class CommunityRepository {
 				description: string | null;
 				category: string;
 				adminOnly: boolean;
+				order: number;
 			}) => ({
 				id: ch.id,
 				label: ch.label,
 				description: ch.description,
 				category: ch.category,
 				adminOnly: ch.adminOnly ?? false,
+				order: ch.order ?? 0,
 			}),
 		);
 	}
@@ -137,6 +139,7 @@ class CommunityRepository {
 			description: string | null;
 			category: string;
 			adminOnly: boolean;
+			order: number;
 		} | null;
 	}
 
@@ -148,6 +151,7 @@ class CommunityRepository {
 				label: data.name,
 				category: 'geral',
 				adminOnly: data.adminOnly ?? false,
+				order: data.order ?? 0,
 			})
 			.select()
 			.single();
@@ -161,6 +165,7 @@ class CommunityRepository {
 		if (data.name !== undefined) updates.label = data.name;
 		if (data.description !== undefined) updates.description = data.description;
 		if (data.adminOnly !== undefined) updates.adminOnly = data.adminOnly;
+		if (data.order !== undefined) updates.order = data.order;
 
 		const { data: channel, error } = await supabase
 			.from('pl_community_channel')
