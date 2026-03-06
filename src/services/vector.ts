@@ -19,7 +19,7 @@ class VectorService {
 		customerId: string,
 		{ svgContent, originalName }: { svgContent: string; originalName: string },
 	) {
-		const path = `vectors/${customerId}/${Date.now()}_${originalName}.svg`;
+		const path = `${customerId}/${Date.now()}_${originalName}.svg`;
 		const svgUrl = await uploadSvgFile(svgContent, path);
 		return vectorRepository.create(customerId, {
 			original_name: originalName,
@@ -44,7 +44,7 @@ class VectorService {
 		if (svgContent) {
 			await deleteSvgByUrl(vector.svg_url);
 			const name = originalName ?? vector.original_name;
-			const path = `vectors/${vector.customer_id}/${Date.now()}_${name}.svg`;
+			const path = `${vector.customer_id}/${Date.now()}_${name}.svg`;
 			fields.svg_url = await uploadSvgFile(svgContent, path);
 		}
 
