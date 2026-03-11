@@ -80,4 +80,20 @@ export async function authRoute(server: FastifyInstance) {
 		},
 		authController.loginUser,
 	);
+
+	server.post(
+		'/forgot-password',
+		{
+			schema: {
+				description: 'Send password recovery email',
+				body: z.object({ email: z.email() }),
+				response: {
+					200: z.object({ message: z.string() }),
+					400: ErrorSchema,
+				},
+				tags: ['Auth Customer'],
+			},
+		},
+		authController.forgotPassword,
+	);
 }

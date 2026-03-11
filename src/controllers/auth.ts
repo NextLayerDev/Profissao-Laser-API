@@ -47,6 +47,17 @@ class AuthController {
 			return reply.status(401).send({ message });
 		}
 	}
+
+	async forgotPassword(request: FastifyRequest, reply: FastifyReply) {
+		try {
+			const { email } = request.body as { email: string };
+			const result = await authService.forgotPassword(email);
+			return reply.send(result);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Unknown error';
+			return reply.status(400).send({ message });
+		}
+	}
 }
 
 export const authController = new AuthController();

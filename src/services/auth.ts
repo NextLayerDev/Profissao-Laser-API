@@ -1,3 +1,4 @@
+import { sendPasswordResetEmail } from '../lib/mailer.js';
 import { supabase } from '../lib/supabase.js';
 import { customerRepository } from '../repositories/customer.js';
 import { usersRepository } from '../repositories/user.js';
@@ -89,6 +90,18 @@ export class AuthService {
 		if (error) throw new Error(error.message);
 
 		return { token: data.session.access_token };
+	}
+
+	async forgotPassword(email: string) {
+		const { data, error } = await supabase.auth.admin.generateLink({
+			type: 'recovery',
+			email,
+		});
+
+		if (error) throw new Error(error.message);
+
+		await sendPasswordResetEmail(email, data.properties.action_link);
+		return { message: 'Email de recuperação enviado' };
 	}
 }
 
