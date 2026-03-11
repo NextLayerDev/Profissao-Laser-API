@@ -50,5 +50,5 @@ export const presignedVideoUrlSchema = z.object({
 });
 
 export const confirmVideoUploadSchema = z.object({
-	path: z.string().min(1, 'Path is required'),
+	videoId: z.string().min(1, 'videoId is required'),
 });
