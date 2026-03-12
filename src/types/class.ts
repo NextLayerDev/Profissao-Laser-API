@@ -13,7 +13,7 @@ export const classSchema = z.object({
 	suporte: z.boolean(),
 	comunidade: z.boolean(),
 	system: z.boolean(),
-	machine: z.string(),
+	machine: z.string().nullable(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 });

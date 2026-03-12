@@ -12,6 +12,7 @@ export const getClassesController = async (
 ) => {
 	try {
 		const classes = await classService.listClasses();
+		console.log(classes);
 		return reply.send(classes);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
