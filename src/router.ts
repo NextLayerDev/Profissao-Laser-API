@@ -8,6 +8,7 @@ import { courseRoute } from './routes/course.js';
 import { customerRoute } from './routes/customer.js';
 import { doubtRoute } from './routes/doubt.js';
 import { doubtChatRoute } from './routes/doubt-chat.js';
+import { faqRoute } from './routes/faq.js';
 import { lessonRoute } from './routes/lesson.js';
 import { moduleRoute } from './routes/module.js';
 import { productRoute } from './routes/product.js';
@@ -41,4 +42,5 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(savedLessonRoute);
 	app.register(vectorRoute);
 	app.register(vectorLibraryRoute);
+	app.register(faqRoute);
 };
