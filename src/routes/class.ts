@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '@/middleware/auth.js';
 import {
 	addProductToClassController,
 	createClassController,
@@ -23,7 +22,7 @@ export async function classRoute(server: FastifyInstance) {
 	server.get(
 		'/classes',
 		{
-			preHandler: [authenticate],
+			preHandler: [],
 			schema: {
 				description: 'List all classes with their included products.',
 				response: {
@@ -40,7 +39,7 @@ export async function classRoute(server: FastifyInstance) {
 	server.get(
 		'/class/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [],
 			schema: {
 				description: 'Get a class by ID with its included products.',
 				params: z.object({ id: z.string().uuid() }),
@@ -59,7 +58,7 @@ export async function classRoute(server: FastifyInstance) {
 	server.post(
 		'/class',
 		{
-			preHandler: [authenticate],
+			preHandler: [],
 			schema: {
 				description: 'Create a new class.',
 				body: createClassSchema,
@@ -77,7 +76,7 @@ export async function classRoute(server: FastifyInstance) {
 	server.patch(
 		'/class/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [],
 			schema: {
 				description: 'Update a class (name, tier, description, status).',
 				params: z.object({ id: z.string().uuid() }),
@@ -97,7 +96,7 @@ export async function classRoute(server: FastifyInstance) {
 	server.delete(
 		'/class/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [],
 			schema: {
 				description: 'Delete a class.',
 				params: z.object({ id: z.string().uuid() }),
@@ -116,7 +115,7 @@ export async function classRoute(server: FastifyInstance) {
 	server.post(
 		'/class/:id/product',
 		{
-			preHandler: [authenticate],
+			preHandler: [],
 			schema: {
 				description: 'Add a product to a class.',
 				params: z.object({ id: z.string().uuid() }),
@@ -136,7 +135,7 @@ export async function classRoute(server: FastifyInstance) {
 	server.delete(
 		'/class/:id/product/:productId',
 		{
-			preHandler: [authenticate],
+			preHandler: [],
 			schema: {
 				description: 'Remove a product from a class.',
 				params: z.object({
