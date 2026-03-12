@@ -70,7 +70,40 @@ export const createFaqController = async (
 ) => {
 	if (!(await requireAdmin(request, reply))) return;
 	try {
-		const data = createFaqSchema.parse(request.body);
+		const fields: Record<string, string> = {};
+		let imageUrl: string | undefined;
+
+		for await (const part of request.parts()) {
+			if (part.type === 'file') {
+				if (part.fieldname === 'image') {
+					if (!ALLOWED_IMAGE_MIMETYPES.includes(part.mimetype)) {
+						return reply.status(400).send({
+							message: 'Invalid file type. Allowed: jpeg, png, webp, gif',
+						});
+					}
+					const buffer = await part.toBuffer();
+					if (buffer.byteLength > MAX_IMAGE_SIZE) {
+						return reply
+							.status(400)
+							.send({ message: 'File too large. Maximum size is 5MB' });
+					}
+					const ext = part.mimetype.split('/')[1];
+					const storagePath = `${crypto.randomUUID()}.${ext}`;
+					imageUrl = await uploadFaqImage(buffer, storagePath, part.mimetype);
+				} else {
+					await part.toBuffer();
+				}
+			} else {
+				fields[part.fieldname] = part.value as string;
+			}
+		}
+
+		const data = createFaqSchema.parse({
+			question: fields.question,
+			answer: fields.answer,
+			imageUrl,
+			order: Number(fields.order),
+		});
 		const faq = await faqRepository.create(data);
 		return reply.status(201).send(faq);
 	} catch (err) {
@@ -86,7 +119,42 @@ export const updateFaqController = async (
 	if (!(await requireAdmin(request, reply))) return;
 	try {
 		const { id } = request.params;
-		const data = updateFaqSchema.parse(request.body);
+		const fields: Record<string, string> = {};
+		let imageUrl: string | null | undefined;
+
+		for await (const part of request.parts()) {
+			if (part.type === 'file') {
+				if (part.fieldname === 'image') {
+					if (!ALLOWED_IMAGE_MIMETYPES.includes(part.mimetype)) {
+						return reply.status(400).send({
+							message: 'Invalid file type. Allowed: jpeg, png, webp, gif',
+						});
+					}
+					const buffer = await part.toBuffer();
+					if (buffer.byteLength > MAX_IMAGE_SIZE) {
+						return reply
+							.status(400)
+							.send({ message: 'File too large. Maximum size is 5MB' });
+					}
+					const ext = part.mimetype.split('/')[1];
+					const storagePath = `${crypto.randomUUID()}.${ext}`;
+					imageUrl = await uploadFaqImage(buffer, storagePath, part.mimetype);
+				} else {
+					await part.toBuffer();
+				}
+			} else {
+				fields[part.fieldname] = part.value as string;
+			}
+		}
+
+		if (fields.removeImage === 'true') imageUrl = null;
+
+		const data = updateFaqSchema.parse({
+			...(fields.question !== undefined && { question: fields.question }),
+			...(fields.answer !== undefined && { answer: fields.answer }),
+			...(fields.order !== undefined && { order: Number(fields.order) }),
+			...(imageUrl !== undefined && { imageUrl }),
+		});
 		const faq = await faqRepository.update(id, data, request.currentUser!.id);
 		return reply.send(faq);
 	} catch (err) {

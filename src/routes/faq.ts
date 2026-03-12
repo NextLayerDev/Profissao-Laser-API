@@ -12,13 +12,7 @@ import {
 } from '../controllers/faq.js';
 import { authenticate, authenticateCustomer } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
-import {
-	createFaqSchema,
-	faqSchema,
-	reactFaqSchema,
-	reorderFaqSchema,
-	updateFaqSchema,
-} from '../types/faq.js';
+import { faqSchema, reactFaqSchema, reorderFaqSchema } from '../types/faq.js';
 
 export async function faqRoute(server: FastifyInstance) {
 	server.get(
@@ -43,8 +37,8 @@ export async function faqRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticate],
 			schema: {
-				description: 'Create a new FAQ (admin only).',
-				body: createFaqSchema,
+				description:
+					'Create a new FAQ (admin only). Accepts multipart/form-data: question, answer, order (required) + image file (optional).',
 				response: {
 					201: faqSchema,
 					400: ErrorSchema,
@@ -100,9 +94,9 @@ export async function faqRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticate],
 			schema: {
-				description: 'Update a FAQ (admin only).',
+				description:
+					'Update a FAQ (admin only). Accepts multipart/form-data: question, answer, order (optional) + image file (optional). Send removeImage=true to clear the image.',
 				params: z.object({ id: z.string() }),
-				body: updateFaqSchema,
 				response: {
 					200: faqSchema,
 					400: ErrorSchema,
