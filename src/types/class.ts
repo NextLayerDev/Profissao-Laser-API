@@ -13,6 +13,7 @@ export const classSchema = z.object({
 	suporte: z.boolean(),
 	comunidade: z.boolean(),
 	system: z.boolean(),
+	machine: z.string(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 });
@@ -32,6 +33,7 @@ export const createClassSchema = z.object({
 	suporte: z.boolean().default(false),
 	comunidade: z.boolean().default(false),
 	system: z.boolean().default(false),
+	machine: z.string().nullable(),
 });
 
 export const updateClassSchema = z.object({
@@ -45,6 +47,7 @@ export const updateClassSchema = z.object({
 	suporte: z.boolean().optional(),
 	comunidade: z.boolean().optional(),
 	system: z.boolean().optional(),
+	machine: z.string().optional(),
 });
 
 export const addProductToClassSchema = z.object({
