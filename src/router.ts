@@ -16,6 +16,7 @@ import { progressRoute } from './routes/progress.js';
 import { purchaseRoute } from './routes/purchase.js';
 import { quizRoute } from './routes/quiz.js';
 import { savedLessonRoute } from './routes/saved-lesson.js';
+import { systemClassRoute } from './routes/system-class.js';
 import { userRoute } from './routes/user.js';
 import { vectorRoute } from './routes/vector.js';
 import { vectorLibraryRoute } from './routes/vector-library.js';
@@ -26,6 +27,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(authRoute);
 	app.register(appointmentRoute);
 	app.register(classRoute);
+	app.register(systemClassRoute);
 	app.register(communityRoute);
 	app.register(couponRoute);
 	app.register(courseRoute);
