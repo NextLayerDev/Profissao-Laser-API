@@ -13,6 +13,8 @@ export const productSchema = z.object({
 	updatedAt: z.string(),
 	language: z.string(),
 	country: z.string(),
+	machine: z.string().nullable(),
+	software: z.string().nullable(),
 	category: z.string().nullable(),
 	refundDays: z.number().nullable(),
 	stripeProductId: z.string().nullable(),
@@ -33,6 +35,8 @@ export const createProductSchema = z.object({
 	country: z.string().default('BR'),
 	category: z.string().optional(),
 	refundDays: z.number().int().positive().default(7),
+	machine: z.string().optional(),
+	software: z.string().optional(),
 });
 
 export type ProductCreate = z.infer<typeof createProductSchema>;
@@ -43,6 +47,8 @@ export const updateProductSchema = z.object({
 	category: z.string().optional(),
 	price: z.number().positive().optional(),
 	refundDays: z.number().int().positive().optional(),
+	machine: z.string().optional(),
+	software: z.string().optional(),
 });
 
 export type ProductUpdate = z.infer<typeof updateProductSchema>;
