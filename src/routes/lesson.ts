@@ -102,9 +102,11 @@ export async function lessonRoute(server: FastifyInstance) {
 				body: presignedVideoUrlSchema.optional(),
 				response: {
 					200: z.object({
-						path: z.string(),
-						token: z.string(),
-						bucket: z.string(),
+						videoId: z.string(),
+						tusEndpoint: z.string(),
+						authSignature: z.string(),
+						authExpire: z.number(),
+						libraryId: z.string(),
 					}),
 					404: ErrorSchema,
 					500: ErrorSchema,
