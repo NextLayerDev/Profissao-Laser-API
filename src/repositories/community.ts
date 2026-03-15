@@ -114,6 +114,7 @@ class CommunityRepository {
 				description: string | null;
 				category: string;
 				adminOnly: boolean;
+				adminView: boolean;
 				order: number;
 			}) => ({
 				id: ch.id,
@@ -121,6 +122,7 @@ class CommunityRepository {
 				description: ch.description,
 				category: ch.category,
 				adminOnly: ch.adminOnly ?? false,
+				adminView: ch.adminView ?? false,
 				order: ch.order ?? 0,
 			}),
 		);
@@ -139,6 +141,7 @@ class CommunityRepository {
 			description: string | null;
 			category: string;
 			adminOnly: boolean;
+			adminView: boolean;
 			order: number;
 		} | null;
 	}
@@ -151,6 +154,7 @@ class CommunityRepository {
 				label: data.name,
 				category: 'geral',
 				adminOnly: data.adminOnly ?? false,
+				adminView: data.adminView ?? false,
 				order: data.order ?? 0,
 			})
 			.select()
@@ -165,6 +169,7 @@ class CommunityRepository {
 		if (data.name !== undefined) updates.label = data.name;
 		if (data.description !== undefined) updates.description = data.description;
 		if (data.adminOnly !== undefined) updates.adminOnly = data.adminOnly;
+		if (data.adminView !== undefined) updates.adminView = data.adminView;
 		if (data.order !== undefined) updates.order = data.order;
 
 		const { data: channel, error } = await supabase

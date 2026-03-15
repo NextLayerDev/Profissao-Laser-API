@@ -53,12 +53,15 @@ export const createPostController = async (
 // ── Channels ───────────────────────────────────────────────────────────────
 
 export const getChannelsController = async (
-	_request: FastifyRequest,
+	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
 	try {
 		const channels = await communityService.listChannels();
-		return reply.send(channels);
+		const isAdmin = !request.currentCustomer;
+		return reply.send(
+			isAdmin ? channels : channels.filter((c) => !c.adminView),
+		);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
