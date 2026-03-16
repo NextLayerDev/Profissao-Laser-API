@@ -102,7 +102,7 @@ class ProductRepository {
 	async updateStatus(id: string, active: boolean) {
 		const { data: product, error: findError } = await supabase
 			.from('pl_product')
-			.select('stripeProductId')
+			.select('stripeProductId, stripePriceId')
 			.eq('id', id)
 			.neq('status', 'excluido')
 			.single();
@@ -115,6 +115,32 @@ class ProductRepository {
 			await stripe.products.update(product.stripeProductId as string, {
 				active,
 			});
+		}
+
+		if (product.stripePriceId) {
+			const [activeSubscriptions, trialingSubscriptions] = await Promise.all([
+				stripe.subscriptions.list({
+					price: product.stripePriceId as string,
+					status: 'active',
+				}),
+				stripe.subscriptions.list({
+					price: product.stripePriceId as string,
+					status: 'trialing',
+				}),
+			]);
+
+			const subscriptions = [
+				...activeSubscriptions.data,
+				...trialingSubscriptions.data,
+			];
+
+			await Promise.all(
+				subscriptions.map((sub) =>
+					stripe.subscriptions.update(sub.id, {
+						cancel_at_period_end: !active,
+					}),
+				),
+			);
 		}
 
 		const { data, error } = await supabase
