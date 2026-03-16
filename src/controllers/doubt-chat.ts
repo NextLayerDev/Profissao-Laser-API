@@ -369,11 +369,6 @@ export const assignRandomController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
-			return reply.status(403).send({ message: 'Staff access required' });
-		}
-
 		const { id } = request.params;
 		const chat = await doubtChatRepository.assignRandom(id);
 		return reply.send(chat);

@@ -339,13 +339,11 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.post(
 		'/doubt-chats/:id/assign-random',
 		{
-			preHandler: [authenticate],
 			schema: {
 				description: 'Assign a random technician to a chat (staff only).',
 				params: z.object({ id: z.string() }),
 				response: { 200: doubtChatSchema, 403: ErrorSchema, 400: ErrorSchema },
 				tags: ['Doubt Chat'],
-				security: [{ bearerAuth: [] }],
 			},
 		},
 		assignRandomController,
