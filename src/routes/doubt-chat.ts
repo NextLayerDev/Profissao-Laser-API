@@ -303,7 +303,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.get(
 		'/doubt-chats/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateCustomer],
 			schema: {
 				description: 'Get a doubt chat with messages.',
 				params: z.object({ id: z.string() }),
