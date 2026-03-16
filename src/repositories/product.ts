@@ -76,7 +76,7 @@ class ProductRepository {
 			.from('pl_product')
 			.select('name, slug')
 			.eq('stripeProductId', stripeProductId)
-			.eq('status', 'ativo')
+			.in('status', ['ativo', 'inativo'])
 			.limit(1)
 			.maybeSingle();
 
@@ -179,7 +179,7 @@ class ProductRepository {
 			.from('pl_product')
 			.select('*')
 			.eq('slug', slug)
-			.eq('status', 'ativo')
+			.in('status', ['ativo', 'inativo'])
 			.single();
 
 		if (error) throw new Error('Product not found');
