@@ -108,9 +108,8 @@ function generatePassword(): string {
 function getPlanForEnvVars(plan: ProvisioningPlan): Record<string, string> {
 	if (plan === 'platina') {
 		return {
-			N8N_API_KEY:
-				'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkMDQ2ODNhYy0yOGYyLTRiNzEtYWJiMi1iZTAwOWU3ZDExOTQiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzYxNzkwMzUwfQ.OZKT-rnxUzcqmrFRz5Yk2DFxLIbdlR0J769MrOMf0Q8',
-			N8N_BASE_URL: 'https://n8n_metalaser-n8n-editor.1nwz76.easypanel.host/',
+			N8N_API_KEY: process.env.TENANT_N8N_API_KEY ?? '',
+			N8N_BASE_URL: process.env.TENANT_N8N_BASE_URL ?? '',
 		};
 	}
 	return {};
@@ -365,30 +364,30 @@ export async function runProvisionTenant(jobId: string): Promise<void> {
 				// Tenant identity
 				NEXT_PUBLIC_COMPANY_SYSTEM: customer.company_name,
 
-				// Fixed secrets
-				SESSION_SECRET: 'nextlayercorplaserOnetop123profissao',
-				API_SECRET_TOKEN: 'nextlayerkey28230105@services321123-01',
-				JWT_SECRET: 'nextLayerNetComPorteiraTOP123333',
-				VECTORIZER_AI_API_KEY_ID: 'vk93cqz9wmfv5dg',
+				// Fixed secrets (loaded from .env — NEVER hardcode credentials)
+				SESSION_SECRET: process.env.TENANT_SESSION_SECRET ?? '',
+				API_SECRET_TOKEN: process.env.TENANT_API_SECRET_TOKEN ?? '',
+				JWT_SECRET: process.env.TENANT_JWT_SECRET ?? '',
+				VECTORIZER_AI_API_KEY_ID:
+					process.env.TENANT_VECTORIZER_AI_API_KEY_ID ?? '',
 				VECTORIZER_AI_API_SECRET_KEY:
-					'cm7c00lcnupav1g3r49huf7560blbmimgfobmrnhjp5lpvfocjsi',
-				SPARTICUZ_CHROMIUM_VERSION: '119',
-				OPENROUTER_API_KEY:
-					'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',
-				CRON_SECRET_KEY: 'NextLayerTop1Devs',
-				ZAPI_CLIENT_TOKEN: 'F323220fc93044ee2aac8152882afe23fS',
-				ZAPI_INSTANCE_ID: '',
-				ZAPI_INSTANCE_TOKEN: '',
-				NEXT_PUBLIC_SOCKET_URL: 'https://ws.nextlayer.dev',
-				SMTP_HOST: 'smtp.gmail.com',
-				SMTP_PORT: '587',
-				SMTP_SECURE: 'false',
-				SMTP_USER: 'nextlayerdev@gmail.com',
-				SMTP_PASS: 'hpwh vyzn jgye pliq',
-				NEXT_PUBLIC_API_URL:
-					'https://profissao-laser-profissao-laser-back.1nwz76.easypanel.host',
+					process.env.TENANT_VECTORIZER_AI_API_SECRET_KEY ?? '',
+				SPARTICUZ_CHROMIUM_VERSION:
+					process.env.TENANT_SPARTICUZ_CHROMIUM_VERSION ?? '119',
+				OPENROUTER_API_KEY: process.env.TENANT_OPENROUTER_API_KEY ?? '',
+				CRON_SECRET_KEY: process.env.TENANT_CRON_SECRET_KEY ?? '',
+				ZAPI_CLIENT_TOKEN: process.env.TENANT_ZAPI_CLIENT_TOKEN ?? '',
+				ZAPI_INSTANCE_ID: process.env.TENANT_ZAPI_INSTANCE_ID ?? '',
+				ZAPI_INSTANCE_TOKEN: process.env.TENANT_ZAPI_INSTANCE_TOKEN ?? '',
+				NEXT_PUBLIC_SOCKET_URL: process.env.TENANT_SOCKET_URL ?? '',
+				SMTP_HOST: process.env.TENANT_SMTP_HOST ?? '',
+				SMTP_PORT: process.env.TENANT_SMTP_PORT ?? '587',
+				SMTP_SECURE: process.env.TENANT_SMTP_SECURE ?? 'false',
+				SMTP_USER: process.env.TENANT_SMTP_USER ?? '',
+				SMTP_PASS: process.env.TENANT_SMTP_PASS ?? '',
+				NEXT_PUBLIC_API_URL: process.env.TENANT_API_URL ?? '',
 				NEXT_PUBLIC_PROVISIONING_SECRET:
-					'nextlayerkey28230105@services321123-01',
+					process.env.TENANT_PROVISIONING_SECRET ?? '',
 
 				// Dynamic — from provisioning (pooler host fetched from Supabase API)
 				DATABASE_URL: `postgresql://postgres.${ref}:${dbPass}@${poolerHost}:6543/postgres?pgbouncer=true`,
@@ -397,7 +396,7 @@ export async function runProvisionTenant(jobId: string): Promise<void> {
 				NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey,
 				SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
 				// BLOB_READ_WRITE_TOKEN is auto-added by Vercel via blob store connection
-				STRIPE_SECRET_KEY: '1',
+				STRIPE_SECRET_KEY: process.env.TENANT_STRIPE_SECRET_KEY ?? '',
 
 				// Conditional — platina only
 				...getPlanForEnvVars(plan),
