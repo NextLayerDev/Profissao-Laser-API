@@ -1,3 +1,4 @@
+import { encrypt } from '../lib/crypto.js';
 import { sendPasswordResetEmail } from '../lib/mailer.js';
 import { supabase } from '../lib/supabase.js';
 import { customerRepository } from '../repositories/customer.js';
@@ -55,6 +56,7 @@ export class AuthService {
 
 		// biome-ignore lint/suspicious/noExplicitAny: Temporary fix for type mismatch
 		const customerToCreate: any = { ...customerData };
+		customerToCreate.password_encrypted = encrypt(customerData.password);
 		delete customerToCreate.password;
 		customerToCreate.id = authData.user.id;
 

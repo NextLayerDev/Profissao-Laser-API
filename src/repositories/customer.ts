@@ -34,6 +34,16 @@ class CustomerRepository {
 			.eq('email', email)
 			.single();
 	}
+
+	async findPasswordEncryptedByEmail(email: string) {
+		const { data, error } = await supabase
+			.from('Customers')
+			.select('password_encrypted')
+			.eq('email', email)
+			.single();
+		if (error && error.code !== 'PGRST116') throw new Error(error.message);
+		return data?.password_encrypted as string | null;
+	}
 }
 
 export const customerRepository = new CustomerRepository();

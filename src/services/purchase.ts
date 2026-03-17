@@ -116,7 +116,11 @@ export class PurchaseService {
 		};
 	}
 
-	async createPurchase(data: { email: string; productId: string }) {
+	async createPurchase(data: {
+		email: string;
+		productId: string;
+		companyName?: string;
+	}) {
 		const product = await productRepository.findById(data.productId);
 
 		if (!product.stripePriceId) {
@@ -139,8 +143,11 @@ export class PurchaseService {
 			customer: customer.id,
 			line_items: [{ price: product.stripePriceId, quantity: 1 }],
 			mode,
-			success_url: process.env.SUCCESS_URL ?? 'http://localhost:3000/course',
+			success_url: `${process.env.SUCCESS_URL ?? 'http://localhost:3000/checkout/success'}?session_id={CHECKOUT_SESSION_ID}`,
 			cancel_url: process.env.CANCEL_URL ?? 'http://localhost:3000/cancelado',
+			...(data.companyName && {
+				metadata: { company_name: data.companyName },
+			}),
 		});
 
 		return {

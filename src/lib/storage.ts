@@ -1,12 +1,12 @@
+import crypto from 'node:crypto';
 import axios from 'axios';
-import crypto from 'crypto';
 
-const BUNNY_STORAGE_API_KEY = process.env.BUNNY_STORAGE_API_KEY!;
-const BUNNY_STORAGE_ZONE = process.env.BUNNY_STORAGE_ZONE!;
-const BUNNY_STORAGE_HOSTNAME = process.env.BUNNY_STORAGE_HOSTNAME!;
-const BUNNY_CDN_HOSTNAME = process.env.BUNNY_CDN_HOSTNAME!;
-const BUNNY_STREAM_LIBRARY_ID = process.env.BUNNY_STREAM_LIBRARY_ID!;
-const BUNNY_STREAM_API_KEY = process.env.BUNNY_STREAM_API_KEY!;
+const BUNNY_STORAGE_API_KEY = process.env.BUNNY_STORAGE_API_KEY ?? '';
+const BUNNY_STORAGE_ZONE = process.env.BUNNY_STORAGE_ZONE ?? '';
+const BUNNY_STORAGE_HOSTNAME = process.env.BUNNY_STORAGE_HOSTNAME ?? '';
+const BUNNY_CDN_HOSTNAME = process.env.BUNNY_CDN_HOSTNAME ?? '';
+const BUNNY_STREAM_LIBRARY_ID = process.env.BUNNY_STREAM_LIBRARY_ID ?? '';
+const BUNNY_STREAM_API_KEY = process.env.BUNNY_STREAM_API_KEY ?? '';
 
 async function upload(
 	folder: string,

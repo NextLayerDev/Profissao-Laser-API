@@ -17,6 +17,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 				description: 'Create a Stripe checkout session for a product purchase.',
 				body: z.object({
 					productId: z.uuid(),
+					companyName: z.string().optional(),
 				}),
 				response: {
 					201: z.object({
