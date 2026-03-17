@@ -24,7 +24,7 @@ export const getAppointmentsController = async (
 		}
 
 		const email = request.currentUser.email;
-		const appointments = await appointmentRepository.listByEmail(email!);
+		const appointments = await appointmentRepository.listByEmail(email);
 		return reply.send(appointments);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';

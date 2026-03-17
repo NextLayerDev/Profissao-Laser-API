@@ -163,8 +163,8 @@ export const authenticateVectorizacao = async (
 				// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
 				const classProducts = (product as any).pl_class_product;
 				if (!Array.isArray(classProducts)) return false;
-				// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
 				return classProducts.some(
+					// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
 					(cp: any) => cp.pl_class?.vetorizacao === true,
 				);
 			});

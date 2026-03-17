@@ -44,7 +44,7 @@ export const createSubscriptionController = async (
 
 export const createPurchaseController = async (
 	request: FastifyRequest<{
-		Body: { productId: string };
+		Body: { productId: string; companyName?: string };
 	}>,
 	reply: FastifyReply,
 ) => {
@@ -58,6 +58,7 @@ export const createPurchaseController = async (
 		const purchase = await purchaseService.createPurchase({
 			email: user.email,
 			productId: request.body.productId,
+			companyName: request.body.companyName,
 		});
 
 		return reply.status(201).send(purchase);

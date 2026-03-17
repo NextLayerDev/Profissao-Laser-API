@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { uploadFaqImage } from '../lib/storage.js';
 import { supabase } from '../lib/supabase.js';
@@ -55,7 +55,7 @@ export const listFaqsController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const faqs = await faqRepository.findAll(userId);
 		return reply.send(faqs);
 	} catch (err) {
@@ -155,7 +155,7 @@ export const updateFaqController = async (
 			...(fields.order !== undefined && { order: Number(fields.order) }),
 			...(imageUrl !== undefined && { imageUrl }),
 		});
-		const faq = await faqRepository.update(id, data, request.currentUser!.id);
+		const faq = await faqRepository.update(id, data, request.currentUser?.id);
 		return reply.send(faq);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
@@ -233,7 +233,7 @@ export const reactToFaqController = async (
 	try {
 		const { id } = request.params;
 		const { emoji } = reactFaqSchema.parse(request.body);
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const faq = await faqRepository.upsertReaction(id, userId, emoji);
 		return reply.send(faq);
 	} catch (err) {
@@ -248,7 +248,7 @@ export const removeReactionController = async (
 ) => {
 	try {
 		const { id } = request.params;
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const faq = await faqRepository.removeReaction(id, userId);
 		return reply.send(faq);
 	} catch (err) {
