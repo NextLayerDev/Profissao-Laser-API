@@ -144,3 +144,37 @@ export const PROVISIONING_STATUS_ORDER: ProvisioningStatus[] = [
 	'vercel_ready',
 	'completed',
 ];
+
+// ===== Route schemas =====
+
+export const provisioningParamsSchema = z.object({
+	jobId: z.string().uuid(),
+});
+
+export const provisioningSessionParamsSchema = z.object({
+	sessionId: z.string(),
+});
+
+export const provisioningJobBySessionResponseSchema = z.object({
+	jobId: z.string().uuid(),
+	status: z.string(),
+});
+
+export const provisioningRetryResponseSchema = z.object({
+	message: z.string(),
+	jobId: z.string().uuid(),
+	status: z.string(),
+});
+
+export const provisioningAuditLogResponseSchema = z.object({
+	id: z.string().uuid(),
+	from_status: z.string().nullable(),
+	to_status: z.string(),
+	message: z.string().nullable(),
+	created_at: z.string(),
+});
+
+export const provisioningLogsResponseSchema = z.object({
+	jobId: z.string().uuid(),
+	logs: z.array(provisioningAuditLogResponseSchema),
+});

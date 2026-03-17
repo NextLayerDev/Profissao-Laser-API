@@ -1,45 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { decrypt } from '../lib/crypto.js';
-import { supabase } from '../lib/supabase.js';
+import { customerRepository } from '../repositories/customer.js';
 import { provisioningRepository } from '../repositories/provisioning.js';
 import {
 	PROVISIONING_STATUS_ORDER,
+	provisioningJobBySessionResponseSchema,
+	provisioningLogsResponseSchema,
+	provisioningParamsSchema,
+	provisioningRetryResponseSchema,
+	provisioningSessionParamsSchema,
 	provisioningStatusResponseSchema,
 } from '../types/provisioning.js';
 import { runProvisionTenant } from '../workers/provision-tenant.js';
-
-const paramsSchema = z.object({
-	jobId: z.string().uuid(),
-});
-
-const sessionParamsSchema = z.object({
-	sessionId: z.string(),
-});
-
-const jobBySessionResponseSchema = z.object({
-	jobId: z.string().uuid(),
-	status: z.string(),
-});
-
-const retryResponseSchema = z.object({
-	message: z.string(),
-	jobId: z.string().uuid(),
-	status: z.string(),
-});
-
-const auditLogSchema = z.object({
-	id: z.string().uuid(),
-	from_status: z.string().nullable(),
-	to_status: z.string(),
-	message: z.string().nullable(),
-	created_at: z.string(),
-});
-
-const logsResponseSchema = z.object({
-	jobId: z.string().uuid(),
-	logs: z.array(auditLogSchema),
-});
 
 export async function provisioningRoute(server: FastifyInstance) {
 	// ===== GET /by-session/:sessionId =====
@@ -49,9 +22,9 @@ export async function provisioningRoute(server: FastifyInstance) {
 			schema: {
 				description: 'Find provisioning job by Stripe session ID',
 				tags: ['Provisioning'],
-				params: sessionParamsSchema,
+				params: provisioningSessionParamsSchema,
 				response: {
-					200: jobBySessionResponseSchema,
+					200: provisioningJobBySessionResponseSchema,
 					404: z.object({ message: z.string() }),
 					500: z.object({ message: z.string() }),
 				},
@@ -60,7 +33,7 @@ export async function provisioningRoute(server: FastifyInstance) {
 		async (request, reply) => {
 			try {
 				const { sessionId } = request.params as z.infer<
-					typeof sessionParamsSchema
+					typeof provisioningSessionParamsSchema
 				>;
 				const job =
 					await provisioningRepository.findJobByIdempotencyKey(sessionId);
@@ -87,7 +60,7 @@ export async function provisioningRoute(server: FastifyInstance) {
 			schema: {
 				description: 'Get provisioning job status',
 				tags: ['Provisioning'],
-				params: paramsSchema,
+				params: provisioningParamsSchema,
 				response: {
 					200: provisioningStatusResponseSchema,
 					404: z.object({ message: z.string() }),
@@ -97,19 +70,19 @@ export async function provisioningRoute(server: FastifyInstance) {
 		},
 		async (request, reply) => {
 			try {
-				const { jobId } = request.params as z.infer<typeof paramsSchema>;
+				const { jobId } = request.params as z.infer<
+					typeof provisioningParamsSchema
+				>;
 				const job = await provisioningRepository.findJobById(jobId);
 
 				if (!job) {
 					return reply.status(404).send({ message: 'Job not found' });
 				}
 
-				// Get the order with customer info
-				const { data: order } = await supabase
-					.from('pl_provisioning_order')
-					.select('plan, pl_provisioning_customer(email)')
-					.eq('id', job.order_id)
-					.single();
+				// Get the order with customer info via repository
+				const order = await provisioningRepository.findOrderWithCustomer(
+					job.order_id,
+				);
 
 				const base = {
 					jobId: job.id,
@@ -129,18 +102,15 @@ export async function provisioningRoute(server: FastifyInstance) {
 							}
 						)?.email ?? null;
 
-					// Fetch course password from LMS Customers table
+					// Fetch course password from LMS Customers table via repository
 					let coursePassword: string | null = null;
 					if (customerEmail) {
-						const { data: lmsCustomer } = await supabase
-							.from('Customers')
-							.select('password_encrypted')
-							.eq('email', customerEmail)
-							.single();
-						if (lmsCustomer?.password_encrypted) {
-							coursePassword = decrypt(
-								lmsCustomer.password_encrypted as string,
+						const passwordEncrypted =
+							await customerRepository.findPasswordEncryptedByEmail(
+								customerEmail,
 							);
+						if (passwordEncrypted) {
+							coursePassword = decrypt(passwordEncrypted);
 						}
 					}
 
@@ -176,9 +146,9 @@ export async function provisioningRoute(server: FastifyInstance) {
 				description:
 					'Retry a failed/stalled provisioning job from where it left off',
 				tags: ['Provisioning'],
-				params: paramsSchema,
+				params: provisioningParamsSchema,
 				response: {
-					200: retryResponseSchema,
+					200: provisioningRetryResponseSchema,
 					404: z.object({ message: z.string() }),
 					409: z.object({ message: z.string() }),
 					500: z.object({ message: z.string() }),
@@ -187,7 +157,9 @@ export async function provisioningRoute(server: FastifyInstance) {
 		},
 		async (request, reply) => {
 			try {
-				const { jobId } = request.params as z.infer<typeof paramsSchema>;
+				const { jobId } = request.params as z.infer<
+					typeof provisioningParamsSchema
+				>;
 				const job = await provisioningRepository.findJobById(jobId);
 
 				if (!job) {
@@ -202,17 +174,8 @@ export async function provisioningRoute(server: FastifyInstance) {
 
 				// If failed, revert to the last successful step so transitionStep can resume
 				if (job.status === 'failed') {
-					// Find the last successful status from audit logs
-					const { data: logs } = await supabase
-						.from('pl_provisioning_audit_log')
-						.select('to_status')
-						.eq('job_id', jobId)
-						.neq('to_status', 'failed')
-						.order('created_at', { ascending: false })
-						.limit(1);
-
 					const lastGoodStatus =
-						logs && logs.length > 0 ? logs[0].to_status : 'created';
+						await provisioningRepository.findLastSuccessfulStatus(jobId);
 
 					// Validate it's a known status
 					const validStatus = PROVISIONING_STATUS_ORDER.includes(
@@ -264,9 +227,9 @@ export async function provisioningRoute(server: FastifyInstance) {
 			schema: {
 				description: 'Get audit logs for a provisioning job',
 				tags: ['Provisioning'],
-				params: paramsSchema,
+				params: provisioningParamsSchema,
 				response: {
-					200: logsResponseSchema,
+					200: provisioningLogsResponseSchema,
 					404: z.object({ message: z.string() }),
 					500: z.object({ message: z.string() }),
 				},
@@ -274,17 +237,13 @@ export async function provisioningRoute(server: FastifyInstance) {
 		},
 		async (request, reply) => {
 			try {
-				const { jobId } = request.params as z.infer<typeof paramsSchema>;
+				const { jobId } = request.params as z.infer<
+					typeof provisioningParamsSchema
+				>;
 
-				const { data: logs, error } = await supabase
-					.from('pl_provisioning_audit_log')
-					.select('id, from_status, to_status, message, created_at')
-					.eq('job_id', jobId)
-					.order('created_at', { ascending: true });
+				const logs = await provisioningRepository.findAuditLogsByJobId(jobId);
 
-				if (error) throw new Error(error.message);
-
-				if (!logs || logs.length === 0) {
+				if (logs.length === 0) {
 					return reply
 						.status(404)
 						.send({ message: 'No logs found for this job' });

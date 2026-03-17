@@ -153,6 +153,18 @@ class ProvisioningRepository {
 		if (error) throw new Error(error.message);
 	}
 
+	// ========== ORDERS WITH CUSTOMER ==========
+
+	async findOrderWithCustomer(orderId: string) {
+		const { data, error } = await supabase
+			.from('pl_provisioning_order')
+			.select('plan, pl_provisioning_customer(email)')
+			.eq('id', orderId)
+			.single();
+		if (error && error.code !== 'PGRST116') throw new Error(error.message);
+		return data;
+	}
+
 	// ========== AUDIT LOGS ==========
 
 	async createAuditLog(data: {
@@ -167,6 +179,28 @@ class ProvisioningRepository {
 			created_at: new Date().toISOString(),
 		});
 		if (error) throw new Error(error.message);
+	}
+
+	async findAuditLogsByJobId(jobId: string) {
+		const { data, error } = await supabase
+			.from('pl_provisioning_audit_log')
+			.select('id, from_status, to_status, message, created_at')
+			.eq('job_id', jobId)
+			.order('created_at', { ascending: true });
+		if (error) throw new Error(error.message);
+		return data ?? [];
+	}
+
+	async findLastSuccessfulStatus(jobId: string): Promise<string> {
+		const { data, error } = await supabase
+			.from('pl_provisioning_audit_log')
+			.select('to_status')
+			.eq('job_id', jobId)
+			.neq('to_status', 'failed')
+			.order('created_at', { ascending: false })
+			.limit(1);
+		if (error) throw new Error(error.message);
+		return data && data.length > 0 ? data[0].to_status : 'created';
 	}
 }
 
