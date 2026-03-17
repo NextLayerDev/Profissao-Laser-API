@@ -54,6 +54,7 @@ export const updateDefaultQuestionSchema =
 export const chatMessageSchema = z.object({
 	id: z.string(),
 	content: z.string(),
+	fileUrl: z.string().nullable().optional(),
 	authorId: z.string(),
 	authorName: z.string(),
 	isTechnician: z.boolean(),
@@ -87,7 +88,7 @@ export const createChatSchema = z.object({
 });
 
 export const sendChatMessageSchema = z.object({
-	content: z.string().min(1),
+	content: z.string().min(1).optional(),
 });
 
 // ── Types ─────────────────────────────────────────────────────────────────────

@@ -72,6 +72,14 @@ export async function uploadCommunityFile(
 	return upload('community-files', buffer, path, mimetype);
 }
 
+export async function uploadDoubtFile(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('doubt-files', buffer, path, mimetype);
+}
+
 export async function uploadFaqImage(
 	buffer: Buffer,
 	path: string,

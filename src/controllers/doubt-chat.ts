@@ -1,4 +1,6 @@
+import crypto from 'crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { uploadDoubtFile } from '../lib/storage.js';
 import { supabase } from '../lib/supabase.js';
 import { doubtChatRepository } from '../repositories/doubt-chat.js';
 import {
@@ -6,7 +8,6 @@ import {
 	createDefaultQuestionSchema,
 	createDoubtCategorySchema,
 	reorderSchema,
-	sendChatMessageSchema,
 	updateDefaultQuestionSchema,
 	updateDoubtCategorySchema,
 } from '../types/doubt-chat.js';
@@ -328,7 +329,25 @@ export const sendMessageController = async (
 ) => {
 	try {
 		const { id } = request.params;
-		const data = sendChatMessageSchema.parse(request.body);
+
+		const parts = request.parts();
+		let content = '';
+		let fileUrl: string | undefined;
+
+		for await (const part of parts) {
+			if (part.type === 'field' && part.fieldname === 'content') {
+				content = part.value as string;
+			} else if (part.type === 'file' && part.fieldname === 'file') {
+				const buffer = await part.toBuffer();
+				const ext = part.filename?.split('.').pop() ?? 'bin';
+				const path = `${id}/${crypto.randomUUID()}.${ext}`;
+				fileUrl = await uploadDoubtFile(buffer, path, part.mimetype);
+			}
+		}
+
+		if (!content && !fileUrl) {
+			return reply.status(400).send({ message: 'Content or file is required' });
+		}
 
 		const userId = request.currentUser?.id ?? '';
 		const staff = await isStaff(userId);
@@ -351,10 +370,11 @@ export const sendMessageController = async (
 
 		const message = await doubtChatRepository.createMessage(
 			id,
-			data,
+			{ content: content || undefined },
 			authorId,
 			authorName,
 			staff,
+			fileUrl,
 		);
 
 		return reply.status(201).send(message);

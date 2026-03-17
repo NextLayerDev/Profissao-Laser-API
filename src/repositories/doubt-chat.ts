@@ -290,7 +290,9 @@ class DoubtChatRepository {
 
 		const { data: messages, error: msgError } = await supabase
 			.from('pl_doubt_chat_message')
-			.select('id, content, authorId, authorName, isTechnician, createdAt')
+			.select(
+				'id, content, fileUrl, authorId, authorName, isTechnician, createdAt',
+			)
 			.eq('chatId', id)
 			.order('createdAt', { ascending: true });
 
@@ -303,6 +305,7 @@ class DoubtChatRepository {
 			messages: (messages ?? []).map((m) => ({
 				id: m.id,
 				content: m.content,
+				fileUrl: m.fileUrl,
 				authorId: m.authorId,
 				authorName: m.authorName,
 				isTechnician: m.isTechnician,
@@ -375,6 +378,7 @@ class DoubtChatRepository {
 		authorId: string,
 		authorName: string,
 		isTechnician: boolean,
+		fileUrl?: string | null,
 	) {
 		const now = new Date().toISOString();
 
@@ -386,10 +390,13 @@ class DoubtChatRepository {
 				authorId,
 				authorName,
 				isTechnician,
-				content: data.content,
+				content: data.content ?? '',
+				fileUrl: fileUrl ?? null,
 				createdAt: now,
 			})
-			.select('id, content, authorId, authorName, isTechnician, createdAt')
+			.select(
+				'id, content, fileUrl, authorId, authorName, isTechnician, createdAt',
+			)
 			.single();
 
 		if (error) throw new Error(error.message);
@@ -404,6 +411,7 @@ class DoubtChatRepository {
 		return {
 			id: msg.id,
 			content: msg.content,
+			fileUrl: msg.fileUrl,
 			authorId: msg.authorId,
 			authorName: msg.authorName,
 			isTechnician: msg.isTechnician,
