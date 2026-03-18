@@ -87,7 +87,17 @@ class SystemClassRepository {
 			.single();
 
 		if (error) throw new Error(error.message);
-		return sc;
+		return {
+			id: sc.id,
+			name: sc.name,
+			description: sc.description,
+			status: sc.status,
+			sistemaGerenciamento: sc.sistema_gerenciamento,
+			iaPrevias: sc.iaPrevias,
+			iaWhatsappPrevias: sc.iaWhatsappPrevias,
+			createdAt: sc.createdAt,
+			updatedAt: sc.updatedAt,
+		};
 	}
 
 	async update(id: string, data: SystemClassUpdate) {
@@ -107,7 +117,17 @@ class SystemClassRepository {
 			.single();
 
 		if (error) throw new Error(error.message);
-		return sc;
+		return {
+			id: sc.id,
+			name: sc.name,
+			description: sc.description,
+			status: sc.status,
+			sistemaGerenciamento: sc.sistema_gerenciamento,
+			iaPrevias: sc.iaPrevias,
+			iaWhatsappPrevias: sc.iaWhatsappPrevias,
+			createdAt: sc.createdAt,
+			updatedAt: sc.updatedAt,
+		};
 	}
 
 	async delete(id: string) {
