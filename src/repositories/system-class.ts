@@ -22,21 +22,21 @@ class SystemClassRepository {
 		if (error) throw new Error(error.message);
 
 		return data.map((sc) => ({
-			...sc,
+			id: sc.id,
+			name: sc.name,
+			description: sc.description,
+			status: sc.status,
 			sistemaGerenciamento: sc.sistema_gerenciamento,
-			iaPrevias: sc.ia_previas,
-			iaWhatsappPrevias: sc.ia_whatsapp_previas,
-			sistema_gerenciamento: undefined,
-			ia_previas: undefined,
-			ia_whatsapp_previas: undefined,
+			iaPrevias: sc.iaPrevias,
+			iaWhatsappPrevias: sc.iaWhatsappPrevias,
+			createdAt: sc.createdAt,
+			updatedAt: sc.updatedAt,
 			products: sc.pl_system_class_product.map(
 				(scp: { pl_product: unknown }) => scp.pl_product,
 			),
 			classes: sc.pl_system_class_class.map(
 				(scc: { pl_class: unknown }) => scc.pl_class,
 			),
-			pl_system_class_product: undefined,
-			pl_system_class_class: undefined,
 		}));
 	}
 
@@ -58,21 +58,21 @@ class SystemClassRepository {
 		if (error || !data) throw new Error('System class not found');
 
 		return {
-			...data,
+			id: data.id,
+			name: data.name,
+			description: data.description,
+			status: data.status,
 			sistemaGerenciamento: data.sistema_gerenciamento,
-			iaPrevias: data.ia_previas,
-			iaWhatsappPrevias: data.ia_whatsapp_previas,
-			sistema_gerenciamento: undefined,
-			ia_previas: undefined,
-			ia_whatsapp_previas: undefined,
+			iaPrevias: data.iaPrevias,
+			iaWhatsappPrevias: data.iaWhatsappPrevias,
+			createdAt: data.createdAt,
+			updatedAt: data.updatedAt,
 			products: data.pl_system_class_product.map(
 				(scp: { pl_product: unknown }) => scp.pl_product,
 			),
 			classes: data.pl_system_class_class.map(
 				(scc: { pl_class: unknown }) => scc.pl_class,
 			),
-			pl_system_class_product: undefined,
-			pl_system_class_class: undefined,
 		};
 	}
 
