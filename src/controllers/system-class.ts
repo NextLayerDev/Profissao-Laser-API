@@ -13,6 +13,7 @@ export const listSystemClassesController = async (
 ) => {
 	try {
 		const systemClasses = await systemClassService.listSystemClasses();
+		console.log(systemClasses);
 		return reply.send(systemClasses);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';

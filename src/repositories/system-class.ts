@@ -23,6 +23,12 @@ class SystemClassRepository {
 
 		return data.map((sc) => ({
 			...sc,
+			sistemaGerenciamento: sc.sistema_gerenciamento,
+			iaPrevias: sc.ia_previas,
+			iaWhatsappPrevias: sc.ia_whatsapp_previas,
+			sistema_gerenciamento: undefined,
+			ia_previas: undefined,
+			ia_whatsapp_previas: undefined,
 			products: sc.pl_system_class_product.map(
 				(scp: { pl_product: unknown }) => scp.pl_product,
 			),
@@ -53,6 +59,12 @@ class SystemClassRepository {
 
 		return {
 			...data,
+			sistemaGerenciamento: data.sistema_gerenciamento,
+			iaPrevias: data.ia_previas,
+			iaWhatsappPrevias: data.ia_whatsapp_previas,
+			sistema_gerenciamento: undefined,
+			ia_previas: undefined,
+			ia_whatsapp_previas: undefined,
 			products: data.pl_system_class_product.map(
 				(scp: { pl_product: unknown }) => scp.pl_product,
 			),
