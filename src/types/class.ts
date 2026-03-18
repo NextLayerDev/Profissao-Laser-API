@@ -12,6 +12,7 @@ export const classSchema = z.object({
 	vetorizacao: z.boolean(),
 	suporte: z.boolean(),
 	comunidade: z.boolean(),
+	canva: z.boolean(),
 	system: z.boolean(),
 	machine: z.string().nullable(),
 	createdAt: z.string(),
@@ -34,6 +35,7 @@ export const createClassSchema = z.object({
 	comunidade: z.boolean().default(false),
 	system: z.boolean().default(false),
 	machine: z.string().nullable(),
+	canva: z.boolean(),
 });
 
 export const updateClassSchema = z.object({
@@ -48,6 +50,7 @@ export const updateClassSchema = z.object({
 	comunidade: z.boolean().optional(),
 	system: z.boolean().optional(),
 	machine: z.string().optional(),
+	canva: z.boolean().default(false).optional(),
 });
 
 export const addProductToClassSchema = z.object({
