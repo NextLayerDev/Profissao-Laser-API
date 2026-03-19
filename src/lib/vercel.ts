@@ -258,3 +258,22 @@ export async function createBlobStore(
 
 	return { storeId };
 }
+
+export async function removeEnvVars(
+	projectId: string,
+	keys: string[],
+): Promise<void> {
+	const { data: existingData } = await api.get(
+		`/v10/projects/${projectId}/env`,
+	);
+	const existing: Array<{ key: string; id: string }> =
+		existingData.envs ?? existingData ?? [];
+	const toDelete = existing.filter((ev) => keys.includes(ev.key));
+
+	for (const ev of toDelete) {
+		await api.delete(`/v9/projects/${projectId}/env/${ev.id}`);
+	}
+	console.log(
+		`[vercel] Removed ${toDelete.length} env vars: ${keys.join(', ')}`,
+	);
+}

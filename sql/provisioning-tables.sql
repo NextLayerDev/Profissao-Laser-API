@@ -80,3 +80,46 @@ CREATE TABLE pl_provisioning_audit_log (
 
 CREATE INDEX idx_provisioning_audit_job ON pl_provisioning_audit_log(job_id);
 CREATE INDEX idx_provisioning_audit_created ON pl_provisioning_audit_log(created_at DESC);
+
+-- Registro permanente do tenant provisionado (sobrevive a recompras)
+CREATE TABLE pl_tenant (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES pl_provisioning_customer(id),
+    provisioning_job_id UUID NOT NULL REFERENCES pl_provisioning_job(id),
+    slug TEXT NOT NULL UNIQUE,
+    current_plan TEXT NOT NULL CHECK (current_plan IN ('prata', 'ouro', 'platina')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'cancelled')),
+
+    -- Credenciais do tenant (copia do job para independencia)
+    supabase_project_ref TEXT NOT NULL,
+    supabase_db_pass_encrypted TEXT NOT NULL,
+    supabase_url TEXT NOT NULL,
+    supabase_anon_key TEXT NOT NULL,
+    supabase_service_role_key_encrypted TEXT NOT NULL,
+    vercel_project_id TEXT NOT NULL,
+    vercel_url TEXT NOT NULL,
+
+    plan_changed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_tenant_customer ON pl_tenant(customer_id);
+CREATE INDEX idx_tenant_slug ON pl_tenant(slug);
+CREATE INDEX idx_tenant_status ON pl_tenant(status);
+
+-- Historico de mudancas de plano (auditoria)
+CREATE TABLE pl_tenant_plan_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES pl_tenant(id),
+    from_plan TEXT,
+    to_plan TEXT NOT NULL CHECK (to_plan IN ('prata', 'ouro', 'platina')),
+    change_type TEXT NOT NULL CHECK (change_type IN ('initial', 'upgrade', 'downgrade', 'renewal')),
+    stripe_session_id TEXT,
+    stripe_subscription_id TEXT,
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_plan_history_tenant ON pl_tenant_plan_history(tenant_id);
+CREATE INDEX idx_plan_history_created ON pl_tenant_plan_history(created_at DESC);

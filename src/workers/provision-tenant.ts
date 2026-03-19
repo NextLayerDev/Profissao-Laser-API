@@ -446,9 +446,58 @@ export async function runProvisionTenant(jobId: string): Promise<void> {
 	await transitionStep(jobId, 'vercel_ready', 'completed', async () => {
 		await provisioningRepository.updateOrderStatus(job.order_id, 'completed');
 
+		const currentJob = await provisioningRepository.findJobById(jobId);
+
+		// Create permanent tenant record
+		try {
+			const tenant = await provisioningRepository.createTenant({
+				customer_id: customer.id,
+				provisioning_job_id: jobId,
+				slug,
+				current_plan: plan,
+				supabase_project_ref: requireField(
+					currentJob.supabase_project_ref,
+					'supabase_project_ref',
+				),
+				supabase_db_pass_encrypted: requireField(
+					currentJob.supabase_db_pass_encrypted,
+					'supabase_db_pass_encrypted',
+				),
+				supabase_url: requireField(currentJob.supabase_url, 'supabase_url'),
+				supabase_anon_key: requireField(
+					currentJob.supabase_anon_key,
+					'supabase_anon_key',
+				),
+				supabase_service_role_key_encrypted: requireField(
+					currentJob.supabase_service_role_key_encrypted,
+					'supabase_service_role_key_encrypted',
+				),
+				vercel_project_id: requireField(
+					currentJob.vercel_project_id,
+					'vercel_project_id',
+				),
+				vercel_url: requireField(currentJob.vercel_url, 'vercel_url'),
+			});
+
+			// Record initial plan history
+			await provisioningRepository.createPlanHistory({
+				tenant_id: tenant.id,
+				from_plan: null,
+				to_plan: plan,
+				change_type: 'initial',
+				stripe_session_id: currentJob.idempotency_key,
+			});
+
+			console.log(
+				`[provision] ✓ Tenant record created: ${tenant.id} (slug: ${slug})`,
+			);
+		} catch (tenantErr) {
+			console.error('[provision] ✗ Failed to create tenant record:', tenantErr);
+			// Don't throw — tenant record failure must not break provisioning
+		}
+
 		// Send welcome email — non-fatal if it fails
 		try {
-			const currentJob = await provisioningRepository.findJobById(jobId);
 			if (
 				currentJob.admin_password_encrypted &&
 				currentJob.vercel_url &&
