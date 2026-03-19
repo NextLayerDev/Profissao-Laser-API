@@ -80,3 +80,45 @@ export const getAllPurchasesController = async (
 		return reply.status(500).send({ message });
 	}
 };
+
+export const upgradeSubscriptionController = async (
+	request: FastifyRequest<{ Body: { productId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const user = request.currentUser;
+		if (!user || !user.email) {
+			return reply.status(401).send({ message: 'Authentication required' });
+		}
+		const result = await purchaseService.changePlan(
+			user.email,
+			request.body.productId,
+			'upgrade',
+		);
+		return reply.status(200).send(result);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
+export const downgradeSubscriptionController = async (
+	request: FastifyRequest<{ Body: { productId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const user = request.currentUser;
+		if (!user || !user.email) {
+			return reply.status(401).send({ message: 'Authentication required' });
+		}
+		const result = await purchaseService.changePlan(
+			user.email,
+			request.body.productId,
+			'downgrade',
+		);
+		return reply.status(200).send(result);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};

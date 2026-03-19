@@ -4,7 +4,9 @@ import { authenticate } from '@/middleware/auth.js';
 import {
 	createPurchaseController,
 	createSubscriptionController,
+	downgradeSubscriptionController,
 	getAllPurchasesController,
+	upgradeSubscriptionController,
 } from '../controllers/purchase.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -68,6 +70,53 @@ export async function purchaseRoute(server: FastifyInstance) {
 			},
 		},
 		createSubscriptionController,
+	);
+
+	const planChangeResponseSchema = z.object({
+		subscriptionId: z.string(),
+		status: z.string(),
+		previousPlan: z.enum(['prata', 'ouro', 'platina']),
+		newPlan: z.enum(['prata', 'ouro', 'platina']),
+	});
+
+	const planChangeBodySchema = z.object({ productId: z.uuid() });
+
+	server.post(
+		'/subscription/upgrade',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Upgrade the current subscription to a higher plan.',
+				body: planChangeBodySchema,
+				response: {
+					200: planChangeResponseSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		upgradeSubscriptionController,
+	);
+
+	server.post(
+		'/subscription/downgrade',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Downgrade the current subscription to a lower plan.',
+				body: planChangeBodySchema,
+				response: {
+					200: planChangeResponseSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		downgradeSubscriptionController,
 	);
 
 	server.get(

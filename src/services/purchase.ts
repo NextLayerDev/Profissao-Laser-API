@@ -1,5 +1,8 @@
+import { PLAN_ORDER, resolvePlanFromProduct } from '../lib/plan.js';
 import { stripe } from '../lib/stripe.js';
 import { productRepository } from '../repositories/product.js';
+import { provisioningRepository } from '../repositories/provisioning.js';
+import type { ProvisioningPlan } from '../types/provisioning.js';
 
 export class PurchaseService {
 	async listPurchases(email: string) {
@@ -155,6 +158,66 @@ export class PurchaseService {
 			checkoutUrl: session.url,
 			status: session.status,
 			productName: product.name,
+		};
+	}
+
+	async changePlan(
+		email: string,
+		productId: string,
+		direction: 'upgrade' | 'downgrade',
+	) {
+		const tenant =
+			await provisioningRepository.findActiveTenantByCustomerEmail(email);
+		if (!tenant) throw new Error('No active tenant found for this email');
+
+		const product = await productRepository.findById(productId);
+		if (!product.stripePriceId)
+			throw new Error('Product not configured for payments');
+
+		const newPlan = await resolvePlanFromProduct(product.id);
+		const oldPlan = tenant.current_plan as ProvisioningPlan;
+
+		if (direction === 'upgrade' && PLAN_ORDER[newPlan] <= PLAN_ORDER[oldPlan])
+			throw new Error(
+				`New plan (${newPlan}) is not higher than current plan (${oldPlan})`,
+			);
+		if (direction === 'downgrade' && PLAN_ORDER[newPlan] >= PLAN_ORDER[oldPlan])
+			throw new Error(
+				`New plan (${newPlan}) is not lower than current plan (${oldPlan})`,
+			);
+
+		const customers = await stripe.customers.list({ email, limit: 1 });
+		if (!customers.data.length) throw new Error('No Stripe customer found');
+		const customerId = customers.data[0].id;
+
+		const [activeSubs, trialingSubs] = await Promise.all([
+			stripe.subscriptions.list({
+				customer: customerId,
+				status: 'active',
+				limit: 1,
+			}),
+			stripe.subscriptions.list({
+				customer: customerId,
+				status: 'trialing',
+				limit: 1,
+			}),
+		]);
+		const subscription = activeSubs.data[0] ?? trialingSubs.data[0];
+		if (!subscription)
+			throw new Error('No active or trialing Stripe subscription found');
+		const item = subscription.items.data[0];
+
+		const updated = await stripe.subscriptions.update(subscription.id, {
+			items: [{ id: item.id, price: product.stripePriceId }],
+			proration_behavior:
+				direction === 'upgrade' ? 'create_prorations' : 'none',
+		});
+
+		return {
+			subscriptionId: updated.id,
+			status: updated.status,
+			previousPlan: oldPlan,
+			newPlan,
 		};
 	}
 
