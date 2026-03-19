@@ -31,7 +31,6 @@ import {
 	doubtChatSchema,
 	doubtChatSummarySchema,
 	reorderSchema,
-	sendChatMessageSchema,
 	technicianSchema,
 	updateDefaultQuestionSchema,
 	updateDoubtCategorySchema,
@@ -325,9 +324,9 @@ export async function doubtChatRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticate],
 			schema: {
-				description: 'Send a message in a doubt chat.',
+				description:
+					'Send a message in a doubt chat (multipart/form-data with optional `content` field and optional `file`).',
 				params: z.object({ id: z.string() }),
-				body: sendChatMessageSchema,
 				response: { 201: chatMessageSchema, 400: ErrorSchema },
 				tags: ['Doubt Chat'],
 				security: [{ bearerAuth: [] }],
