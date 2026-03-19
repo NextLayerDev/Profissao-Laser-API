@@ -3,7 +3,11 @@ import type {
 	CreateProvisioningCustomer,
 	CreateProvisioningJob,
 	CreateProvisioningOrder,
+	CreateTenant,
+	CreateTenantPlanHistory,
+	ProvisioningCustomer,
 	ProvisioningJob,
+	Tenant,
 } from '../types/provisioning.js';
 
 class ProvisioningRepository {
@@ -26,7 +30,17 @@ class ProvisioningRepository {
 			.eq('email', email)
 			.single();
 		if (error && error.code !== 'PGRST116') throw new Error(error.message);
-		return data;
+		return data as ProvisioningCustomer | null;
+	}
+
+	async findCustomerById(id: string) {
+		const { data, error } = await supabase
+			.from('pl_provisioning_customer')
+			.select('*')
+			.eq('id', id)
+			.maybeSingle();
+		if (error) throw new Error(error.message);
+		return data as ProvisioningCustomer | null;
 	}
 
 	// ========== ORDERS ==========
@@ -201,6 +215,80 @@ class ProvisioningRepository {
 			.limit(1);
 		if (error) throw new Error(error.message);
 		return data && data.length > 0 ? data[0].to_status : 'created';
+	}
+
+	// ========== TENANTS ==========
+
+	async createTenant(data: CreateTenant) {
+		const { data: result, error } = await supabase
+			.from('pl_tenant')
+			.insert({
+				...data,
+				status: 'active',
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+			})
+			.select()
+			.single();
+		if (error) throw new Error(error.message);
+		return result as Tenant;
+	}
+
+	async findTenantBySlug(slug: string) {
+		const { data, error } = await supabase
+			.from('pl_tenant')
+			.select('*')
+			.eq('slug', slug)
+			.maybeSingle();
+		if (error) throw new Error(error.message);
+		return data as Tenant | null;
+	}
+
+	async findActiveTenantByCustomerEmail(email: string) {
+		const { data, error } = await supabase
+			.from('pl_tenant')
+			.select('*, pl_provisioning_customer!inner(email)')
+			.eq('pl_provisioning_customer.email', email)
+			.eq('status', 'active')
+			.order('created_at', { ascending: false })
+			.limit(1);
+		if (error) throw new Error(error.message);
+		if (!data || data.length === 0) return null;
+		const { pl_provisioning_customer: _, ...tenant } = data[0];
+		return tenant as Tenant;
+	}
+
+	async updateTenantPlan(id: string, plan: string) {
+		const { error } = await supabase
+			.from('pl_tenant')
+			.update({
+				current_plan: plan,
+				plan_changed_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+			})
+			.eq('id', id);
+		if (error) throw new Error(error.message);
+	}
+
+	async updateTenantStatus(id: string, status: string) {
+		const { error } = await supabase
+			.from('pl_tenant')
+			.update({
+				status,
+				updated_at: new Date().toISOString(),
+			})
+			.eq('id', id);
+		if (error) throw new Error(error.message);
+	}
+
+	// ========== PLAN HISTORY ==========
+
+	async createPlanHistory(data: CreateTenantPlanHistory) {
+		const { error } = await supabase.from('pl_tenant_plan_history').insert({
+			...data,
+			created_at: new Date().toISOString(),
+		});
+		if (error) throw new Error(error.message);
 	}
 }
 

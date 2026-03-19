@@ -99,6 +99,72 @@ export const createProvisioningJobSchema = z.object({
 	slug: z.string(),
 });
 
+// ===== Tenant schemas =====
+
+export const tenantStatusSchema = z.enum(['active', 'suspended', 'cancelled']);
+
+export const tenantSchema = z.object({
+	id: z.string().uuid(),
+	customer_id: z.string().uuid(),
+	provisioning_job_id: z.string().uuid(),
+	slug: z.string(),
+	current_plan: provisioningPlanSchema,
+	status: tenantStatusSchema,
+	supabase_project_ref: z.string(),
+	supabase_db_pass_encrypted: z.string(),
+	supabase_url: z.string(),
+	supabase_anon_key: z.string(),
+	supabase_service_role_key_encrypted: z.string(),
+	vercel_project_id: z.string(),
+	vercel_url: z.string(),
+	plan_changed_at: z.string().nullable(),
+	created_at: z.string(),
+	updated_at: z.string(),
+});
+
+export const createTenantSchema = z.object({
+	customer_id: z.string().uuid(),
+	provisioning_job_id: z.string().uuid(),
+	slug: z.string(),
+	current_plan: provisioningPlanSchema,
+	supabase_project_ref: z.string(),
+	supabase_db_pass_encrypted: z.string(),
+	supabase_url: z.string(),
+	supabase_anon_key: z.string(),
+	supabase_service_role_key_encrypted: z.string(),
+	vercel_project_id: z.string(),
+	vercel_url: z.string(),
+});
+
+export const planChangeTypeSchema = z.enum([
+	'initial',
+	'upgrade',
+	'downgrade',
+	'renewal',
+]);
+
+export const tenantPlanHistorySchema = z.object({
+	id: z.string().uuid(),
+	tenant_id: z.string().uuid(),
+	from_plan: provisioningPlanSchema.nullable(),
+	to_plan: provisioningPlanSchema,
+	change_type: planChangeTypeSchema,
+	stripe_session_id: z.string().nullable(),
+	stripe_subscription_id: z.string().nullable(),
+	metadata: z.record(z.string(), z.unknown()).nullable(),
+	created_at: z.string(),
+});
+
+export const createTenantPlanHistorySchema = z.object({
+	tenant_id: z.string().uuid(),
+	from_plan: provisioningPlanSchema.nullable().optional(),
+	to_plan: provisioningPlanSchema,
+	change_type: planChangeTypeSchema,
+	stripe_session_id: z.string().nullable().optional(),
+	stripe_subscription_id: z.string().nullable().optional(),
+	metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+
 export const provisioningStatusResponseSchema = z.object({
 	jobId: z.string().uuid(),
 	status: provisioningStatusSchema,
@@ -128,6 +194,14 @@ export type CreateProvisioningOrder = z.infer<
 	typeof createProvisioningOrderSchema
 >;
 export type CreateProvisioningJob = z.infer<typeof createProvisioningJobSchema>;
+export type TenantStatus = z.infer<typeof tenantStatusSchema>;
+export type Tenant = z.infer<typeof tenantSchema>;
+export type CreateTenant = z.infer<typeof createTenantSchema>;
+export type PlanChangeType = z.infer<typeof planChangeTypeSchema>;
+export type TenantPlanHistory = z.infer<typeof tenantPlanHistorySchema>;
+export type CreateTenantPlanHistory = z.infer<
+	typeof createTenantPlanHistorySchema
+>;
 
 export const PROVISIONING_STATUS_ORDER: ProvisioningStatus[] = [
 	'created',
