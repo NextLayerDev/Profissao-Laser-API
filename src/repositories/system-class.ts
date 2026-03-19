@@ -26,7 +26,7 @@ class SystemClassRepository {
 			name: sc.name,
 			description: sc.description,
 			status: sc.status,
-			sistemaGerenciamento: sc.sistema_gerenciamento,
+			gerenciamentoSistema: sc.gerenciamentoSistema ?? false,
 			iaPrevias: sc.iaPrevias,
 			iaWhatsappPrevias: sc.iaWhatsappPrevias,
 			createdAt: sc.createdAt,
@@ -62,7 +62,7 @@ class SystemClassRepository {
 			name: data.name,
 			description: data.description,
 			status: data.status,
-			sistemaGerenciamento: data.sistema_gerenciamento,
+			sistemaGerenciamento: data.sistemaGerenciamento ?? false,
 			iaPrevias: data.iaPrevias,
 			iaWhatsappPrevias: data.iaWhatsappPrevias,
 			createdAt: data.createdAt,
@@ -92,7 +92,7 @@ class SystemClassRepository {
 			name: sc.name,
 			description: sc.description,
 			status: sc.status,
-			sistemaGerenciamento: sc.sistema_gerenciamento,
+			gerenciamentoSistema: sc.gerenciamentoSistema ?? false,
 			iaPrevias: sc.iaPrevias,
 			iaWhatsappPrevias: sc.iaWhatsappPrevias,
 			createdAt: sc.createdAt,
@@ -116,13 +116,15 @@ class SystemClassRepository {
 			.select()
 			.single();
 
+		console.log(sc);
+
 		if (error) throw new Error(error.message);
 		return {
 			id: sc.id,
 			name: sc.name,
 			description: sc.description,
 			status: sc.status,
-			sistemaGerenciamento: sc.sistema_gerenciamento,
+			gerenciamentoSistema: sc.gerenciamentoSistema,
 			iaPrevias: sc.iaPrevias,
 			iaWhatsappPrevias: sc.iaWhatsappPrevias,
 			createdAt: sc.createdAt,

@@ -24,10 +24,10 @@ INSERT INTO "Company" (
     gen_random_uuid(),
     '{{COMPANY_NAME}}',
     'active',
-    '{{PLAN}}'::"PlanType",
+    '{{PLAN}}',
     'paid',
     true,
-    true,
+    {{ONLY_PROFISSAO}},
     NOW(),
     NOW()
 );

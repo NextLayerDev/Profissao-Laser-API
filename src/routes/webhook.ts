@@ -79,16 +79,20 @@ export async function webhookRoute(server: FastifyInstance) {
 async function resolvePlanFromProduct(
 	productId: string,
 ): Promise<ProvisioningPlan> {
-	const { data: classLinks } = await supabase
-		.from('pl_class_product')
-		.select('classId, pl_class(tier)')
+	const { data: scLinks } = await supabase
+		.from('pl_system_class_product')
+		.select('systemClassId, pl_system_class(name)')
 		.eq('productId', productId)
 		.limit(1);
 
-	if (classLinks && classLinks.length > 0) {
-		const tier = (classLinks[0].pl_class as unknown as { tier: string })?.tier;
-		if (tier === 'platina') return 'platina';
-		if (tier === 'ouro') return 'ouro';
+	if (scLinks && scLinks.length > 0) {
+		const scName = (scLinks[0].pl_system_class as unknown as { name: string })
+			?.name;
+		if (scName) {
+			const lower = scName.toLowerCase();
+			if (lower === 'platina') return 'platina';
+			if (lower === 'ouro') return 'ouro';
+		}
 	}
 	return 'prata';
 }
@@ -224,8 +228,30 @@ async function handleSystemProvisioning(
 	server: FastifyInstance,
 ) {
 	try {
-		const plan = await resolvePlanFromProduct(product.id);
+		// Determine plan tier (for billing/env-var decisions) and company plan (for tenant Company table)
+		let plan: 'prata' | 'ouro' | 'platina' = 'prata';
+		let systemClassName: string | null = null;
+		let onlyProfissao = true;
 
+		const { data: scLinks } = await supabase
+			.from('pl_system_class_product')
+			.select('systemClassId, pl_system_class(name)')
+			.eq('productId', product.id)
+			.limit(1);
+
+		if (scLinks && scLinks.length > 0) {
+			const scName = (scLinks[0].pl_system_class as unknown as { name: string })
+				?.name;
+			if (scName) {
+				systemClassName = scName;
+				onlyProfissao = false;
+				const lower = scName.toLowerCase();
+				if (lower === 'platina') plan = 'platina';
+				else if (lower === 'ouro') plan = 'ouro';
+			}
+		}
+
+		// Get company_name from checkout metadata
 		const companyName =
 			session.metadata?.company_name ||
 			session.customer_details?.name ||
@@ -284,7 +310,11 @@ async function handleSystemProvisioning(
 			stripe_subscription_id: (session.subscription as string) || null,
 			status: 'paid',
 			plan,
-			metadata: session.metadata as Record<string, unknown> | null,
+			metadata: {
+				...((session.metadata as Record<string, unknown> | null) ?? {}),
+				system_class_name: systemClassName,
+				only_profissao: onlyProfissao,
+			},
 		});
 
 		// Clean up non-completed jobs with the same slug (failed/in-progress retries)

@@ -261,11 +261,17 @@ export async function runProvisionTenant(jobId: string): Promise<void> {
 		}
 
 		// Load and replace placeholders in cria-admin.sql
+		const orderMeta = order.metadata as Record<string, unknown> | null;
+		const scName = orderMeta?.system_class_name as string | null | undefined;
+		const onlyProfissao = orderMeta?.only_profissao ?? true;
+		const companyPlan = scName ? scName.toUpperCase() : plan.toUpperCase();
+
 		let adminSql = loadSql('cria-admin.sql');
 		adminSql = adminSql.replaceAll('{{ADMIN_EMAIL}}', adminEmail);
 		adminSql = adminSql.replaceAll('{{ADMIN_PASSWORD}}', adminPassword);
 		adminSql = adminSql.replaceAll('{{COMPANY_NAME}}', customer.company_name);
-		adminSql = adminSql.replaceAll('{{PLAN}}', plan.toUpperCase());
+		adminSql = adminSql.replaceAll('{{PLAN}}', companyPlan);
+		adminSql = adminSql.replaceAll('{{ONLY_PROFISSAO}}', String(onlyProfissao));
 
 		await runSqlOnTenant({ ref, dbPass, sql: adminSql });
 
