@@ -7,7 +7,7 @@ export const systemClassSchema = z.object({
 	name: z.string(),
 	description: z.string().nullable(),
 	status: z.enum(['ativo', 'inativo']),
-	sistemaGerenciamento: z.boolean(),
+	gerenciamentoSistema: z.boolean(),
 	iaPrevias: z.boolean(),
 	iaWhatsappPrevias: z.boolean(),
 	createdAt: z.string(),
