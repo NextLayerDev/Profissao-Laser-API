@@ -23,7 +23,7 @@ export const createSystemClassSchema = z.object({
 	name: z.string(),
 	description: z.string().optional(),
 	status: z.enum(['ativo', 'inativo']).default('ativo'),
-	sistema_gerenciamento: z.boolean().default(false),
+	sistemaGerenciamento: z.boolean().default(false),
 	iaPrevias: z.boolean().default(false),
 	iaWhatsappPrevias: z.boolean().default(false),
 });
@@ -32,7 +32,7 @@ export const updateSystemClassSchema = z.object({
 	name: z.string().optional(),
 	description: z.string().optional(),
 	status: z.enum(['ativo', 'inativo']).optional(),
-	sistema_gerenciamento: z.boolean().optional(),
+	sistemaGerenciamento: z.boolean().optional(),
 	iaPrevias: z.boolean().optional(),
 	iaWhatsappPrevias: z.boolean().optional(),
 });
