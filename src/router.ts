@@ -12,6 +12,7 @@ import { faqRoute } from './routes/faq.js';
 import { forumRoute } from './routes/forum.js';
 import { lessonRoute } from './routes/lesson.js';
 import { moduleRoute } from './routes/module.js';
+import { paymentLinkRoute } from './routes/payment-link.js';
 import { productRoute } from './routes/product.js';
 import { progressRoute } from './routes/progress.js';
 import { provisioningRoute } from './routes/provisioning.js';
@@ -39,6 +40,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(lessonRoute);
 	app.register(moduleRoute);
 	app.register(productRoute);
+	app.register(paymentLinkRoute);
 	app.register(purchaseRoute);
 	app.register(quizRoute);
 	app.register(userRoute);
