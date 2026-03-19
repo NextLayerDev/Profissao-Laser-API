@@ -104,7 +104,9 @@ export class PurchaseService {
 		const subscription = await stripe.subscriptions.create({
 			customer: customer.id,
 			items: [{ price: price.id }],
-			trial_end: Math.floor(new Date(data.endsAt).getTime() / 1000),
+			cancel_at: Math.floor(new Date(data.endsAt).getTime() / 1000),
+			collection_method: 'send_invoice',
+			days_until_due: 30,
 		});
 
 		return {
