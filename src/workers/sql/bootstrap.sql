@@ -6,19 +6,12 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- ENUM (idempotente)
-DO $$ BEGIN
-    CREATE TYPE "PlanType" AS ENUM ('PRATA', 'OURO', 'PLATINA');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
 -- Company
 CREATE TABLE IF NOT EXISTS "Company" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "name" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'active',
-    "plan" "PlanType" NOT NULL DEFAULT 'PRATA',
+    "plan" TEXT NOT NULL DEFAULT 'PRATA',
     "payment_status" TEXT,
     "start_plan" TIMESTAMP(3),
     "end_plan" TIMESTAMP(3),
