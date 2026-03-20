@@ -37,7 +37,8 @@ class PaymentLinkService {
 
 		const coupon = await stripe.coupons.create({
 			percent_off: DISCOUNT_PERCENT,
-			duration: 'once',
+			duration: 'repeating',
+			duration_in_months: 3,
 			max_redemptions: 1,
 			applies_to: { products: [product.stripeProductId] },
 		});
