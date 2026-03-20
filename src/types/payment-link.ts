@@ -54,3 +54,18 @@ export const redeemPaymentLinkResponseSchema = z.object({
 export const paymentLinkTokenParamsSchema = z.object({
 	token: z.string(),
 });
+
+export const paymentLinkListItemSchema = z.object({
+	id: z.string().uuid(),
+	token: z.string(),
+	productName: z.string(),
+	customerName: z.string(),
+	customerPhone: z.string(),
+	customerCpf: z.string(),
+	companyName: z.string(),
+	status: z.string(),
+	expiresAt: z.string().nullable(),
+	usedAt: z.string().nullable(),
+	createdBy: z.string().nullable(),
+	createdAt: z.string(),
+});

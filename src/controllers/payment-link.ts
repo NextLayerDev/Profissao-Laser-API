@@ -5,6 +5,19 @@ import type {
 	RedeemPaymentLink,
 } from '../types/payment-link.js';
 
+export const listPaymentLinksController = async (
+	_request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	try {
+		const result = await paymentLinkService.listLinks();
+		return reply.status(200).send(result);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
 export const createPaymentLinkController = async (
 	request: FastifyRequest<{ Body: CreatePaymentLink }>,
 	reply: FastifyReply,
