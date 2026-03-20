@@ -23,7 +23,6 @@ import {
 } from '../controllers/doubt-chat.js';
 import {
 	chatMessageSchema,
-	createChatSchema,
 	createDefaultQuestionSchema,
 	createDoubtCategorySchema,
 	defaultQuestionSchema,
@@ -271,7 +270,6 @@ export async function doubtChatRoute(server: FastifyInstance) {
 			preHandler: [authenticateCustomer],
 			schema: {
 				description: 'Create a new doubt chat.',
-				body: createChatSchema,
 				response: { 201: doubtChatSchema, 400: ErrorSchema },
 				tags: ['Doubt Chat'],
 				security: [{ bearerAuth: [] }],
@@ -322,7 +320,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.post(
 		'/doubt-chats/:id/messages',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateCustomer],
 			schema: {
 				description:
 					'Send a message in a doubt chat (multipart/form-data with optional `content` field and optional `file`).',

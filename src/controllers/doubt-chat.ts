@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { uploadDoubtFile } from '../lib/storage.js';
 import { supabase } from '../lib/supabase.js';
@@ -285,11 +285,59 @@ export const createChatController = async (
 	try {
 		const customerId = request.currentCustomer?.id ?? '';
 		const customerName = request.currentCustomer?.name ?? 'Cliente';
-		const data = createChatSchema.parse(request.body);
+
+		const parts = request.parts();
+		let categoryId = '';
+		let technicianId: string | undefined;
+		let qualificationAnswers: Record<string, string> | undefined;
+		let initialMessage: string | undefined;
+		let initialFileUrl: string | undefined;
+
+		for await (const part of parts) {
+			if (part.type === 'field') {
+				if (part.fieldname === 'categoryId') {
+					categoryId = part.value as string;
+				} else if (part.fieldname === 'technicianId') {
+					technicianId = part.value as string;
+				} else if (part.fieldname === 'qualificationAnswers') {
+					try {
+						qualificationAnswers = JSON.parse(part.value as string);
+					} catch {
+						// ignore invalid JSON
+					}
+				} else if (part.fieldname === 'initialMessage') {
+					initialMessage = part.value as string;
+				}
+			} else if (part.type === 'file' && part.fieldname === 'file') {
+				const buffer = await part.toBuffer();
+				const ext = part.filename?.split('.').pop() ?? 'bin';
+				const path = `init/${crypto.randomUUID()}.${ext}`;
+				initialFileUrl = await uploadDoubtFile(buffer, path, part.mimetype);
+			}
+		}
+
+		if (!categoryId) {
+			return reply.status(400).send({ message: 'categoryId is required' });
+		}
+
+		if (!initialMessage && !initialFileUrl) {
+			return reply
+				.status(400)
+				.send({ message: 'initialMessage or file is required' });
+		}
+
+		const data = createChatSchema.parse({
+			categoryId,
+			technicianId,
+			qualificationAnswers,
+			initialMessage,
+		});
+
 		const chat = await doubtChatRepository.createChat(
 			data,
 			customerId,
 			customerName,
+			initialFileUrl,
 		);
 		return reply.status(201).send(chat);
 	} catch (err) {

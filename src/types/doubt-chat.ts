@@ -84,7 +84,7 @@ export const createChatSchema = z.object({
 	categoryId: z.string(),
 	technicianId: z.string().optional(),
 	qualificationAnswers: z.record(z.string(), z.string()).optional(),
-	initialMessage: z.string().min(1),
+	initialMessage: z.string().min(1).optional(),
 });
 
 export const sendChatMessageSchema = z.object({

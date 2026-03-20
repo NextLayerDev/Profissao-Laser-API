@@ -436,7 +436,7 @@ class ForumRepository {
 		data: CreateForumReply,
 		author: { id: string; name: string; isInstructor: boolean },
 	) {
-		const { data: reply, error } = await supabase
+		const { data: _reply, error } = await supabase
 			.from('forum_replies')
 			.insert({
 				id: crypto.randomUUID(),

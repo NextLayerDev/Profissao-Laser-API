@@ -314,7 +314,12 @@ class DoubtChatRepository {
 		};
 	}
 
-	async createChat(data: CreateChat, customerId: string, customerName: string) {
+	async createChat(
+		data: CreateChat,
+		customerId: string,
+		customerName: string,
+		initialFileUrl?: string,
+	) {
 		const chatId = crypto.randomUUID();
 		const now = new Date().toISOString();
 
@@ -339,7 +344,8 @@ class DoubtChatRepository {
 				authorId: customerId,
 				authorName: customerName,
 				isTechnician: false,
-				content: data.initialMessage,
+				content: data.initialMessage ?? '',
+				fileUrl: initialFileUrl ?? null,
 				createdAt: now,
 			});
 

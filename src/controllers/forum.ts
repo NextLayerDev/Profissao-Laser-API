@@ -65,7 +65,7 @@ async function requireOwnerOrAdmin(
 // ─── Category controllers ─────────────────────────────────────────────────────
 
 export const listForumCategoriesController = async (
-	request: FastifyRequest,
+	_request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
 	try {
