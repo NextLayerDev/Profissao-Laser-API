@@ -51,6 +51,18 @@ class PaymentLinkRepository {
 		return data as PaymentLinkRow | null;
 	}
 
+	async findAll(): Promise<
+		(PaymentLinkRow & { pl_product: { name: string } })[]
+	> {
+		const { data, error } = await supabase
+			.from('pl_payment_link')
+			.select('*, pl_product(name)')
+			.order('created_at', { ascending: false });
+
+		if (error) throw new Error(error.message);
+		return data as (PaymentLinkRow & { pl_product: { name: string } })[];
+	}
+
 	async markAsUsed(
 		token: string,
 		stripeSessionId: string,

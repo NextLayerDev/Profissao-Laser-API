@@ -74,6 +74,25 @@ class PaymentLinkService {
 		};
 	}
 
+	async listLinks() {
+		const rows = await paymentLinkRepository.findAll();
+
+		return rows.map((row) => ({
+			id: row.id,
+			token: row.token,
+			productName: (row.pl_product as unknown as { name: string })?.name ?? '',
+			customerName: row.customer_name,
+			customerPhone: row.customer_phone,
+			customerCpf: row.customer_cpf,
+			companyName: row.company_name,
+			status: row.status,
+			expiresAt: row.expires_at,
+			usedAt: row.used_at,
+			createdBy: row.created_by,
+			createdAt: row.created_at,
+		}));
+	}
+
 	async getLinkInfo(token: string) {
 		const link = await paymentLinkRepository.findByToken(token);
 		if (!link) throw new Error('Payment link not found');

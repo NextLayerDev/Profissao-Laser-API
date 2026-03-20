@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { authenticate } from '@/middleware/auth.js';
 import {
 	createPaymentLinkController,
 	getPaymentLinkInfoController,
+	listPaymentLinksController,
 	redeemPaymentLinkController,
 } from '../controllers/payment-link.js';
 import { ErrorSchema } from '../types/error.js';
@@ -10,12 +12,32 @@ import {
 	createPaymentLinkResponseSchema,
 	createPaymentLinkSchema,
 	paymentLinkInfoResponseSchema,
+	paymentLinkListItemSchema,
 	paymentLinkTokenParamsSchema,
 	redeemPaymentLinkResponseSchema,
 	redeemPaymentLinkSchema,
 } from '../types/payment-link.js';
 
 export async function paymentLinkRoute(server: FastifyInstance) {
+	server.get(
+		'/payment-links',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'List all payment links with product names, status, and customer info.',
+				response: {
+					200: z.array(paymentLinkListItemSchema),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Payment Links'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		listPaymentLinksController,
+	);
+
 	server.post(
 		'/payment-link',
 		{
