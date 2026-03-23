@@ -63,6 +63,13 @@ export async function webhookRoute(server: FastifyInstance) {
 			case 'invoice.payment_failed':
 				await handlePaymentFailed(event.data.object as Stripe.Invoice, server);
 				break;
+
+			case 'invoice.payment_succeeded':
+				await handlePaymentSucceeded(
+					event.data.object as Stripe.Invoice,
+					server,
+				);
+				break;
 		}
 
 		return reply.status(200).send({ received: true });
@@ -681,6 +688,94 @@ async function handlePaymentFailed(
 		server.log.error(
 			{ err, invoiceId: invoice.id },
 			'Failed to handle payment failure',
+		);
+	}
+}
+
+// ========== PAYMENT SUCCEEDED ==========
+
+async function handlePaymentSucceeded(
+	invoice: Stripe.Invoice,
+	server: FastifyInstance,
+) {
+	try {
+		const stripeCustomerId = invoice.customer as string;
+		if (!stripeCustomerId) return;
+
+		const email =
+			await resolveCustomerEmailFromStripeCustomer(stripeCustomerId);
+		if (!email) return;
+
+		const tenant =
+			await provisioningRepository.findActiveTenantByCustomerEmail(email);
+		if (!tenant) {
+			server.log.info(
+				{ email },
+				'Payment succeeded but no active tenant found — skipping',
+			);
+			return;
+		}
+
+		server.log.info(
+			{ slug: tenant.slug, email, invoiceId: invoice.id },
+			'Payment succeeded — updating tenant payment status',
+		);
+
+		// Extract billing period from invoice line item
+		const lineItem = invoice.lines?.data[0];
+		const periodStart = lineItem?.period?.start;
+		const periodEnd = lineItem?.period?.end;
+
+		// Extract payment method type (card, boleto, pix, etc.)
+		let methodPayment: string | null = null;
+		if (invoice.payment_intent) {
+			const pi = await stripe.paymentIntents.retrieve(
+				invoice.payment_intent as string,
+			);
+			if (pi.payment_method) {
+				const pm = await stripe.paymentMethods.retrieve(
+					pi.payment_method as string,
+				);
+				methodPayment = pm.type;
+			}
+		}
+
+		// Build dynamic SQL to update only available fields
+		const setClauses = ['"payment_status" = \'paid\''];
+
+		if (periodStart) {
+			setClauses.push(`"start_plan" = to_timestamp(${periodStart})`);
+		}
+		if (periodEnd) {
+			setClauses.push(`"end_plan" = to_timestamp(${periodEnd})`);
+		}
+		if (methodPayment) {
+			setClauses.push(`"method_payment" = '${methodPayment}'`);
+		}
+
+		setClauses.push('"updatedAt" = NOW()');
+
+		const updateSql = `
+			UPDATE "Company"
+			SET ${setClauses.join(', ')}
+			WHERE "profissao_laser" = true;
+		`;
+
+		const dbPass = decrypt(tenant.supabase_db_pass_encrypted);
+		await runSqlOnTenant({
+			ref: tenant.supabase_project_ref,
+			dbPass,
+			sql: updateSql,
+		});
+
+		server.log.info(
+			{ slug: tenant.slug, invoiceId: invoice.id, methodPayment },
+			'Tenant payment status updated to paid',
+		);
+	} catch (err) {
+		server.log.error(
+			{ err, invoiceId: invoice.id },
+			'Failed to handle payment success',
 		);
 	}
 }
