@@ -10,6 +10,7 @@ import { doubtRoute } from './routes/doubt.js';
 import { doubtChatRoute } from './routes/doubt-chat.js';
 import { faqRoute } from './routes/faq.js';
 import { forumRoute } from './routes/forum.js';
+import { globalPromoLinkRoute } from './routes/global-promo-link.js';
 import { lessonRoute } from './routes/lesson.js';
 import { moduleRoute } from './routes/module.js';
 import { paymentLinkRoute } from './routes/payment-link.js';
@@ -43,6 +44,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(productRoute);
 	app.register(paymentLinkRoute);
 	app.register(promoLinkRoute);
+	app.register(globalPromoLinkRoute);
 	app.register(purchaseRoute);
 	app.register(quizRoute);
 	app.register(userRoute);
