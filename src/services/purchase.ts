@@ -68,6 +68,7 @@ export class PurchaseService {
 					name: customer?.name || 'Unknown',
 					email:
 						customer?.email || session.customer_details?.email || 'No email',
+					phone: customer?.phone || session.customer_details?.phone || null,
 				},
 				receipt_url: receiptUrl,
 			};
@@ -122,6 +123,7 @@ export class PurchaseService {
 					name: customer?.name ?? charge?.billing_details?.name ?? 'Unknown',
 					email:
 						customer?.email ?? charge?.billing_details?.email ?? 'No email',
+					phone: customer?.phone ?? charge?.billing_details?.phone ?? null,
 				},
 				receipt_url: charge?.receipt_url ?? null,
 			};

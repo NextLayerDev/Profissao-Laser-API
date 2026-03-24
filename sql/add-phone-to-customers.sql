@@ -1,0 +1,2 @@
+ALTER TABLE "Customers"
+ADD COLUMN IF NOT EXISTS phone TEXT;

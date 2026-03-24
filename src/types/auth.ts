@@ -17,6 +17,7 @@ export const registerCustomerSchema = z.object({
 	email: z.email('Invalid email'),
 	name: z.string().min(2, 'Name must be at least 2 characters long'),
 	password: z.string().min(6, 'Password must be at least 6 characters long'),
+	phone: z.string().nullish(),
 });
 
 export type Login = z.infer<typeof loginSchema>;
