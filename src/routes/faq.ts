@@ -10,7 +10,11 @@ import {
 	updateFaqController,
 	uploadFaqImageController,
 } from '../controllers/faq.js';
-import { authenticate, authenticateCustomer } from '../middleware/auth.js';
+import {
+	authenticate,
+	authenticateAdmin,
+	authenticateCustomer,
+} from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import { faqSchema, reactFaqSchema, reorderFaqSchema } from '../types/faq.js';
 
@@ -35,7 +39,7 @@ export async function faqRoute(server: FastifyInstance) {
 	server.post(
 		'/faqs',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Create a new FAQ (admin only). Accepts multipart/form-data: question, answer, order (required) + image file (optional).',
@@ -54,7 +58,7 @@ export async function faqRoute(server: FastifyInstance) {
 	server.post(
 		'/faqs/reorder',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Reorder FAQs (admin only).',
 				body: reorderFaqSchema,
@@ -73,7 +77,7 @@ export async function faqRoute(server: FastifyInstance) {
 	server.post(
 		'/faqs/upload-image',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Upload a FAQ image (admin only, multipart/form-data).',
 				response: {
@@ -92,7 +96,7 @@ export async function faqRoute(server: FastifyInstance) {
 	server.patch(
 		'/faqs/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Update a FAQ (admin only). Accepts multipart/form-data: question, answer, order (optional) + image file (optional). Send removeImage=true to clear the image.',
@@ -112,7 +116,7 @@ export async function faqRoute(server: FastifyInstance) {
 	server.delete(
 		'/faqs/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Delete a FAQ (admin only).',
 				params: z.object({ id: z.string() }),

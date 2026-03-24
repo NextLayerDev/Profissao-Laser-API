@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate, authenticateCustomer } from '@/middleware/auth.js';
+import {
+	authenticate,
+	authenticateAdmin,
+	authenticateCustomer,
+} from '@/middleware/auth.js';
 import {
 	assignRandomController,
 	createCategoryController,
@@ -56,7 +60,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.post(
 		'/doubt-categories',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Create a doubt category (staff only).',
 				body: createDoubtCategorySchema,
@@ -75,7 +79,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.post(
 		'/doubt-categories/reorder',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Reorder doubt categories (staff only).',
 				body: reorderSchema,
@@ -90,7 +94,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.patch(
 		'/doubt-categories/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Update a doubt category (staff only).',
 				params: z.object({ id: z.string() }),
@@ -110,7 +114,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.delete(
 		'/doubt-categories/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Delete a doubt category (staff only).',
 				params: z.object({ id: z.string() }),
@@ -177,7 +181,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.post(
 		'/technicians/:id/default-questions',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Create a default question for a technician (staff only).',
 				params: z.object({ id: z.string() }),
@@ -197,7 +201,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.post(
 		'/technicians/:id/default-questions/reorder',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Reorder default questions for a technician (staff only).',
 				params: z.object({ id: z.string() }),
@@ -215,7 +219,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.patch(
 		'/doubt-default-questions/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Update a default question (staff only).',
 				params: z.object({ id: z.string() }),
@@ -235,7 +239,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.delete(
 		'/doubt-default-questions/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Delete a default question (staff only).',
 				params: z.object({ id: z.string() }),
@@ -281,7 +285,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.get(
 		'/doubt-chats/admin',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'List all doubt chats (staff only).',
 				querystring: z.object({ categoryId: z.string().optional() }),

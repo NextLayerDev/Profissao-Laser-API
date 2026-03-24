@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '@/middleware/auth.js';
+import { authenticateAdmin } from '@/middleware/auth.js';
 import {
 	createGlobalPromoLinkController,
 	getGlobalPromoLinkInfoController,
@@ -26,7 +26,7 @@ export async function globalPromoLinkRoute(server: FastifyInstance) {
 	server.post(
 		'/global-promo-link',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Create a global promotional link with configurable discount, max redemptions, and duration. The customer chooses which product to purchase.',
@@ -88,7 +88,7 @@ export async function globalPromoLinkRoute(server: FastifyInstance) {
 	server.patch(
 		'/global-promo-link/:id/status',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Manually activate or deactivate a global promotional link.',
@@ -110,7 +110,7 @@ export async function globalPromoLinkRoute(server: FastifyInstance) {
 	server.get(
 		'/global-promo-links',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'List all global promotional links with redemption counts and status.',

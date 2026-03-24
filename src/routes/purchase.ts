@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '@/middleware/auth.js';
+import { authenticate, authenticateAdmin } from '@/middleware/auth.js';
 import {
 	createPurchaseController,
 	createSubscriptionController,
 	downgradeSubscriptionController,
 	getAllPurchasesController,
+	getPaymentAttemptsController,
 	upgradeSubscriptionController,
 } from '../controllers/purchase.js';
 import { ErrorSchema } from '../types/error.js';
@@ -122,7 +123,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 	server.get(
 		'/sales',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Retrieve all purchases (Administrative view).',
 				response: {
@@ -148,5 +149,43 @@ export async function purchaseRoute(server: FastifyInstance) {
 			},
 		},
 		getAllPurchasesController,
+	);
+
+	server.get(
+		'/sales/attempts',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description:
+					'List all Stripe payment attempts including failed ones. Filter by status (succeeded/failed) and paginate with limit/starting_after.',
+				querystring: z.object({
+					status: z.enum(['succeeded', 'failed', 'all']).optional(),
+					limit: z.coerce.number().int().min(1).max(100).optional(),
+					starting_after: z.string().optional(),
+				}),
+				response: {
+					200: z.array(
+						z.object({
+							id: z.string(),
+							date: z.string(),
+							amount: z.number(),
+							currency: z.string(),
+							status: z.string(),
+							failure_message: z.string().nullable(),
+							product: z.string(),
+							customer: z.object({
+								name: z.string(),
+								email: z.string(),
+							}),
+							receipt_url: z.string().nullable(),
+						}),
+					),
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getPaymentAttemptsController,
 	);
 }

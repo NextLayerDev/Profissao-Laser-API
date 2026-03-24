@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '@/middleware/auth.js';
+import { authenticate, authenticateAdmin } from '@/middleware/auth.js';
 import {
 	confirmVideoUploadController,
 	createLessonController,
@@ -50,7 +50,7 @@ export async function lessonRoute(server: FastifyInstance) {
 	server.post(
 		'/lesson',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Create a new lesson inside a module.',
 				body: createLessonSchema,
@@ -68,7 +68,7 @@ export async function lessonRoute(server: FastifyInstance) {
 	server.put(
 		'/lesson/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Update a lesson.',
 				params: z.object({ id: z.string() }),
@@ -88,7 +88,7 @@ export async function lessonRoute(server: FastifyInstance) {
 	server.post(
 		'/lesson/:id/video/presigned-url',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: [
 					'Get a signed upload URL for direct video upload to Supabase Storage.',
@@ -121,7 +121,7 @@ export async function lessonRoute(server: FastifyInstance) {
 	server.patch(
 		'/lesson/:id/video/confirm',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Confirm video upload after direct upload to Supabase. Call after uploading via presigned URL.',
@@ -142,7 +142,7 @@ export async function lessonRoute(server: FastifyInstance) {
 	server.post(
 		'/lesson/:id/video',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: [
 					'Upload a video for a lesson via **multipart/form-data**.',
@@ -170,7 +170,7 @@ export async function lessonRoute(server: FastifyInstance) {
 	server.patch(
 		'/lesson/reorder',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Reorder lessons by position in the given array.',
 				body: reorderLessonsSchema,
@@ -188,7 +188,7 @@ export async function lessonRoute(server: FastifyInstance) {
 	server.delete(
 		'/lesson/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Delete a lesson.',
 				params: z.object({ id: z.string() }),
@@ -226,7 +226,7 @@ export async function lessonRoute(server: FastifyInstance) {
 	server.post(
 		'/lesson/:lessonId/material',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: [
 					'Upload a support material to a lesson via **multipart/form-data**.',
@@ -253,7 +253,7 @@ export async function lessonRoute(server: FastifyInstance) {
 	server.post(
 		'/lesson/:lessonId/file',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: [
 					'Upload a document file to a lesson via **multipart/form-data**.',
@@ -280,7 +280,7 @@ export async function lessonRoute(server: FastifyInstance) {
 	server.delete(
 		'/lesson/:lessonId/material/:materialId',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Remove a support material from a lesson.',
 				params: z.object({

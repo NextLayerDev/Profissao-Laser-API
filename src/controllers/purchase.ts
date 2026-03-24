@@ -81,6 +81,25 @@ export const getAllPurchasesController = async (
 	}
 };
 
+export const getPaymentAttemptsController = async (
+	request: FastifyRequest<{
+		Querystring: {
+			status?: 'succeeded' | 'failed' | 'all';
+			limit?: number;
+			starting_after?: string;
+		};
+	}>,
+	reply: FastifyReply,
+) => {
+	try {
+		const attempts = await purchaseService.listPaymentAttempts(request.query);
+		return reply.send(attempts);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
 export const upgradeSubscriptionController = async (
 	request: FastifyRequest<{ Body: { productId: string } }>,
 	reply: FastifyReply,

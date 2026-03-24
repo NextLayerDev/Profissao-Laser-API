@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '@/middleware/auth.js';
+import { authenticate, authenticateAdmin } from '@/middleware/auth.js';
 import {
 	createModuleController,
 	deleteModuleController,
@@ -38,7 +38,7 @@ export async function moduleRoute(server: FastifyInstance) {
 	server.post(
 		'/module',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Create a new module for a product.',
 				body: createModuleSchema,
@@ -56,7 +56,7 @@ export async function moduleRoute(server: FastifyInstance) {
 	server.put(
 		'/module/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Update a module.',
 				params: z.object({ id: z.string() }),
@@ -76,7 +76,7 @@ export async function moduleRoute(server: FastifyInstance) {
 	server.patch(
 		'/module/reorder',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Reorder modules by position in the given array.',
 				body: reorderModulesSchema,
@@ -94,7 +94,7 @@ export async function moduleRoute(server: FastifyInstance) {
 	server.delete(
 		'/module/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Delete a module and all its lessons.',
 				params: z.object({ id: z.string() }),

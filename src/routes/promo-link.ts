@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '@/middleware/auth.js';
+import { authenticateAdmin } from '@/middleware/auth.js';
 import {
 	createPromoLinkController,
 	getPromoLinkInfoController,
@@ -26,7 +26,7 @@ export async function promoLinkRoute(server: FastifyInstance) {
 	server.post(
 		'/promo-link',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Create a promotional link with configurable discount, max redemptions, and duration.',
@@ -89,7 +89,7 @@ export async function promoLinkRoute(server: FastifyInstance) {
 	server.patch(
 		'/promo-link/:id/status',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Manually activate or deactivate a promotional link.',
 				params: promoLinkIdParamsSchema,
@@ -110,7 +110,7 @@ export async function promoLinkRoute(server: FastifyInstance) {
 	server.get(
 		'/promo-links',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'List all promotional links with redemption counts, status, and product info.',

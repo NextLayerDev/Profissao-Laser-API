@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '@/middleware/auth.js';
+import { authenticateAdmin } from '@/middleware/auth.js';
 import {
 	createProductController,
 	deleteProductController,
@@ -40,7 +40,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.post(
 		'/product',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Create a new product in Stripe and save its IDs in the database.',
@@ -59,7 +59,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.patch(
 		'/product/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Update a product (name, description, category, price, refundDays). Name and price are synced with Stripe.',
@@ -80,7 +80,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.patch(
 		'/product/:id/status',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Activate or deactivate a product (also syncs with Stripe).',
@@ -101,7 +101,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.patch(
 		'/product/:id/form',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: [
 					'Update a product via **multipart/form-data**. All fields are optional.',
@@ -133,7 +133,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.post(
 		'/product/:id/image',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: [
 					'Upload a cover image for a product via **multipart/form-data**.',
@@ -160,7 +160,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.delete(
 		'/product/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Archive a product in Stripe (deactivates all prices) and delete it from the database.',

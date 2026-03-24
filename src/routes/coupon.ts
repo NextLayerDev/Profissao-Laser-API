@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '@/middleware/auth.js';
+import { authenticateAdmin } from '@/middleware/auth.js';
 import {
 	createCouponController,
 	deleteCouponController,
@@ -18,7 +18,7 @@ export async function couponRoute(server: FastifyInstance) {
 	server.post(
 		'/coupon',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Create a discount coupon for a product registered in Stripe.',
@@ -38,7 +38,7 @@ export async function couponRoute(server: FastifyInstance) {
 	server.get(
 		'/coupons/:product_id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'List all coupons associated with a specific product.',
 				params: z.object({ product_id: z.string() }),
@@ -56,7 +56,7 @@ export async function couponRoute(server: FastifyInstance) {
 	server.delete(
 		'/coupon/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Delete a coupon from Stripe by its ID.',
 				params: z.object({ id: z.string() }),

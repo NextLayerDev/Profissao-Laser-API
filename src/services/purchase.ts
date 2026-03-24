@@ -1,3 +1,4 @@
+import type Stripe from 'stripe';
 import { PLAN_ORDER, resolvePlanFromProduct } from '../lib/plan.js';
 import { stripe } from '../lib/stripe.js';
 import { productRepository } from '../repositories/product.js';
@@ -69,6 +70,60 @@ export class PurchaseService {
 						customer?.email || session.customer_details?.email || 'No email',
 				},
 				receipt_url: receiptUrl,
+			};
+		});
+	}
+
+	async listPaymentAttempts(options?: {
+		status?: 'succeeded' | 'failed' | 'all';
+		limit?: number;
+		starting_after?: string;
+	}) {
+		const statusFilter = options?.status;
+		const limit = options?.limit ?? 50;
+
+		const stripeStatus =
+			statusFilter === 'succeeded'
+				? 'succeeded'
+				: statusFilter === 'failed'
+					? 'requires_payment_method'
+					: undefined;
+
+		const intents = await stripe.paymentIntents.list({
+			limit,
+			...(options?.starting_after && {
+				starting_after: options.starting_after,
+			}),
+			...(stripeStatus && { status: stripeStatus }),
+			expand: ['data.customer', 'data.latest_charge'],
+		});
+
+		return intents.data.map((intent) => {
+			const customer = intent.customer as Stripe.Customer | null;
+			const charge = intent.latest_charge as Stripe.Charge | null;
+
+			const resolvedStatus =
+				intent.status === 'succeeded'
+					? 'succeeded'
+					: intent.status === 'requires_payment_method' ||
+							intent.status === 'canceled'
+						? 'failed'
+						: intent.status;
+
+			return {
+				id: intent.id,
+				date: new Date(intent.created * 1000).toISOString(),
+				amount: intent.amount / 100,
+				currency: intent.currency,
+				status: resolvedStatus,
+				failure_message: intent.last_payment_error?.message ?? null,
+				product: intent.description ?? charge?.description ?? 'Unknown Product',
+				customer: {
+					name: customer?.name ?? charge?.billing_details?.name ?? 'Unknown',
+					email:
+						customer?.email ?? charge?.billing_details?.email ?? 'No email',
+				},
+				receipt_url: charge?.receipt_url ?? null,
 			};
 		});
 	}

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '@/middleware/auth.js';
+import { authenticate, authenticateAdmin } from '@/middleware/auth.js';
 import {
 	createAppointmentController,
 	deleteAppointmentController,
@@ -42,7 +42,7 @@ export async function appointmentRoute(server: FastifyInstance) {
 	server.get(
 		'/appointments/:id_customer',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'List appointments for a specific customer (admin only).',
 				params: z.object({ id_customer: z.string().uuid() }),
@@ -62,7 +62,7 @@ export async function appointmentRoute(server: FastifyInstance) {
 	server.get(
 		'/technician/appointments',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'List appointments for the authenticated technician (staff only).',
@@ -81,7 +81,7 @@ export async function appointmentRoute(server: FastifyInstance) {
 	server.get(
 		'/appointments/technician/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'List appointments for a specific technician (admin only).',
@@ -142,7 +142,7 @@ export async function appointmentRoute(server: FastifyInstance) {
 	server.patch(
 		'/appointment/:id/status',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Update appointment status (admin only).',
 				params: z.object({ id: z.string().uuid() }),
@@ -163,7 +163,7 @@ export async function appointmentRoute(server: FastifyInstance) {
 	server.patch(
 		'/appointment/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Transfer appointment to another technician (admin only).',
 				params: z.object({ id: z.uuid() }),
@@ -184,7 +184,7 @@ export async function appointmentRoute(server: FastifyInstance) {
 	server.delete(
 		'/appointment/:id',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Delete an appointment (admin only).',
 				params: z.object({ id: z.string().uuid() }),

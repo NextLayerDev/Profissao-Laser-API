@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '@/middleware/auth.js';
+import { authenticate, authenticateAdmin } from '@/middleware/auth.js';
 import {
 	addQuestionController,
 	createQuizController,
@@ -42,7 +42,7 @@ export async function quizRoute(server: FastifyInstance) {
 	server.post(
 		'/lesson/:lessonId/quiz',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Create a quiz for a lesson.',
 				params: z.object({ lessonId: z.string() }),
@@ -61,7 +61,7 @@ export async function quizRoute(server: FastifyInstance) {
 	server.delete(
 		'/quiz/:quizId',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Delete a quiz and all its questions.',
 				params: z.object({ quizId: z.string().uuid() }),
@@ -80,7 +80,7 @@ export async function quizRoute(server: FastifyInstance) {
 	server.post(
 		'/quiz/:quizId/question',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Add a question to a quiz. Requires at least 2 options and exactly 1 correct answer.',
@@ -101,7 +101,7 @@ export async function quizRoute(server: FastifyInstance) {
 	server.patch(
 		'/question/:questionId',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description:
 					'Update a question. If options are sent, they fully replace the existing ones.',
@@ -122,7 +122,7 @@ export async function quizRoute(server: FastifyInstance) {
 	server.delete(
 		'/question/:questionId',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Delete a question and all its options.',
 				params: z.object({ questionId: z.string().uuid() }),

@@ -39,6 +39,29 @@ export const authenticate = async (
 	}
 };
 
+export const authenticateAdmin = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	await authenticate(request, reply);
+	if (!request.currentUser) return;
+
+	const user = request.currentUser;
+	const { data: platformUser } = await supabase
+		.from('Users')
+		.select('id')
+		.or(`id.eq.${user.id},email.eq.${user.email}`)
+		.maybeSingle();
+
+	if (!platformUser) {
+		return reply.status(403).send({
+			statusCode: 403,
+			error: 'Forbidden',
+			message: 'Admin access required',
+		});
+	}
+};
+
 export const authenticateCustomer = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
