@@ -385,6 +385,7 @@ export async function runProvisionTenant(jobId: string): Promise<void> {
 				ZAPI_CLIENT_TOKEN: process.env.TENANT_ZAPI_CLIENT_TOKEN ?? '',
 				ZAPI_INSTANCE_ID: process.env.TENANT_ZAPI_INSTANCE_ID ?? '',
 				ZAPI_INSTANCE_TOKEN: process.env.TENANT_ZAPI_INSTANCE_TOKEN ?? '',
+				ZAPI_SECURITY_TOKEN: process.env.TENANT_ZAPI_SECURITY_TOKEN ?? '',
 				NEXT_PUBLIC_SOCKET_URL: process.env.TENANT_SOCKET_URL ?? '',
 				SMTP_HOST: process.env.TENANT_SMTP_HOST ?? '',
 				SMTP_PORT: process.env.TENANT_SMTP_PORT ?? '587',
