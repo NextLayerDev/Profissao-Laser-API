@@ -182,6 +182,7 @@ export class PurchaseService {
 		email: string;
 		productId: string;
 		companyName?: string;
+		phone?: string;
 	}) {
 		const product = await productRepository.findById(data.productId);
 
@@ -192,6 +193,12 @@ export class PurchaseService {
 		const stripePrice = await stripe.prices.retrieve(product.stripePriceId);
 		const mode = stripePrice.recurring ? 'subscription' : 'payment';
 
+		const normalizedPhone = data.phone
+			? data.phone.startsWith('+')
+				? data.phone
+				: `+55${data.phone.replace(/\D/g, '')}`
+			: undefined;
+
 		const existing = await stripe.customers.list({
 			email: data.email,
 			limit: 1,
@@ -199,7 +206,10 @@ export class PurchaseService {
 		const customer =
 			existing.data.length > 0
 				? existing.data[0]
-				: await stripe.customers.create({ email: data.email });
+				: await stripe.customers.create({
+						email: data.email,
+						...(normalizedPhone && { phone: normalizedPhone }),
+					});
 
 		const session = await stripe.checkout.sessions.create({
 			customer: customer.id,
