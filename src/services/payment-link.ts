@@ -18,6 +18,11 @@ class PaymentLinkService {
 			throw new Error('Invalid CPF');
 		}
 
+		const normalizedPhone = normalizeDigits(data.customerPhone);
+		if (normalizedPhone.length < 10) {
+			throw new Error('Invalid phone number');
+		}
+
 		const product = await productRepository.findById(data.productId);
 		if (!product.stripeProductId || !product.stripePriceId) {
 			throw new Error('Product is not configured for payments');
@@ -49,7 +54,7 @@ class PaymentLinkService {
 			token,
 			product_id: data.productId,
 			customer_name: data.customerName.trim(),
-			customer_phone: normalizeDigits(data.customerPhone),
+			customer_phone: normalizedPhone,
 			customer_cpf: normalizeDigits(data.customerCpf),
 			company_name: data.companyName.trim(),
 			stripe_coupon_id: coupon.id,

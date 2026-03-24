@@ -37,6 +37,7 @@ export const createPaymentLinkController = async (
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		if (
 			message.includes('Invalid CPF') ||
+			message.includes('Invalid phone number') ||
 			message.includes('without system class') ||
 			message.includes('not configured for payments')
 		) {
