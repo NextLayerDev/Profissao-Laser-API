@@ -136,6 +136,19 @@ class PromoLinkRepository {
 		return result as PromoLinkRedemptionRow;
 	}
 
+	async findRedemptionsByLinkIds(
+		ids: string[],
+	): Promise<PromoLinkRedemptionRow[]> {
+		if (ids.length === 0) return [];
+		const { data, error } = await supabase
+			.from('pl_promo_link_redemption')
+			.select('*')
+			.in('promo_link_id', ids)
+			.order('redeemed_at', { ascending: false });
+		if (error) throw new Error(error.message);
+		return (data ?? []) as PromoLinkRedemptionRow[];
+	}
+
 	async findRedemptionByCpfAndPhone(
 		promoLinkId: string,
 		cpf: string,

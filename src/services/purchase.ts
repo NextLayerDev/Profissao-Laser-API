@@ -1,6 +1,7 @@
 import type Stripe from 'stripe';
 import { PLAN_ORDER, resolvePlanFromProduct } from '../lib/plan.js';
 import { stripe } from '../lib/stripe.js';
+import { customerRepository } from '../repositories/customer.js';
 import { productRepository } from '../repositories/product.js';
 import { provisioningRepository } from '../repositories/provisioning.js';
 import type { ProvisioningPlan } from '../types/provisioning.js';
@@ -49,6 +50,16 @@ export class PurchaseService {
 			limit: 100,
 		});
 
+		const emails = sessions.data
+			.map((s) => {
+				// biome-ignore lint/suspicious/noExplicitAny: Stripe types require any for expanded nested objects.
+				const c = s.customer as any;
+				return c?.email || s.customer_details?.email;
+			})
+			.filter(Boolean) as string[];
+
+		const dbPhones = await customerRepository.findPhonesByEmails(emails);
+
 		return sessions.data.map((session) => {
 			const item = session.line_items?.data[0];
 			// biome-ignore lint/suspicious/noExplicitAny: Stripe types require any for expanded nested objects.
@@ -56,6 +67,7 @@ export class PurchaseService {
 			// biome-ignore lint/suspicious/noExplicitAny: payment_intent is expanded with latest_charge.
 			const paymentIntent = session.payment_intent as any;
 			const receiptUrl = paymentIntent?.latest_charge?.receipt_url ?? null;
+			const email = customer?.email || session.customer_details?.email || '';
 
 			return {
 				id: session.id,
@@ -66,9 +78,12 @@ export class PurchaseService {
 				product: item?.description || 'Unknown Product',
 				customer: {
 					name: customer?.name || 'Unknown',
-					email:
-						customer?.email || session.customer_details?.email || 'No email',
-					phone: customer?.phone || session.customer_details?.phone || null,
+					email: email || 'No email',
+					phone:
+						customer?.phone ||
+						session.customer_details?.phone ||
+						dbPhones[email] ||
+						null,
 				},
 				receipt_url: receiptUrl,
 			};
@@ -99,6 +114,16 @@ export class PurchaseService {
 			expand: ['data.customer', 'data.latest_charge'],
 		});
 
+		const emails = intents.data
+			.map((i) => {
+				const c = i.customer as Stripe.Customer | null;
+				const charge = i.latest_charge as Stripe.Charge | null;
+				return c?.email ?? charge?.billing_details?.email;
+			})
+			.filter(Boolean) as string[];
+
+		const dbPhones = await customerRepository.findPhonesByEmails(emails);
+
 		return intents.data.map((intent) => {
 			const customer = intent.customer as Stripe.Customer | null;
 			const charge = intent.latest_charge as Stripe.Charge | null;
@@ -111,6 +136,8 @@ export class PurchaseService {
 						? 'failed'
 						: intent.status;
 
+			const email = customer?.email ?? charge?.billing_details?.email ?? '';
+
 			return {
 				id: intent.id,
 				date: new Date(intent.created * 1000).toISOString(),
@@ -121,9 +148,12 @@ export class PurchaseService {
 				product: intent.description ?? charge?.description ?? 'Unknown Product',
 				customer: {
 					name: customer?.name ?? charge?.billing_details?.name ?? 'Unknown',
-					email:
-						customer?.email ?? charge?.billing_details?.email ?? 'No email',
-					phone: customer?.phone ?? charge?.billing_details?.phone ?? null,
+					email: email || 'No email',
+					phone:
+						customer?.phone ??
+						charge?.billing_details?.phone ??
+						dbPhones[email] ??
+						null,
 				},
 				receipt_url: charge?.receipt_url ?? null,
 			};

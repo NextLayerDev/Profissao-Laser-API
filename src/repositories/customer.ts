@@ -47,6 +47,19 @@ class CustomerRepository {
 		if (error && error.code !== 'PGRST116') throw new Error(error.message);
 		return data?.password_encrypted as string | null;
 	}
+
+	async findPhonesByEmails(
+		emails: string[],
+	): Promise<Record<string, string | null>> {
+		if (emails.length === 0) return {};
+		const { data } = await supabase
+			.from('Customers')
+			.select('email, phone')
+			.in('email', emails);
+		const map: Record<string, string | null> = {};
+		for (const row of data ?? []) map[row.email] = row.phone ?? null;
+		return map;
+	}
 }
 
 export const customerRepository = new CustomerRepository();

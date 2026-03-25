@@ -171,6 +171,7 @@ class PaymentLinkService {
 				email: data.email,
 				name: data.customerName.trim(),
 				password: data.password,
+				phone: normalizedPhone,
 			});
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : '';
