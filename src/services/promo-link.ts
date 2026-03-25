@@ -150,6 +150,7 @@ class PromoLinkService {
 				email: data.email,
 				name: data.customerName.trim(),
 				password: data.password,
+				phone: normalizedPhone,
 			});
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : '';
@@ -253,6 +254,17 @@ class PromoLinkService {
 	async listLinks() {
 		const rows = await promoLinkRepository.findAll();
 
+		const allRedemptions = await promoLinkRepository.findRedemptionsByLinkIds(
+			rows.map((r) => r.id),
+		);
+
+		const redemptionsByLink = new Map<string, typeof allRedemptions>();
+		for (const r of allRedemptions) {
+			const list = redemptionsByLink.get(r.promo_link_id) ?? [];
+			list.push(r);
+			redemptionsByLink.set(r.promo_link_id, list);
+		}
+
 		return rows.map((row) => ({
 			id: row.id,
 			token: row.token,
@@ -265,6 +277,15 @@ class PromoLinkService {
 			expiresAt: row.expires_at,
 			createdBy: row.created_by,
 			createdAt: row.created_at,
+			redemptions: (redemptionsByLink.get(row.id) ?? []).map((r) => ({
+				customerName: r.customer_name,
+				customerPhone: r.customer_phone,
+				customerEmail: r.customer_email,
+				customerCpf: r.customer_cpf,
+				companyName: r.company_name,
+				redeemedAt: r.redeemed_at,
+				stripeSessionId: r.stripe_session_id,
+			})),
 		}));
 	}
 }
