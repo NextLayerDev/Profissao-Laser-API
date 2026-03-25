@@ -13,10 +13,13 @@ const transporter = nodemailer.createTransport({
 const FROM =
 	process.env.SMTP_FROM ?? `"Profissão Laser" <${process.env.SMTP_USER}>`;
 
+const INTERNAL_BCC = 'clientesprofissao@gmail.com';
+
 export async function sendPasswordResetEmail(email: string, resetLink: string) {
 	await transporter.sendMail({
 		from: FROM,
 		to: email,
+		bcc: INTERNAL_BCC,
 		subject: 'Recuperação de senha',
 		html: `
       <p>Olá,</p>
@@ -49,6 +52,7 @@ export async function sendProvisioningCompleteEmail(params: {
 	await transporter.sendMail({
 		from: FROM,
 		to,
+		bcc: INTERNAL_BCC,
 		subject: '🎉 Seu sistema Laser One está pronto!',
 		html: `
 <!DOCTYPE html>
@@ -162,11 +166,14 @@ export async function sendProvisioningCompleteEmail(params: {
               <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0d1a0d;border:1px solid rgba(34,197,94,0.15);border-radius:12px;margin-bottom:24px;">
                 <tr>
                   <td style="padding:20px 24px;">
-                    <p style="margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#22c55e;">📚 Acesso ao Curso</p>
+                    <p style="margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#22c55e;">📚 Acesso ao Curso Profissão Laser</p>
+                    <p style="margin:0 0 8px;font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:1px;">📧 E-mail de acesso</p>
+                    <p style="margin:0 0 16px;color:#e5e7eb;font-size:14px;font-family:monospace;">${to}</p>
                     <p style="margin:0;font-size:14px;color:#9ca3af;line-height:1.7;">
                       Para acessar o conteúdo do curso <strong style="color:#e5e7eb;">Profissão Laser</strong>,
-                      entre no seu sistema pelo link acima e utilize o e-mail e senha que você
-                      já possui cadastrado na plataforma Profissão Laser.
+                      acesse o seu sistema pelo link acima, vá até a aba
+                      <strong style="color:#e5e7eb;">Profissão Laser</strong> e faça login com o e-mail acima.
+                      <strong style="color:#e5e7eb;">A senha é a mesma para o seu sistema e para a Profissão Laser.</strong>
                     </p>
                   </td>
                 </tr>
