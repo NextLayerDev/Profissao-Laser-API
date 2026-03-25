@@ -14,7 +14,10 @@ class CustomerRepository {
 		return await supabase.from('Customers').insert(customer).select().single();
 	}
 
-	async updateCustomer(id: string, customer: CustomerUpdate) {
+	async updateCustomer(
+		id: string,
+		customer: CustomerUpdate & { password_encrypted?: string },
+	) {
 		return await supabase
 			.from('Customers')
 			.update(customer)

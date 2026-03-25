@@ -23,10 +23,9 @@ class CustomerService {
 		});
 		if (authError) throw new Error(authError.message);
 
-		// biome-ignore lint/suspicious/noExplicitAny: password_encrypted not in CustomerUpdate type
 		return await customerRepository.updateCustomer(id, {
 			password_encrypted: encrypt(password),
-		} as any);
+		});
 	}
 }
 
