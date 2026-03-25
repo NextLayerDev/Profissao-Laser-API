@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { customerRepository } from '../repositories/customer.js';
 import { productRepository } from '../repositories/product.js';
+import { customerService } from '../services/customer.js';
 import { purchaseService } from '../services/purchase.js';
 
 class CustomerController {
@@ -31,15 +32,51 @@ class CustomerController {
 		reply.status(200).send(customer);
 	}
 
-	async deleteUser(
+	async deleteCustomer(
 		request: FastifyRequest<{ Params: { id: string } }>,
 		reply: FastifyReply,
 	) {
-		const customer = await customerRepository.getCustomerById(
-			request.params.id,
-		);
-		if (!customer) reply.status(404).send({ message: 'Customer not found' });
-		reply.status(200).send(customer);
+		const { id } = request.params;
+		try {
+			await customerService.deleteCustomer(id);
+			reply.status(200).send({ message: 'Customer deleted' });
+		} catch (error) {
+			reply.status(500).send({ message: (error as Error).message });
+		}
+	}
+
+	async blockCustomer(
+		request: FastifyRequest<{
+			Params: { id: string };
+			Body: { blocked: boolean };
+		}>,
+		reply: FastifyReply,
+	) {
+		const { id } = request.params;
+		const { blocked } = request.body;
+		try {
+			const result = await customerService.blockCustomer(id, blocked);
+			reply.status(200).send(result);
+		} catch (error) {
+			reply.status(500).send({ message: (error as Error).message });
+		}
+	}
+
+	async changePassword(
+		request: FastifyRequest<{
+			Params: { id: string };
+			Body: { password: string };
+		}>,
+		reply: FastifyReply,
+	) {
+		const { id } = request.params;
+		const { password } = request.body;
+		try {
+			await customerService.changePassword(id, password);
+			reply.status(200).send({ message: 'Password updated' });
+		} catch (error) {
+			reply.status(500).send({ message: (error as Error).message });
+		}
 	}
 
 	async getCustomerPlans(
