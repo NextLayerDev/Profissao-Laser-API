@@ -3,6 +3,39 @@ import { supabase } from '../lib/supabase.js';
 import { customerRepository } from '../repositories/customer.js';
 
 class CustomerService {
+	async getCustomerById(id: string) {
+		const { data: dbData, error } =
+			await customerRepository.getCustomerById(id);
+		if (error) throw new Error(error.message);
+
+		const { data: authData } = await supabase.auth.admin.getUserById(id);
+		const bannedUntil = authData?.user?.banned_until;
+		const banned = !!bannedUntil && new Date(bannedUntil) > new Date();
+
+		return { ...dbData, banned };
+	}
+
+	async getAllCustomers() {
+		const { data: dbData, error } = await customerRepository.getAllCustomers();
+		if (error) throw new Error(error.message);
+
+		const { data: authData } = await supabase.auth.admin.listUsers({
+			perPage: 1000,
+		});
+		const banMap = new Map(
+			(authData?.users ?? []).map((u) => {
+				const banned =
+					!!u.banned_until && new Date(u.banned_until) > new Date();
+				return [u.id, banned];
+			}),
+		);
+
+		return (dbData ?? []).map((c) => ({
+			...c,
+			banned: banMap.get(c.id) ?? false,
+		}));
+	}
+
 	async deleteCustomer(id: string) {
 		await customerRepository.deleteCustomer(id);
 		const { error: authError } = await supabase.auth.admin.deleteUser(id);

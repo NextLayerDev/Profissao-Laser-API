@@ -3,6 +3,7 @@ import { customerRepository } from '../repositories/customer.js';
 import { productRepository } from '../repositories/product.js';
 import { customerService } from '../services/customer.js';
 import { purchaseService } from '../services/purchase.js';
+import { getContentsController } from './vector-library.js';
 
 class CustomerController {
 	async getCustomerById(
@@ -10,15 +11,24 @@ class CustomerController {
 		reply: FastifyReply,
 	) {
 		const { id } = request.params;
-		const customer = await customerRepository.getCustomerById(id);
-		if (!customer) reply.status(404).send({ message: 'Customer not found' });
-		reply.status(200).send(customer);
+		try {
+			const customer = await customerService.getCustomerById(id);
+			if (!customer)
+				return reply.status(404).send({ message: 'Customer not found' });
+
+			reply.status(200).send(customer);
+		} catch (error) {
+			reply.status(500).send({ message: (error as Error).message });
+		}
 	}
 
 	async getAllCustomers(_request: FastifyRequest, reply: FastifyReply) {
-		const customers = await customerRepository.getAllCustomers();
-		if (!customers) reply.status(404).send({ message: 'Customers not found' });
-		reply.status(200).send(customers);
+		try {
+			const customers = await customerService.getAllCustomers();
+			reply.status(200).send(customers);
+		} catch (error) {
+			reply.status(500).send({ message: (error as Error).message });
+		}
 	}
 
 	async updateUser(

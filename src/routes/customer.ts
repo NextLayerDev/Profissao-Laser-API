@@ -13,7 +13,15 @@ export async function customerRoute(server: FastifyInstance) {
 			schema: {
 				description: 'Get all customers.',
 				response: {
-					200: z.array(customerSchema),
+					200: z.array(
+						customerSchema
+							.omit({ password: true })
+							.extend({
+								stripe: z.string().nullable(),
+								access: z.string().nullable(),
+								banned: z.boolean(),
+							}),
+					),
 					401: ErrorSchema,
 					500: ErrorSchema,
 				},
@@ -30,7 +38,13 @@ export async function customerRoute(server: FastifyInstance) {
 				description: 'Get a customer by ID',
 				params: z.object({ id: z.string() }),
 				response: {
-					200: customerSchema,
+					200: customerSchema
+						.omit({ password: true })
+						.extend({
+							stripe: z.string().nullable(),
+							access: z.string().nullable(),
+							banned: z.boolean(),
+						}),
 					404: ErrorSchema,
 					500: ErrorSchema,
 				},
