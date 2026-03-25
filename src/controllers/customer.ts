@@ -3,7 +3,6 @@ import { customerRepository } from '../repositories/customer.js';
 import { productRepository } from '../repositories/product.js';
 import { customerService } from '../services/customer.js';
 import { purchaseService } from '../services/purchase.js';
-import { getContentsController } from './vector-library.js';
 
 class CustomerController {
 	async getCustomerById(
