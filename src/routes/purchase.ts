@@ -21,6 +21,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 				body: z.object({
 					productId: z.uuid(),
 					companyName: z.string().optional(),
+					phone: z.string().optional(),
 				}),
 				response: {
 					201: z.object({
