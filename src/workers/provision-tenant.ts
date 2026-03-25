@@ -404,6 +404,7 @@ export async function runProvisionTenant(jobId: string): Promise<void> {
 				SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
 				// BLOB_READ_WRITE_TOKEN is auto-added by Vercel via blob store connection
 				STRIPE_SECRET_KEY: process.env.TENANT_STRIPE_SECRET_KEY ?? '',
+				ENOTASGW_API_KEY: process.env.TENANT_ENOTASGW_API_KEY ?? '',
 
 				// Conditional — platina only
 				...getPlanForEnvVars(plan),
