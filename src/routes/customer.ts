@@ -41,12 +41,12 @@ export async function customerRoute(server: FastifyInstance) {
 	);
 
 	server.delete(
-		'/customer/:id',
+		'/customer',
 		{
 			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Delete a customer by ID',
-				params: z.object({ id: z.string() }),
+				body: z.object({ id: z.string() }),
 				response: {
 					200: z.object({ message: z.string() }),
 					404: ErrorSchema,

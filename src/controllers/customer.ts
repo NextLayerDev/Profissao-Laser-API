@@ -33,10 +33,10 @@ class CustomerController {
 	}
 
 	async deleteCustomer(
-		request: FastifyRequest<{ Params: { id: string } }>,
+		request: FastifyRequest<{ Body: { id: string } }>,
 		reply: FastifyReply,
 	) {
-		const { id } = request.params;
+		const { id } = request.body;
 		try {
 			await customerService.deleteCustomer(id);
 			reply.status(200).send({ message: 'Customer deleted' });

@@ -4,9 +4,9 @@ import { customerRepository } from '../repositories/customer.js';
 
 class CustomerService {
 	async deleteCustomer(id: string) {
+		await customerRepository.deleteCustomer(id);
 		const { error: authError } = await supabase.auth.admin.deleteUser(id);
 		if (authError) throw new Error(authError.message);
-		return await customerRepository.deleteCustomer(id);
 	}
 
 	async blockCustomer(id: string, block: boolean) {
