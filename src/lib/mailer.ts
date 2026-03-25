@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
 const FROM =
 	process.env.SMTP_FROM ?? `"Profissão Laser" <${process.env.SMTP_USER}>`;
 
-const INTERNAL_BCC = 'clientesprofissao@gmail.com';
+const INTERNAL_BCC = process.env.INTERNAL_BCC_EMAIL;
 
 export async function sendPasswordResetEmail(email: string, resetLink: string) {
 	await transporter.sendMail({
