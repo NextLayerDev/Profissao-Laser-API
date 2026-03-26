@@ -139,6 +139,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 							customer: z.object({
 								name: z.string(),
 								email: z.string(),
+								phone: z.string().nullable(),
 							}),
 							receipt_url: z.string().nullable(),
 						}),
@@ -177,6 +178,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 							customer: z.object({
 								name: z.string(),
 								email: z.string(),
+								phone: z.string().nullable(),
 							}),
 							receipt_url: z.string().nullable(),
 						}),
