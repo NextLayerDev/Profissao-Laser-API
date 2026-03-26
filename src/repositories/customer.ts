@@ -52,12 +52,18 @@ class CustomerRepository {
 		emails: string[],
 	): Promise<Record<string, string | null>> {
 		if (emails.length === 0) return {};
-		const { data } = await supabase
-			.from('Customers')
-			.select('email, phone')
-			.in('email', emails);
+		const [customersResult, provisioningResult] = await Promise.all([
+			supabase.from('Customers').select('email, phone').in('email', emails),
+			supabase
+				.from('pl_provisioning_customer')
+				.select('email, phone')
+				.in('email', emails),
+		]);
 		const map: Record<string, string | null> = {};
-		for (const row of data ?? []) map[row.email] = row.phone ?? null;
+		for (const row of customersResult.data ?? [])
+			map[row.email] = row.phone ?? null;
+		for (const row of provisioningResult.data ?? [])
+			if (!map[row.email]) map[row.email] = row.phone ?? null;
 		return map;
 	}
 }
