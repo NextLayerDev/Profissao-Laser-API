@@ -23,6 +23,16 @@ class ProvisioningRepository {
 		return result;
 	}
 
+	async findNamesByEmails(emails: string[]): Promise<Record<string, string>> {
+		if (emails.length === 0) return {};
+		const { data, error } = await supabase
+			.from('pl_provisioning_customer')
+			.select('email, name')
+			.in('email', emails);
+		if (error) throw new Error(error.message);
+		return Object.fromEntries((data ?? []).map((r) => [r.email, r.name]));
+	}
+
 	async findCustomerByEmail(email: string) {
 		const { data, error } = await supabase
 			.from('pl_provisioning_customer')
