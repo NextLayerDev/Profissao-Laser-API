@@ -58,7 +58,10 @@ export class PurchaseService {
 			})
 			.filter(Boolean) as string[];
 
-		const dbPhones = await customerRepository.findPhonesByEmails(emails);
+		const [dbPhones, dbNames] = await Promise.all([
+			customerRepository.findPhonesByEmails(emails),
+			provisioningRepository.findNamesByEmails(emails),
+		]);
 
 		return sessions.data.map((session) => {
 			const item = session.line_items?.data[0];
@@ -77,7 +80,11 @@ export class PurchaseService {
 				status: session.payment_status,
 				product: item?.description || 'Unknown Product',
 				customer: {
-					name: customer?.name || 'Unknown',
+					name:
+						customer?.name ||
+						session.customer_details?.name ||
+						dbNames[email] ||
+						'Unknown',
 					email: email || 'No email',
 					phone:
 						customer?.phone ||
