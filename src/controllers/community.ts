@@ -50,6 +50,74 @@ export const createPostController = async (
 	}
 };
 
+// ── Post Comments ─────────────────────────────────────────────────────────
+
+export const getPostCommentsController = async (
+	request: FastifyRequest<{
+		Params: { postId: string };
+		Querystring: { page?: string; limit?: string };
+	}>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { postId } = request.params;
+		const page = Number(request.query.page ?? 1);
+		const limit = Number(request.query.limit ?? 20);
+		const comments = await communityService.listPostComments(
+			postId,
+			page,
+			limit,
+		);
+		return reply.send(comments);
+	} catch (err) {
+		return reply
+			.status(500)
+			.send({ message: err instanceof Error ? err.message : 'Unknown error' });
+	}
+};
+
+export const createPostCommentController = async (
+	request: FastifyRequest<{ Params: { postId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { postId } = request.params;
+		const data = createCommentSchema.parse(request.body);
+		const isAdmin = !request.currentCustomer;
+		const userId = request.currentUser?.id ?? '';
+		const customer = request.currentCustomer;
+		const comment = await communityService.createPostComment(postId, data, {
+			authorId: userId,
+			authorName: customer?.name ?? request.currentUser?.email ?? 'Admin',
+			authorAvatar: customer?.image ?? null,
+			isAdmin,
+		});
+		return reply.status(201).send(comment);
+	} catch (err) {
+		return reply
+			.status(400)
+			.send({ message: err instanceof Error ? err.message : 'Unknown error' });
+	}
+};
+
+// ── Post Likes ────────────────────────────────────────────────────────────
+
+export const togglePostLikeController = async (
+	request: FastifyRequest<{ Params: { postId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { postId } = request.params;
+		const customerId =
+			request.currentCustomer?.id ?? request.currentUser?.id ?? '';
+		const result = await communityService.togglePostLike(postId, customerId);
+		return reply.send(result);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
 // ── Channels ───────────────────────────────────────────────────────────────
 
 export const getChannelsController = async (

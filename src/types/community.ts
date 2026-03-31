@@ -95,6 +95,15 @@ export const updateProjectSchema = z.object({
 	technique: z.string().optional(),
 });
 
+export const postCommentSchema = z.object({
+	id: z.string(),
+	postId: z.string(),
+	author: z.string(),
+	content: z.string(),
+	time: z.string(),
+	isAdmin: z.boolean(),
+});
+
 export const projectCommentSchema = z.object({
 	id: z.string(),
 	projectId: z.string(),
@@ -155,5 +164,6 @@ export type SendMessage = z.infer<typeof sendMessageSchema>;
 export type CreateProject = z.infer<typeof createProjectSchema>;
 export type UpdateProject = z.infer<typeof updateProjectSchema>;
 export type CreateComment = z.infer<typeof createCommentSchema>;
+export type PostComment = z.infer<typeof postCommentSchema>;
 export type CreateEvent = z.infer<typeof createEventSchema>;
 export type UpdateEvent = z.infer<typeof updateEventSchema>;
