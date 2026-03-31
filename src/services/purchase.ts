@@ -327,6 +327,87 @@ export class PurchaseService {
 		};
 	}
 
+	async getSubscriptionDetails(email: string) {
+		const customers = await stripe.customers.list({ email, limit: 1 });
+		if (customers.data.length === 0) return null;
+
+		const customerId = customers.data[0].id;
+
+		const [active, trialing] = await Promise.all([
+			stripe.subscriptions.list({
+				customer: customerId,
+				status: 'active',
+				expand: ['data.items.data.price'],
+			}),
+			stripe.subscriptions.list({
+				customer: customerId,
+				status: 'trialing',
+				expand: ['data.items.data.price'],
+			}),
+		]);
+
+		const sub = active.data[0] ?? trialing.data[0];
+		if (!sub) return null;
+
+		const item = sub.items.data[0];
+		const price = item?.price;
+
+		let productName = 'Unknown';
+		if (price?.product && typeof price.product === 'string') {
+			const product = await stripe.products.retrieve(price.product);
+			productName = product.name;
+		}
+
+		return {
+			id: sub.id,
+			status: sub.status,
+			product_name: productName,
+			amount: price?.unit_amount ? price.unit_amount / 100 : 0,
+			currency: price?.currency ?? 'brl',
+			interval: price?.recurring?.interval ?? null,
+			currentPeriodEnd: sub.current_period_end
+				? new Date(sub.current_period_end * 1000).toISOString()
+				: null,
+			cancelAtPeriodEnd: sub.cancel_at_period_end,
+		};
+	}
+
+	async cancelSubscription(email: string) {
+		const customers = await stripe.customers.list({ email, limit: 1 });
+		if (customers.data.length === 0) return null;
+
+		const customerId = customers.data[0].id;
+
+		const [active, trialing] = await Promise.all([
+			stripe.subscriptions.list({
+				customer: customerId,
+				status: 'active',
+				limit: 1,
+			}),
+			stripe.subscriptions.list({
+				customer: customerId,
+				status: 'trialing',
+				limit: 1,
+			}),
+		]);
+
+		const sub = active.data[0] ?? trialing.data[0];
+		if (!sub) return null;
+
+		const updated = await stripe.subscriptions.update(sub.id, {
+			cancel_at_period_end: true,
+		});
+
+		return {
+			message:
+				'Subscription will be cancelled at the end of the billing period.',
+			cancelAtPeriodEnd: updated.cancel_at_period_end,
+			currentPeriodEnd: updated.current_period_end
+				? new Date(updated.current_period_end * 1000).toISOString()
+				: null,
+		};
+	}
+
 	async listActiveSubscriptions(email: string) {
 		const customers = await stripe.customers.list({
 			email: email,

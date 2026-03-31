@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { customerController } from '../controllers/customer.js';
-import { authenticateAdmin } from '../middleware/auth.js';
+import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
 import { customerSchema } from '../types/customer.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -102,6 +102,56 @@ export async function customerRoute(server: FastifyInstance) {
 			},
 		},
 		customerController.changePassword,
+	);
+
+	server.get(
+		'/me/subscription',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description: 'Get the authenticated customer subscription details',
+				response: {
+					200: z.object({
+						id: z.string(),
+						status: z.string(),
+						product_name: z.string(),
+						amount: z.number(),
+						currency: z.string(),
+						interval: z.string().nullable(),
+						currentPeriodEnd: z.string().nullable(),
+						cancelAtPeriodEnd: z.boolean(),
+					}),
+					401: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+			},
+		},
+		customerController.getMySubscription,
+	);
+
+	server.post(
+		'/me/subscription/cancel',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Cancel the authenticated customer subscription at period end',
+				response: {
+					200: z.object({
+						message: z.string(),
+						cancelAtPeriodEnd: z.boolean(),
+						currentPeriodEnd: z.string().nullable(),
+					}),
+					401: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+			},
+		},
+		customerController.cancelMySubscription,
 	);
 
 	server.get(
