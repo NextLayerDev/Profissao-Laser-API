@@ -88,6 +88,38 @@ class CustomerController {
 		}
 	}
 
+	async getMySubscription(request: FastifyRequest, reply: FastifyReply) {
+		const email = request.currentUser?.email;
+		if (!email) return reply.status(401).send({ message: 'Unauthorized' });
+
+		try {
+			const subscription = await purchaseService.getSubscriptionDetails(email);
+			if (!subscription)
+				return reply
+					.status(404)
+					.send({ message: 'No active subscription found.' });
+			reply.status(200).send(subscription);
+		} catch (error) {
+			reply.status(500).send({ message: (error as Error).message });
+		}
+	}
+
+	async cancelMySubscription(request: FastifyRequest, reply: FastifyReply) {
+		const email = request.currentUser?.email;
+		if (!email) return reply.status(401).send({ message: 'Unauthorized' });
+
+		try {
+			const result = await purchaseService.cancelSubscription(email);
+			if (!result)
+				return reply
+					.status(404)
+					.send({ message: 'No active subscription found.' });
+			reply.status(200).send(result);
+		} catch (error) {
+			reply.status(500).send({ message: (error as Error).message });
+		}
+	}
+
 	async getCustomerPlans(
 		request: FastifyRequest<{ Params: { email: string } }>,
 		reply: FastifyReply,
