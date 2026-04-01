@@ -254,6 +254,15 @@ class ProvisioningRepository {
 		return data as Tenant | null;
 	}
 
+	async findAllTenants() {
+		const { data, error } = await supabase
+			.from('pl_tenant')
+			.select('*, pl_provisioning_customer(name, email)')
+			.order('created_at', { ascending: false });
+		if (error) throw new Error(error.message);
+		return data ?? [];
+	}
+
 	async findActiveTenantByCustomerEmail(email: string) {
 		const { data, error } = await supabase
 			.from('pl_tenant')

@@ -11,6 +11,7 @@ import {
 	provisioningRetryResponseSchema,
 	provisioningSessionParamsSchema,
 	provisioningStatusResponseSchema,
+	tenantDirectUrlsResponseSchema,
 } from '../types/provisioning.js';
 import { runProvisionTenant } from '../workers/provision-tenant.js';
 
@@ -250,6 +251,72 @@ export async function provisioningRoute(server: FastifyInstance) {
 				}
 
 				return reply.status(200).send({ jobId, logs });
+			} catch (err) {
+				const message = err instanceof Error ? err.message : 'Unknown error';
+				return reply.status(500).send({ message });
+			}
+		},
+	);
+
+	// ===== GET /internal/tenants/direct-urls =====
+	server.get(
+		'/internal/tenants/direct-urls',
+		{
+			schema: {
+				description:
+					'List all tenants with decrypted DIRECT_URLs and service role keys',
+				tags: ['Provisioning'],
+				response: {
+					200: tenantDirectUrlsResponseSchema,
+					500: z.object({ message: z.string() }),
+				},
+			},
+		},
+		async (_request, reply) => {
+			try {
+				const rows = await provisioningRepository.findAllTenants();
+
+				const tenants = rows.map((row) => {
+					const customer = row.pl_provisioning_customer as {
+						name: string;
+						email: string;
+					} | null;
+
+					let directUrl = '';
+					try {
+						const decryptedPass = decrypt(row.supabase_db_pass_encrypted);
+						directUrl = `postgresql://postgres.${row.supabase_project_ref}:${encodeURIComponent(decryptedPass)}@aws-0-sa-east-1.pooler.supabase.com:5432/postgres`;
+					} catch {
+						directUrl = 'DECRYPTION_FAILED';
+					}
+
+					let serviceRoleKey = '';
+					try {
+						serviceRoleKey = decrypt(row.supabase_service_role_key_encrypted);
+					} catch {
+						serviceRoleKey = 'DECRYPTION_FAILED';
+					}
+
+					return {
+						id: row.id,
+						slug: row.slug,
+						status: row.status,
+						current_plan: row.current_plan,
+						supabase_project_ref: row.supabase_project_ref,
+						supabase_url: row.supabase_url,
+						vercel_url: row.vercel_url,
+						direct_url: directUrl,
+						database_url: directUrl,
+						supabase_anon_key: row.supabase_anon_key,
+						supabase_service_role_key: serviceRoleKey,
+						customer_name: customer?.name ?? null,
+						customer_email: customer?.email ?? null,
+						created_at: row.created_at,
+						updated_at: row.updated_at,
+					};
+				});
+
+				return reply.status(200).send({ tenants, count: tenants.length });
 			} catch (err) {
 				const message = err instanceof Error ? err.message : 'Unknown error';
 				return reply.status(500).send({ message });
