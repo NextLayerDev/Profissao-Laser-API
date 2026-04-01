@@ -252,3 +252,30 @@ export const provisioningLogsResponseSchema = z.object({
 	jobId: z.string().uuid(),
 	logs: z.array(provisioningAuditLogResponseSchema),
 });
+
+// ===== Tenant Direct URLs schemas =====
+
+export const tenantDirectUrlItemSchema = z.object({
+	id: z.string().uuid(),
+	slug: z.string(),
+	status: tenantStatusSchema,
+	current_plan: provisioningPlanSchema,
+	supabase_project_ref: z.string(),
+	supabase_url: z.string(),
+	vercel_url: z.string(),
+	direct_url: z.string(),
+	database_url: z.string(),
+	supabase_anon_key: z.string(),
+	supabase_service_role_key: z.string(),
+	customer_name: z.string().nullable(),
+	customer_email: z.string().nullable(),
+	created_at: z.string(),
+	updated_at: z.string(),
+});
+
+export const tenantDirectUrlsResponseSchema = z.object({
+	tenants: z.array(tenantDirectUrlItemSchema),
+	count: z.number(),
+});
+
+export type TenantDirectUrlItem = z.infer<typeof tenantDirectUrlItemSchema>;
