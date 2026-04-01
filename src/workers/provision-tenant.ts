@@ -225,6 +225,12 @@ export async function runProvisionTenant(jobId: string): Promise<void> {
 			const bootstrapSql = loadSql('bootstrap.sql');
 
 			await runSqlOnTenant({ ref, dbPass, sql: bootstrapSql });
+
+			// Registra baseline do Prisma (0_init) para que o build da Vercel
+			// (prisma migrate deploy) não falhe ao encontrar tabelas sem _prisma_migrations
+			const baselineSql = loadSql('prisma-baseline.sql');
+			await runSqlOnTenant({ ref, dbPass, sql: baselineSql });
+
 			return undefined;
 		},
 	);
