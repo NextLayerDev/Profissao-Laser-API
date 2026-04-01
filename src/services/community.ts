@@ -144,6 +144,34 @@ class CommunityService {
 		});
 	}
 
+	// ── Post Comments ─────────────────────────────────────────────────────────
+
+	async listPostComments(postId: string, page: number, limit: number) {
+		return communityRepository.listPostComments(postId, page, limit);
+	}
+
+	async createPostComment(
+		postId: string,
+		data: CreateComment,
+		author: {
+			authorId: string;
+			authorName: string;
+			authorAvatar: string | null;
+			isAdmin: boolean;
+		},
+	) {
+		return communityRepository.createPostComment(postId, {
+			...data,
+			...author,
+		});
+	}
+
+	// ── Post Likes ────────────────────────────────────────────────────────────
+
+	async togglePostLike(postId: string, customerId: string) {
+		return communityRepository.togglePostLike(postId, customerId);
+	}
+
 	// ── Events ────────────────────────────────────────────────────────────────
 
 	async listEvents(from?: string, to?: string) {

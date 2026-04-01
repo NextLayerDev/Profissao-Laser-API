@@ -29,22 +29,33 @@ class CommunityRepository {
 
 		const postIds = posts.map((p: { id: string }) => p.id);
 
-		const [{ data: likes }, { data: userLikes }] = await Promise.all([
-			supabase
-				.from('pl_community_post_like')
-				.select('postId')
-				.in('postId', postIds),
-			supabase
-				.from('pl_community_post_like')
-				.select('postId')
-				.in('postId', postIds)
-				.eq('customerId', currentUserId),
-		]);
+		const [{ data: likes }, { data: userLikes }, { data: comments }] =
+			await Promise.all([
+				supabase
+					.from('pl_community_post_like')
+					.select('postId')
+					.in('postId', postIds),
+				supabase
+					.from('pl_community_post_like')
+					.select('postId')
+					.in('postId', postIds)
+					.eq('customerId', currentUserId),
+				supabase
+					.from('pl_community_post_comment')
+					.select('postId')
+					.in('postId', postIds),
+			]);
 
 		const likeCounts = new Map<string, number>();
 		for (const like of likes ?? []) {
 			const l = like as { postId: string };
 			likeCounts.set(l.postId, (likeCounts.get(l.postId) ?? 0) + 1);
+		}
+
+		const commentCounts = new Map<string, number>();
+		for (const comment of comments ?? []) {
+			const c = comment as { postId: string };
+			commentCounts.set(c.postId, (commentCounts.get(c.postId) ?? 0) + 1);
 		}
 
 		const userLikedSet = new Set<string>(
@@ -67,7 +78,7 @@ class CommunityRepository {
 				content: post.content,
 				image: post.image,
 				likes: likeCounts.get(post.id) ?? 0,
-				comments: 0,
+				comments: commentCounts.get(post.id) ?? 0,
 				shares: 0,
 				liked: userLikedSet.has(post.id),
 			}),
@@ -604,6 +615,99 @@ class CommunityRepository {
 			.delete()
 			.eq('id', id);
 		if (error) throw new Error(error.message);
+	}
+
+	// ── Post Comments ─────────────────────────────────────────────────────────
+
+	async listPostComments(postId: string, page: number, limit: number) {
+		const from = (page - 1) * limit;
+		const to = from + limit - 1;
+
+		const { data, error } = await supabase
+			.from('pl_community_post_comment')
+			.select('*')
+			.eq('postId', postId)
+			.order('createdAt', { ascending: true })
+			.range(from, to);
+		if (error) throw new Error(error.message);
+
+		return (data ?? []).map(
+			(c: {
+				id: string;
+				postId: string;
+				authorName: string;
+				content: string;
+				createdAt: string;
+				isAdmin: boolean;
+			}) => ({
+				id: c.id,
+				postId: c.postId,
+				author: c.authorName,
+				content: c.content,
+				time: c.createdAt,
+				isAdmin: c.isAdmin,
+			}),
+		);
+	}
+
+	async createPostComment(
+		postId: string,
+		data: CreateComment & {
+			authorId: string;
+			authorName: string;
+			authorAvatar: string | null;
+			isAdmin: boolean;
+		},
+	) {
+		const { data: comment, error } = await supabase
+			.from('pl_community_post_comment')
+			.insert({
+				id: crypto.randomUUID(),
+				postId,
+				content: data.content,
+				authorId: data.authorId,
+				authorName: data.authorName,
+				authorAvatar: data.authorAvatar,
+				isAdmin: data.isAdmin,
+			})
+			.select()
+			.single();
+		if (error) throw new Error(error.message);
+
+		return {
+			id: comment.id,
+			postId,
+			author: data.authorName,
+			content: data.content,
+			time: comment.createdAt,
+			isAdmin: data.isAdmin,
+		};
+	}
+
+	// ── Post Likes ────────────────────────────────────────────────────────────
+
+	async togglePostLike(postId: string, customerId: string) {
+		const { data: existing } = await supabase
+			.from('pl_community_post_like')
+			.select('id')
+			.eq('postId', postId)
+			.eq('customerId', customerId)
+			.maybeSingle();
+
+		if (existing) {
+			await supabase
+				.from('pl_community_post_like')
+				.delete()
+				.eq('id', existing.id);
+			return { liked: false };
+		}
+
+		await supabase.from('pl_community_post_like').insert({
+			id: crypto.randomUUID(),
+			postId,
+			customerId,
+		});
+		return { liked: true };
 	}
 
 	// ── Ranking ───────────────────────────────────────────────────────────────

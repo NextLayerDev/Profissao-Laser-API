@@ -4,6 +4,7 @@ import { authenticateCommunity } from '@/middleware/auth.js';
 import {
 	createChannelController,
 	createEventController,
+	createPostCommentController,
 	createPostController,
 	createProjectCommentController,
 	createProjectController,
@@ -15,12 +16,14 @@ import {
 	getEventsController,
 	getMembersController,
 	getMessagesController,
+	getPostCommentsController,
 	getPostsController,
 	getProjectCommentsController,
 	getProjectController,
 	getProjectsController,
 	getRankingController,
 	sendMessageController,
+	togglePostLikeController,
 	updateChannelController,
 	updateEventController,
 	updateProjectController,
@@ -38,6 +41,7 @@ import {
 	createEventSchema,
 	createPostSchema,
 	createProjectSchema,
+	postCommentSchema,
 	projectCommentSchema,
 	projectDetailSchema,
 	updateChannelSchema,
@@ -86,6 +90,69 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		createPostController,
+	);
+
+	// ── Post Comments ────────────────────────────────────────────────────────
+
+	server.get(
+		'/community/posts/:postId/comments',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'List comments for a community post (paginated).',
+				params: z.object({ postId: z.string() }),
+				querystring: z.object({
+					page: z.string().optional(),
+					limit: z.string().optional(),
+				}),
+				response: {
+					200: z.array(postCommentSchema),
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getPostCommentsController,
+	);
+
+	server.post(
+		'/community/posts/:postId/comments',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Add a comment to a community post.',
+				params: z.object({ postId: z.string() }),
+				body: createCommentSchema,
+				response: {
+					201: postCommentSchema,
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		createPostCommentController,
+	);
+
+	// ── Post Likes ───────────────────────────────────────────────────────────
+
+	server.post(
+		'/community/posts/:postId/like',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Toggle like/unlike on a community post.',
+				params: z.object({ postId: z.string() }),
+				response: {
+					200: z.object({ liked: z.boolean() }),
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		togglePostLikeController,
 	);
 
 	// ── Channels ─────────────────────────────────────────────────────────────
