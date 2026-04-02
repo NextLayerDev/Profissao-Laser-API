@@ -80,9 +80,23 @@ export const getAvailableSlotsController = async (
 ) => {
 	try {
 		const { date, technicianId } = request.query;
-		const booked = await appointmentRepository.listByDate(date, technicianId);
-		const bookedTimes = new Set(booked.map((a) => a.time));
-		const available = ALL_SLOTS.filter((slot) => !bookedTimes.has(slot));
+
+		if (technicianId) {
+			const booked = await appointmentRepository.listByDate(date, technicianId);
+			const bookedTimes = new Set(booked.map((a) => a.time));
+			return reply.send(ALL_SLOTS.filter((slot) => !bookedTimes.has(slot)));
+		}
+
+		// sem technicianId: retorna slots onde PELO MENOS 1 técnico está livre
+		const techIds = await appointmentRepository.listTechnicianIds();
+		if (techIds.length === 0) return reply.send(ALL_SLOTS);
+
+		const allBooked = await Promise.all(
+			techIds.map((id) => appointmentRepository.listByDate(date, id)),
+		);
+		const available = ALL_SLOTS.filter((slot) =>
+			allBooked.some((booked) => !booked.some((a) => a.time === slot)),
+		);
 		return reply.send(available);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
@@ -96,7 +110,30 @@ export const createAppointmentController = async (
 ) => {
 	try {
 		const data = createAppointmentSchema.parse(request.body);
-		const appointment = await appointmentRepository.create(data);
+
+		let technicianId = data.technicianId;
+		if (!technicianId) {
+			const techIds = await appointmentRepository.listTechnicianIds();
+			if (techIds.length > 0) {
+				const allBooked = await Promise.all(
+					techIds.map((id) =>
+						appointmentRepository.listByDate(data.date, id),
+					),
+				);
+				const available = techIds.filter(
+					(_, i) => !allBooked[i].some((a) => a.time === data.time),
+				);
+				if (available.length > 0) {
+					technicianId =
+						available[Math.floor(Math.random() * available.length)];
+				}
+			}
+		}
+
+		const appointment = await appointmentRepository.create({
+			...data,
+			technicianId,
+		});
 		return reply.status(201).send(appointment);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
