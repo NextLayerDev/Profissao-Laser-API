@@ -3,31 +3,19 @@ import { fastifyJwt } from '@fastify/jwt';
 import multipart from '@fastify/multipart';
 import { fastifySwagger } from '@fastify/swagger';
 import ScalarApiReference from '@scalar/fastify-api-reference';
-import { fastify } from 'fastify';
+import { type FastifyError, fastify } from 'fastify';
 import {
 	jsonSchemaTransform,
 	serializerCompiler,
 	validatorCompiler,
 	type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
-
+import { captureException, initSentry } from './lib/sentry.js';
 import { routes } from './router.js';
 
 const THIRTY_MINUTES_MS = 30 * 60 * 1000;
 
-// const lokiTransport = process.env.LOKI_HOST
-// 	? {
-// 			transport: {
-// 				target: 'pino-loki',
-// 				options: {
-// 					// host: process.env.LOKI_HOST,
-// 					labels: { app: 'profissao-laser-api' },
-// 					batching: true,
-// 					interval: 5,
-// 				},
-// 			},
-// 		}
-// 	: {};
+initSentry();
 
 const app = fastify({
 	connectionTimeout: 0,
@@ -35,7 +23,6 @@ const app = fastify({
 	keepAliveTimeout: THIRTY_MINUTES_MS,
 	logger: {
 		level: 'info',
-		// ...lokiTransport,
 	},
 }).withTypeProvider<ZodTypeProvider>();
 app.setValidatorCompiler(validatorCompiler);
@@ -46,6 +33,11 @@ app.register(multipart, { limits: { fileSize: 1500 * 1024 * 1024 } }); // 1.5 gb
 app.register(fastifyCors, {
 	origin: true,
 	methods: ['GET', 'PUT', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+});
+
+app.setErrorHandler((error: FastifyError, _request, reply) => {
+	captureException(error);
+	reply.status(error.statusCode ?? 500).send({ error: error.message });
 });
 
 if (!process.env.JWT_SECRET) {

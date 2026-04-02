@@ -1,3 +1,4 @@
+import { withCapture } from '@/lib/sentry.js';
 import { communityRepository } from '../repositories/community.js';
 import type {
 	CreateChannel,
@@ -11,46 +12,50 @@ import type {
 	UpdateProject,
 } from '../types/community.js';
 
-class CommunityService {
+export const communityService = {
 	// ── Posts ────────────────────────────────────────────────────────────────
 
 	async listPosts(page: number, limit: number, currentUserId: string) {
-		return communityRepository.listPosts(page, limit, currentUserId);
-	}
+		return withCapture(() =>
+			communityRepository.listPosts(page, limit, currentUserId),
+		);
+	},
 
 	async createPost(
 		data: CreatePost,
 		author: { id: string; name: string; avatar: string | null },
 	) {
-		return communityRepository.createPost({
-			...data,
-			authorId: author.id,
-			authorName: author.name,
-			authorAvatar: author.avatar,
-		});
-	}
+		return withCapture(() =>
+			communityRepository.createPost({
+				...data,
+				authorId: author.id,
+				authorName: author.name,
+				authorAvatar: author.avatar,
+			}),
+		);
+	},
 
 	// ── Channels ─────────────────────────────────────────────────────────────
 
 	async listChannels() {
-		return communityRepository.listChannels();
-	}
+		return withCapture(() => communityRepository.listChannels());
+	},
 
 	async getChannel(id: string) {
-		return communityRepository.getChannel(id);
-	}
+		return withCapture(() => communityRepository.getChannel(id));
+	},
 
 	async createChannel(data: CreateChannel) {
-		return communityRepository.createChannel(data);
-	}
+		return withCapture(() => communityRepository.createChannel(data));
+	},
 
 	async updateChannel(id: string, data: UpdateChannel) {
-		return communityRepository.updateChannel(id, data);
-	}
+		return withCapture(() => communityRepository.updateChannel(id, data));
+	},
 
 	async deleteChannel(id: string) {
-		return communityRepository.deleteChannel(id);
-	}
+		return withCapture(() => communityRepository.deleteChannel(id));
+	},
 
 	// ── Messages ──────────────────────────────────────────────────────────────
 
@@ -60,17 +65,16 @@ class CommunityService {
 		limit: number,
 		currentUserId: string,
 	) {
-		return communityRepository.listMessages(
-			channelId,
-			before,
-			limit,
-			currentUserId,
+		return withCapture(() =>
+			communityRepository.listMessages(channelId, before, limit, currentUserId),
 		);
-	}
+	},
 
 	async deleteMessage(channelId: string, messageId: string) {
-		return communityRepository.deleteMessage(channelId, messageId);
-	}
+		return withCapture(() =>
+			communityRepository.deleteMessage(channelId, messageId),
+		);
+	},
 
 	async sendMessage(
 		channelId: string,
@@ -78,20 +82,22 @@ class CommunityService {
 		author: { id: string; name: string; avatar: string | null },
 		fileUrl?: string,
 	) {
-		return communityRepository.createMessage(channelId, {
-			...data,
-			authorId: author.id,
-			authorName: author.name,
-			authorAvatar: author.avatar,
-			fileUrl,
-		});
-	}
+		return withCapture(() =>
+			communityRepository.createMessage(channelId, {
+				...data,
+				authorId: author.id,
+				authorName: author.name,
+				authorAvatar: author.avatar,
+				fileUrl,
+			}),
+		);
+	},
 
 	// ── Members ───────────────────────────────────────────────────────────────
 
 	async listMembers(search?: string, category?: string) {
-		return communityRepository.listMembers(search, category);
-	}
+		return withCapture(() => communityRepository.listMembers(search, category));
+	},
 
 	// ── Projects ──────────────────────────────────────────────────────────────
 
@@ -105,28 +111,34 @@ class CommunityService {
 			sort?: string;
 		},
 	) {
-		return communityRepository.listProjects(page, limit, filters);
-	}
+		return withCapture(() =>
+			communityRepository.listProjects(page, limit, filters),
+		);
+	},
 
 	async getProject(id: string) {
-		return communityRepository.getProject(id);
-	}
+		return withCapture(() => communityRepository.getProject(id));
+	},
 
 	async createProject(data: CreateProject, authorId: string) {
-		return communityRepository.createProject({ ...data, authorId });
-	}
+		return withCapture(() =>
+			communityRepository.createProject({ ...data, authorId }),
+		);
+	},
 
 	async updateProject(id: string, data: UpdateProject) {
-		return communityRepository.updateProject(id, data);
-	}
+		return withCapture(() => communityRepository.updateProject(id, data));
+	},
 
 	async deleteProject(id: string) {
-		return communityRepository.deleteProject(id);
-	}
+		return withCapture(() => communityRepository.deleteProject(id));
+	},
 
 	async listProjectComments(projectId: string, page: number, limit: number) {
-		return communityRepository.listProjectComments(projectId, page, limit);
-	}
+		return withCapture(() =>
+			communityRepository.listProjectComments(projectId, page, limit),
+		);
+	},
 
 	async createProjectComment(
 		projectId: string,
@@ -138,17 +150,21 @@ class CommunityService {
 			isAdmin: boolean;
 		},
 	) {
-		return communityRepository.createProjectComment(projectId, {
-			...data,
-			...author,
-		});
-	}
+		return withCapture(() =>
+			communityRepository.createProjectComment(projectId, {
+				...data,
+				...author,
+			}),
+		);
+	},
 
 	// ── Post Comments ─────────────────────────────────────────────────────────
 
 	async listPostComments(postId: string, page: number, limit: number) {
-		return communityRepository.listPostComments(postId, page, limit);
-	}
+		return withCapture(() =>
+			communityRepository.listPostComments(postId, page, limit),
+		);
+	},
 
 	async createPostComment(
 		postId: string,
@@ -160,45 +176,49 @@ class CommunityService {
 			isAdmin: boolean;
 		},
 	) {
-		return communityRepository.createPostComment(postId, {
-			...data,
-			...author,
-		});
-	}
+		return withCapture(() =>
+			communityRepository.createPostComment(postId, {
+				...data,
+				...author,
+			}),
+		);
+	},
 
 	// ── Post Likes ────────────────────────────────────────────────────────────
 
 	async togglePostLike(postId: string, customerId: string) {
-		return communityRepository.togglePostLike(postId, customerId);
-	}
+		return withCapture(() =>
+			communityRepository.togglePostLike(postId, customerId),
+		);
+	},
 
 	// ── Events ────────────────────────────────────────────────────────────────
 
 	async listEvents(from?: string, to?: string) {
-		return communityRepository.listEvents(from, to);
-	}
+		return withCapture(() => communityRepository.listEvents(from, to));
+	},
 
 	async createEvent(data: CreateEvent) {
-		return communityRepository.createEvent(data);
-	}
+		return withCapture(() => communityRepository.createEvent(data));
+	},
 
 	async updateEvent(id: string, data: UpdateEvent) {
-		return communityRepository.updateEvent(id, data);
-	}
+		return withCapture(() => communityRepository.updateEvent(id, data));
+	},
 
 	async deleteEvent(id: string) {
-		return communityRepository.deleteEvent(id);
-	}
+		return withCapture(() => communityRepository.deleteEvent(id));
+	},
 
 	// ── Ranking ───────────────────────────────────────────────────────────────
 
 	async getRanking(period?: string) {
-		const ranked = await communityRepository.getRanking(period);
-		return {
-			top: ranked.slice(0, 3),
-			rest: ranked.slice(3),
-		};
-	}
-}
-
-export const communityService = new CommunityService();
+		return withCapture(async () => {
+			const ranked = await communityRepository.getRanking(period);
+			return {
+				top: ranked.slice(0, 3),
+				rest: ranked.slice(3),
+			};
+		});
+	},
+};
