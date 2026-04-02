@@ -1,11 +1,11 @@
 import type Stripe from 'stripe';
 import { withCapture } from '@/lib/sentry.js';
-import { PLAN_ORDER, resolvePlanFromProduct } from '../lib/plan.js';
 import { stripe } from '../lib/stripe.js';
 import { customerRepository } from '../repositories/customer.js';
 import { productRepository } from '../repositories/product.js';
 import { provisioningRepository } from '../repositories/provisioning.js';
 import type { ProvisioningPlan } from '../types/provisioning.js';
+import { PLAN_ORDER, resolvePlanFromProduct } from '../utils/plan.js';
 
 export const purchaseService = {
 	async listPurchases(email: string) {

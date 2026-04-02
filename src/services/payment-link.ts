@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 import { withCapture } from '@/lib/sentry.js';
-import { isValidCpf, normalizeDigits } from '../lib/cpf.js';
 import { stripe } from '../lib/stripe.js';
 import { supabase } from '../lib/supabase.js';
 import { paymentLinkRepository } from '../repositories/payment-link.js';
@@ -9,6 +8,7 @@ import type {
 	CreatePaymentLink,
 	RedeemPaymentLink,
 } from '../types/payment-link.js';
+import { isValidCpf, normalizeDigits } from '../utils/cpf.js';
 import { authService } from './auth.js';
 
 const DISCOUNT_PERCENT = 99;

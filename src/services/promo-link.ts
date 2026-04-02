@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 import { withCapture } from '@/lib/sentry.js';
-import { isValidCpf, normalizeDigits } from '../lib/cpf.js';
 import { stripe } from '../lib/stripe.js';
 import { productRepository } from '../repositories/product.js';
 import { promoLinkRepository } from '../repositories/promo-link.js';
@@ -9,6 +8,7 @@ import type {
 	RedeemPromoLink,
 	UpdatePromoLinkStatus,
 } from '../types/promo-link.js';
+import { isValidCpf, normalizeDigits } from '../utils/cpf.js';
 import { authService } from './auth.js';
 
 export const promoLinkService = {

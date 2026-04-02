@@ -17,14 +17,7 @@ const THIRTY_MINUTES_MS = 30 * 60 * 1000;
 
 initSentry();
 
-const app = fastify({
-	connectionTimeout: 0,
-	requestTimeout: THIRTY_MINUTES_MS,
-	keepAliveTimeout: THIRTY_MINUTES_MS,
-	logger: {
-		level: 'info',
-	},
-}).withTypeProvider<ZodTypeProvider>();
+const app = fastify().withTypeProvider<ZodTypeProvider>();
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
 

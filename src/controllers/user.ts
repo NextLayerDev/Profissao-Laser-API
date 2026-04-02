@@ -7,10 +7,12 @@ export class UsersController {
 		const { data, error } = await usersService.getAllUsers();
 
 		if (error) {
-			reply.status(500).send({ error });
-		} else {
-			reply.status(200).send(data);
+			const message =
+				error instanceof Error ? error.message : 'Internal Server Error';
+			return reply.status(500).send({ message });
 		}
+
+		return reply.status(200).send(data);
 	}
 
 	async getUserById(
@@ -21,10 +23,16 @@ export class UsersController {
 		const { data, error } = await usersService.getUserById(id);
 
 		if (error) {
-			reply.status(500).send({ error });
-		} else {
-			reply.status(200).send(data);
+			const message =
+				error instanceof Error ? error.message : 'Internal Server Error';
+			return reply.status(500).send({ message });
 		}
+
+		if (!data) {
+			return reply.status(404).send({ message: 'User not found' });
+		}
+
+		return reply.status(200).send(data);
 	}
 
 	async updateUser(
@@ -35,10 +43,12 @@ export class UsersController {
 		const { data, error } = await usersService.updateUser(id, request.body);
 
 		if (error) {
-			reply.status(500).send({ error });
-		} else {
-			reply.status(200).send(data);
+			const message =
+				error instanceof Error ? error.message : 'Internal Server Error';
+			return reply.status(500).send({ message });
 		}
+
+		return reply.status(200).send(data);
 	}
 
 	async deleteUser(
@@ -49,10 +59,12 @@ export class UsersController {
 		const { error } = await usersService.deleteUser(id);
 
 		if (error) {
-			reply.status(500).send({ error });
-		} else {
-			reply.status(200).send({ message: 'User deleted' });
+			const message =
+				error instanceof Error ? error.message : 'Internal Server Error';
+			return reply.status(500).send({ message });
 		}
+
+		return reply.status(200).send({ message: 'User deleted' });
 	}
 
 	async getUserPermissions(
@@ -63,12 +75,16 @@ export class UsersController {
 		const { data, error } = await usersService.getUserPermissions(id);
 
 		if (error) {
-			reply.status(500).send({ error });
-		} else if (!data) {
-			reply.status(404).send({ error: 'User not found' });
-		} else {
-			reply.status(200).send(data);
+			const message =
+				error instanceof Error ? error.message : 'Internal Server Error';
+			return reply.status(500).send({ message });
 		}
+
+		if (!data) {
+			return reply.status(404).send({ message: 'User not found' });
+		}
+
+		return reply.status(200).send(data);
 	}
 }
 

@@ -2,8 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import type Stripe from 'stripe';
 import { supabase } from '@/lib/supabase.js';
 import { decrypt } from '../lib/crypto.js';
-import { normalizeCompanySlug } from '../lib/normalize.js';
-import { PLAN_ORDER, resolvePlanFromProduct } from '../lib/plan.js';
 import { runSqlOnTenant } from '../lib/postgres-runner.js';
 import { stripe } from '../lib/stripe.js';
 import * as vercelApi from '../lib/vercel.js';
@@ -12,6 +10,8 @@ import { productRepository } from '../repositories/product.js';
 import { provisioningRepository } from '../repositories/provisioning.js';
 import { subscriptionRepository } from '../repositories/subscription.js';
 import type { ProvisioningPlan, Tenant } from '../types/provisioning.js';
+import { normalizeCompanySlug } from '../utils/normalize.js';
+import { PLAN_ORDER, resolvePlanFromProduct } from '../utils/plan.js';
 import { runProvisionTenant } from '../workers/provision-tenant.js';
 
 export async function webhookRoute(server: FastifyInstance) {
