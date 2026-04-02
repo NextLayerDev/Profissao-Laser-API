@@ -5,58 +5,57 @@ import type { Customer } from '../types/customer.js';
 
 class AuthController {
 	async registerUser(request: FastifyRequest, reply: FastifyReply) {
-		try {
-			const result = await authService.registerUser(
-				request.body as UserRegister,
-			);
-			return reply.status(201).send(result);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Unknown error';
+		const { data: result, error } = await authService.registerUser(
+			request.body as UserRegister,
+		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(400).send({ message });
 		}
+		return reply.status(201).send(result);
 	}
 
 	async loginUser(request: FastifyRequest, reply: FastifyReply) {
-		try {
-			const result = await authService.loginUser(request.body as Login);
-			return reply.send(result);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Unknown error';
+		const { data: result, error } = await authService.loginUser(
+			request.body as Login,
+		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(401).send({ message });
 		}
+		return reply.send(result);
 	}
 
 	async registerCustomer(request: FastifyRequest, reply: FastifyReply) {
-		try {
-			const result = await authService.registerCustomer(
-				request.body as Customer,
-			);
-			return reply.status(201).send(result);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Unknown error';
+		const { data: result, error } = await authService.registerCustomer(
+			request.body as Customer,
+		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(400).send({ message });
 		}
+		return reply.status(201).send(result);
 	}
 
 	async loginCustomer(request: FastifyRequest, reply: FastifyReply) {
-		try {
-			const result = await authService.loginCustomer(request.body as Login);
-			return reply.send(result);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Unknown error';
+		const { data: result, error } = await authService.loginCustomer(
+			request.body as Login,
+		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(401).send({ message });
 		}
+		return reply.send(result);
 	}
 
 	async forgotPassword(request: FastifyRequest, reply: FastifyReply) {
-		try {
-			const { email } = request.body as { email: string };
-			const result = await authService.forgotPassword(email);
-			return reply.send(result);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Unknown error';
+		const { email } = request.body as { email: string };
+		const { data: result, error } = await authService.forgotPassword(email);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(400).send({ message });
 		}
+		return reply.send(result);
 	}
 }
 

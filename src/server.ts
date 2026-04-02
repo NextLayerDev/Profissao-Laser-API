@@ -13,8 +13,6 @@ import {
 import { captureException, initSentry } from './lib/sentry.js';
 import { routes } from './router.js';
 
-const THIRTY_MINUTES_MS = 30 * 60 * 1000;
-
 initSentry();
 
 const app = fastify().withTypeProvider<ZodTypeProvider>();
@@ -30,7 +28,7 @@ app.register(fastifyCors, {
 
 app.setErrorHandler((error: FastifyError, _request, reply) => {
 	captureException(error);
-	reply.status(error.statusCode ?? 500).send({ error: error.message });
+	reply.status(error.statusCode ?? 500).send({ message: error.message });
 });
 
 if (!process.env.JWT_SECRET) {

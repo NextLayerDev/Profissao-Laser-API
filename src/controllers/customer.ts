@@ -10,24 +10,26 @@ class CustomerController {
 		reply: FastifyReply,
 	) {
 		const { id } = request.params;
-		try {
-			const customer = await customerService.getCustomerById(id);
-			if (!customer)
-				return reply.status(404).send({ message: 'Customer not found' });
-
-			reply.status(200).send(customer);
-		} catch (error) {
-			reply.status(500).send({ message: (error as Error).message });
+		const { data: customer, error } = await customerService.getCustomerById(id);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
 		}
+		if (!customer)
+			return reply.status(404).send({ message: 'Customer not found' });
+
+		reply.status(200).send(customer);
 	}
 
 	async getAllCustomers(_request: FastifyRequest, reply: FastifyReply) {
-		try {
-			const customers = await customerService.getAllCustomers();
-			reply.status(200).send(customers);
-		} catch (error) {
-			reply.status(500).send({ message: (error as Error).message });
+		const { data: customers, error } = await customerService.getAllCustomers();
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
 		}
+		reply.status(200).send(customers);
 	}
 
 	async updateUser(
@@ -46,12 +48,13 @@ class CustomerController {
 		reply: FastifyReply,
 	) {
 		const { id } = request.body;
-		try {
-			await customerService.deleteCustomer(id);
-			reply.status(200).send({ message: 'Customer deleted' });
-		} catch (error) {
-			reply.status(500).send({ message: (error as Error).message });
+		const { error } = await customerService.deleteCustomer(id);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
 		}
+		reply.status(200).send({ message: 'Customer deleted' });
 	}
 
 	async blockCustomer(
@@ -63,12 +66,16 @@ class CustomerController {
 	) {
 		const { id } = request.params;
 		const { blocked } = request.body;
-		try {
-			const result = await customerService.blockCustomer(id, blocked);
-			reply.status(200).send(result);
-		} catch (error) {
-			reply.status(500).send({ message: (error as Error).message });
+		const { data: result, error } = await customerService.blockCustomer(
+			id,
+			blocked,
+		);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
 		}
+		reply.status(200).send(result);
 	}
 
 	async changePassword(
@@ -80,55 +87,64 @@ class CustomerController {
 	) {
 		const { id } = request.params;
 		const { password } = request.body;
-		try {
-			await customerService.changePassword(id, password);
-			reply.status(200).send({ message: 'Password updated' });
-		} catch (error) {
-			reply.status(500).send({ message: (error as Error).message });
+		const { error } = await customerService.changePassword(id, password);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
 		}
+		reply.status(200).send({ message: 'Password updated' });
 	}
 
 	async getMySubscription(request: FastifyRequest, reply: FastifyReply) {
 		const email = request.currentUser?.email;
 		if (!email) return reply.status(401).send({ message: 'Unauthorized' });
 
-		try {
-			const subscription = await purchaseService.getSubscriptionDetails(email);
-			if (!subscription)
-				return reply
-					.status(404)
-					.send({ message: 'No active subscription found.' });
-			reply.status(200).send(subscription);
-		} catch (error) {
-			reply.status(500).send({ message: (error as Error).message });
+		const { data: subscription, error } =
+			await purchaseService.getSubscriptionDetails(email);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
 		}
+		if (!subscription)
+			return reply
+				.status(404)
+				.send({ message: 'No active subscription found.' });
+		reply.status(200).send(subscription);
 	}
 
 	async cancelMySubscription(request: FastifyRequest, reply: FastifyReply) {
 		const email = request.currentUser?.email;
 		if (!email) return reply.status(401).send({ message: 'Unauthorized' });
 
-		try {
-			const result = await purchaseService.cancelSubscription(email);
-			if (!result)
-				return reply
-					.status(404)
-					.send({ message: 'No active subscription found.' });
-			reply.status(200).send(result);
-		} catch (error) {
-			reply.status(500).send({ message: (error as Error).message });
+		const { data: result, error } =
+			await purchaseService.cancelSubscription(email);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
 		}
+		if (!result)
+			return reply
+				.status(404)
+				.send({ message: 'No active subscription found.' });
+		reply.status(200).send(result);
 	}
 
 	async getCustomerPlans(
 		request: FastifyRequest<{ Params: { email: string } }>,
 		reply: FastifyReply,
 	) {
-		const subscriptions = await purchaseService.listActiveSubscriptions(
-			request.params.email,
-		);
+		const { data: subscriptions, error } =
+			await purchaseService.listActiveSubscriptions(request.params.email);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
 
-		if (subscriptions.length === 0) {
+		if (!subscriptions || subscriptions.length === 0) {
 			reply
 				.status(404)
 				.send({ message: 'No active subscriptions found for this email.' });
