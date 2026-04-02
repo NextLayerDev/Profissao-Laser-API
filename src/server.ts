@@ -26,8 +26,8 @@ app.register(fastifyCors, {
 	methods: ['GET', 'PUT', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
 });
 
-app.setErrorHandler(async (error: FastifyError, _request, reply) => {
-	await captureException(error);
+app.setErrorHandler((error: FastifyError, _request, reply) => {
+	captureException(error);
 	reply.status(error.statusCode ?? 500).send({ message: error.message });
 });
 
@@ -64,6 +64,10 @@ app.register(ScalarApiReference, {
 });
 
 app.decorateRequest('currentUser', null);
+
+app.get('/test-sentry', () => {
+	throw new Error('Sentry test from VPS');
+});
 
 app.register(routes);
 
