@@ -13,8 +13,9 @@ export function initSentry() {
 	console.log('[Sentry] Initialized');
 }
 
-export function captureException(error: unknown) {
+export async function captureException(error: unknown) {
 	Sentry.captureException(error);
+	await Sentry.flush(2000);
 }
 
 export async function withCapture<T>(
@@ -24,7 +25,7 @@ export async function withCapture<T>(
 		const data = await fn();
 		return { data, error: null };
 	} catch (error) {
-		captureException(error);
+		await captureException(error);
 		return { data: null, error };
 	}
 }

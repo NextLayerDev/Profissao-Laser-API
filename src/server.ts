@@ -26,8 +26,8 @@ app.register(fastifyCors, {
 	methods: ['GET', 'PUT', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
 });
 
-app.setErrorHandler((error: FastifyError, _request, reply) => {
-	captureException(error);
+app.setErrorHandler(async (error: FastifyError, _request, reply) => {
+	await captureException(error);
 	reply.status(error.statusCode ?? 500).send({ message: error.message });
 });
 
