@@ -6,7 +6,6 @@ export function initSentry() {
 	Sentry.init({
 		dsn: process.env.SENTRY_DSN,
 		environment: process.env.NODE_ENV ?? 'production',
-		integrations: [Sentry.fastifyIntegration()],
 	});
 }
 
