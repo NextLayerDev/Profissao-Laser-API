@@ -116,9 +116,7 @@ export const createAppointmentController = async (
 			const techIds = await appointmentRepository.listTechnicianIds();
 			if (techIds.length > 0) {
 				const allBooked = await Promise.all(
-					techIds.map((id) =>
-						appointmentRepository.listByDate(data.date, id),
-					),
+					techIds.map((id) => appointmentRepository.listByDate(data.date, id)),
 				);
 				const available = techIds.filter(
 					(_, i) => !allBooked[i].some((a) => a.time === data.time),
