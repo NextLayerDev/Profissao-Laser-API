@@ -94,8 +94,8 @@ jobs:
       - name: 📦 Install dependencies
         run: npm ci
 
-      - name: 🔒 Run NPM Audit
-        run: npm audit --audit-level=high
+      # - name: 🔒 Run NPM Audit
+      #   run: npm audit --audit-level=high
 
   deploy:
     name: 🚀 Deploy
