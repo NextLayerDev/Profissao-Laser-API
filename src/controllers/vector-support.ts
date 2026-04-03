@@ -20,32 +20,29 @@ export const listTicketsController = async (
 	request: FastifyRequest<{ Querystring: { status?: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const customerId = request.currentCustomer?.id ?? '';
-		const { status } = request.query;
-		const tickets = await vectorSupportService.listTicketsByCustomer(
-			customerId,
-			status,
-		);
-		return reply.send(tickets);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const customerId = request.currentCustomer?.id ?? '';
+	const { status } = request.query;
+	const { data: tickets, error } =
+		await vectorSupportService.listTicketsByCustomer(customerId, status);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(tickets);
 };
 
 export const listAdminTicketsController = async (
 	request: FastifyRequest<{ Querystring: { status?: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const { status } = request.query;
-		const tickets = await vectorSupportService.listAllTickets(status);
-		return reply.send(tickets);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { status } = request.query;
+	const { data: tickets, error } =
+		await vectorSupportService.listAllTickets(status);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(tickets);
 };
 
 export const getTicketController = async (
@@ -54,7 +51,12 @@ export const getTicketController = async (
 ) => {
 	try {
 		const { id } = request.params;
-		const ticket = await vectorSupportService.getTicket(id);
+		const { data: ticket, error } = await vectorSupportService.getTicket(id);
+
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(500).send({ message });
+		}
 
 		if (!ticket) {
 			return reply.status(404).send({ message: 'Ticket not found' });
@@ -121,12 +123,16 @@ export const createTicketController = async (
 		}
 
 		const data = createTicketSchema.parse({ subject, initialMessage });
-		const ticket = await vectorSupportService.createTicket(
+		const { data: ticket, error } = await vectorSupportService.createTicket(
 			data,
 			customerId,
 			customerName,
 			files,
 		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(400).send({ message });
+		}
 		return reply.status(201).send(ticket);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
@@ -192,7 +198,7 @@ export const sendMessageController = async (
 			authorName = request.currentCustomer?.name ?? 'Cliente';
 		}
 
-		const msg = await vectorSupportService.sendMessage(
+		const { data: msg, error } = await vectorSupportService.sendMessage(
 			id,
 			{ content: content || undefined },
 			authorId,
@@ -200,6 +206,10 @@ export const sendMessageController = async (
 			staff,
 			files,
 		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(400).send({ message });
+		}
 
 		return reply.status(201).send(msg);
 	} catch (err) {
@@ -214,12 +224,11 @@ export const closeTicketController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const { id } = request.params;
-		await vectorSupportService.closeTicket(id);
-		return reply.status(204).send();
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { id } = request.params;
+	const { error } = await vectorSupportService.closeTicket(id);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(400).send({ message });
 	}
+	return reply.status(204).send();
 };

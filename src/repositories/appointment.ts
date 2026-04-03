@@ -110,6 +110,15 @@ class AppointmentRepository {
 		return data;
 	}
 
+	async listTechnicianIds(): Promise<string[]> {
+		const { data, error } = await supabase
+			.from('Users')
+			.select('id')
+			.in('role', ['tecnico', 'colaborador']);
+		if (error) throw new Error(error.message);
+		return (data ?? []).map((u) => u.id);
+	}
+
 	async delete(id: string) {
 		const { data: existing, error: findError } = await supabase
 			.from('pl_appointment')

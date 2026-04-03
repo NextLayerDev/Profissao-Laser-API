@@ -1,28 +1,31 @@
+import { withCapture } from '@/lib/sentry.js';
 import { lessonRepository } from '../repositories/lesson.js';
 import type { LessonCreate, LessonUpdate } from '../types/lesson.js';
 
-class LessonService {
+export const lessonService = {
 	async create(data: LessonCreate) {
-		const id = crypto.randomUUID();
-		return await lessonRepository.create({ id, ...data });
-	}
+		return withCapture(async () => {
+			const id = crypto.randomUUID();
+			return lessonRepository.create({ id, ...data });
+		});
+	},
 
 	async update(id: string, data: LessonUpdate) {
-		return await lessonRepository.update(id, data);
-	}
+		return withCapture(() => lessonRepository.update(id, data));
+	},
 
 	async delete(id: string) {
-		await lessonRepository.findById(id);
-		return await lessonRepository.delete(id);
-	}
+		return withCapture(async () => {
+			await lessonRepository.findById(id);
+			return lessonRepository.delete(id);
+		});
+	},
 
 	async listByModule(moduleId: string) {
-		return await lessonRepository.listByModule(moduleId);
-	}
+		return withCapture(() => lessonRepository.listByModule(moduleId));
+	},
 
 	async reorder(lessonIds: string[]) {
-		return await lessonRepository.reorder(lessonIds);
-	}
-}
-
-export const lessonService = new LessonService();
+		return withCapture(() => lessonRepository.reorder(lessonIds));
+	},
+};

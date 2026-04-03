@@ -43,28 +43,28 @@ export const getContentsController = async (
 	request: FastifyRequest<{ Querystring: { parentId?: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const parentId = request.query.parentId ?? null;
-		const contents = await vectorLibraryService.getContents(parentId);
-		return reply.send(contents);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const parentId = request.query.parentId ?? null;
+	const { data: contents, error } =
+		await vectorLibraryService.getContents(parentId);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(contents);
 };
 
 export const getBreadcrumbsController = async (
 	request: FastifyRequest<{ Querystring: { folderId?: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const folderId = request.query.folderId ?? null;
-		const breadcrumbs = await vectorLibraryService.getBreadcrumbs(folderId);
-		return reply.send(breadcrumbs);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const folderId = request.query.folderId ?? null;
+	const { data: breadcrumbs, error } =
+		await vectorLibraryService.getBreadcrumbs(folderId);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(breadcrumbs);
 };
 
 export const createFolderController = async (
@@ -74,7 +74,12 @@ export const createFolderController = async (
 	if (!(await requireAdmin(request, reply))) return;
 	try {
 		const data = createFolderSchema.parse(request.body);
-		const folder = await vectorLibraryService.createFolder(data);
+		const { data: folder, error } =
+			await vectorLibraryService.createFolder(data);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(400).send({ message });
+		}
 		return reply.status(201).send(folder);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
@@ -90,7 +95,14 @@ export const updateFolderController = async (
 	try {
 		const { id } = request.params;
 		const { name } = updateFolderSchema.parse(request.body);
-		const folder = await vectorLibraryService.updateFolder(id, name);
+		const { data: folder, error } = await vectorLibraryService.updateFolder(
+			id,
+			name,
+		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(400).send({ message });
+		}
 		if (!folder) return reply.status(404).send({ message: 'Folder not found' });
 		return reply.send(folder);
 	} catch (err) {
@@ -104,14 +116,13 @@ export const deleteFolderController = async (
 	reply: FastifyReply,
 ) => {
 	if (!(await requireAdmin(request, reply))) return;
-	try {
-		const { id } = request.params;
-		await vectorLibraryService.deleteFolder(id);
-		return reply.status(204).send();
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { id } = request.params;
+	const { error } = await vectorLibraryService.deleteFolder(id);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(400).send({ message });
 	}
+	return reply.status(204).send();
 };
 
 export const uploadFileController = async (
@@ -143,7 +154,7 @@ export const uploadFileController = async (
 			return reply.status(400).send({ message: 'File is required' });
 		}
 
-		const file = await vectorLibraryService.createFile(
+		const { data: file, error } = await vectorLibraryService.createFile(
 			folderId,
 			fileBuffer,
 			filename,
@@ -151,6 +162,10 @@ export const uploadFileController = async (
 			size,
 			customName,
 		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(400).send({ message });
+		}
 		return reply.status(201).send(file);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
@@ -166,7 +181,14 @@ export const updateFileController = async (
 	try {
 		const { id } = request.params;
 		const { name } = updateFileSchema.parse(request.body);
-		const file = await vectorLibraryService.updateFile(id, name);
+		const { data: file, error } = await vectorLibraryService.updateFile(
+			id,
+			name,
+		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(400).send({ message });
+		}
 		if (!file) return reply.status(404).send({ message: 'File not found' });
 		return reply.send(file);
 	} catch (err) {
@@ -180,12 +202,11 @@ export const deleteFileController = async (
 	reply: FastifyReply,
 ) => {
 	if (!(await requireAdmin(request, reply))) return;
-	try {
-		const { id } = request.params;
-		await vectorLibraryService.deleteFile(id);
-		return reply.status(204).send();
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { id } = request.params;
+	const { error } = await vectorLibraryService.deleteFile(id);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(400).send({ message });
 	}
+	return reply.status(204).send();
 };

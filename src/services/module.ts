@@ -1,28 +1,31 @@
+import { withCapture } from '@/lib/sentry.js';
 import { moduleRepository } from '../repositories/module.js';
 import type { ModuleCreate, ModuleUpdate } from '../types/module.js';
 
-class ModuleService {
+export const moduleService = {
 	async create(data: ModuleCreate) {
-		const id = crypto.randomUUID();
-		return await moduleRepository.create({ id, ...data });
-	}
+		return withCapture(async () => {
+			const id = crypto.randomUUID();
+			return moduleRepository.create({ id, ...data });
+		});
+	},
 
 	async update(id: string, data: ModuleUpdate) {
-		return await moduleRepository.update(id, data);
-	}
+		return withCapture(() => moduleRepository.update(id, data));
+	},
 
 	async delete(id: string) {
-		await moduleRepository.findById(id);
-		return await moduleRepository.delete(id);
-	}
+		return withCapture(async () => {
+			await moduleRepository.findById(id);
+			return moduleRepository.delete(id);
+		});
+	},
 
 	async listByProduct(productId: string) {
-		return await moduleRepository.listByProduct(productId);
-	}
+		return withCapture(() => moduleRepository.listByProduct(productId));
+	},
 
 	async reorder(moduleIds: string[]) {
-		return await moduleRepository.reorder(moduleIds);
-	}
-}
-
-export const moduleService = new ModuleService();
+		return withCapture(() => moduleRepository.reorder(moduleIds));
+	},
+};

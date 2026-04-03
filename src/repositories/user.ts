@@ -3,43 +3,63 @@ import type { User, UserUpdate } from '../types/user.js';
 
 class UsersRepository {
 	async getAllUsers() {
-		return await supabase.from('Users').select('*');
+		const { data, error } = await supabase.from('Users').select('*');
+		if (error) throw error;
+		return data;
 	}
 
 	async getUser(userId: string) {
-		return await supabase.from('Users').select('*').eq('id', userId).single();
+		const { data, error } = await supabase
+			.from('Users')
+			.select('*')
+			.eq('id', userId)
+			.single();
+		if (error) throw error;
+		return data;
 	}
 
 	async createUser(userData: User) {
-		return await supabase.from('Users').insert(userData).single();
+		const { data, error } = await supabase
+			.from('Users')
+			.insert(userData)
+			.single();
+		if (error) throw error;
+		return data;
 	}
 
 	async updateUser(userId: string, userData: UserUpdate) {
-		return await supabase
+		const { data, error } = await supabase
 			.from('Users')
 			.update(userData)
 			.eq('id', userId)
 			.single();
+		if (error) throw error;
+		return data;
 	}
 
 	async deleteUser(userId: string) {
-		return await supabase.from('Users').delete().eq('id', userId);
+		const { error } = await supabase.from('Users').delete().eq('id', userId);
+		if (error) throw error;
 	}
 
 	async getPermissionByRole(role: string) {
-		return await supabase
+		const { data, error } = await supabase
 			.from('Permissions')
 			.select('id')
 			.eq('role', role)
 			.single();
+		if (error) throw error;
+		return data;
 	}
 
 	async getUserPermissions(userId: string) {
-		return await supabase
+		const { data, error } = await supabase
 			.from('Users')
 			.select('Permissions(canEdit, canView, canAdmin, canPrice)')
 			.eq('id', userId)
 			.single();
+		if (error) throw error;
+		return data;
 	}
 }
 

@@ -5,19 +5,20 @@ export const getPurchasesController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const user = request.currentUser;
+	const user = request.currentUser;
 
-		if (!user || !user.email) {
-			return reply.status(401).send({ message: 'User email not found' });
-		}
+	if (!user || !user.email) {
+		return reply.status(401).send({ message: 'User email not found' });
+	}
 
-		const purchases = await purchaseService.listPurchases(user.email);
-		return reply.send(purchases);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: purchases, error } = await purchaseService.listPurchases(
+		user.email,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(purchases);
 };
 
 export const createSubscriptionController = async (
@@ -33,13 +34,13 @@ export const createSubscriptionController = async (
 	}>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const subscription = await purchaseService.createSubscription(request.body);
-		return reply.status(201).send(subscription);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: subscription, error } =
+		await purchaseService.createSubscription(request.body);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(subscription);
 };
 
 export const createPurchaseController = async (
@@ -48,38 +49,35 @@ export const createPurchaseController = async (
 	}>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const user = request.currentUser;
+	const user = request.currentUser;
 
-		if (!user || !user.email) {
-			return reply.status(401).send({ message: 'Authentication required' });
-		}
+	if (!user || !user.email) {
+		return reply.status(401).send({ message: 'Authentication required' });
+	}
 
-		const purchase = await purchaseService.createPurchase({
-			email: user.email,
-			productId: request.body.productId,
-			companyName: request.body.companyName,
-			phone: request.body.phone,
-		});
-
-		return reply.status(201).send(purchase);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: purchase, error } = await purchaseService.createPurchase({
+		email: user.email,
+		productId: request.body.productId,
+		companyName: request.body.companyName,
+		phone: request.body.phone,
+	});
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(purchase);
 };
 
 export const getAllPurchasesController = async (
 	_request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const purchases = await purchaseService.listAllPurchases();
-		return reply.send(purchases);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: purchases, error } = await purchaseService.listAllPurchases();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(purchases);
 };
 
 export const getPaymentAttemptsController = async (
@@ -92,53 +90,52 @@ export const getPaymentAttemptsController = async (
 	}>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const attempts = await purchaseService.listPaymentAttempts(request.query);
-		return reply.send(attempts);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: attempts, error } = await purchaseService.listPaymentAttempts(
+		request.query,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(attempts);
 };
 
 export const upgradeSubscriptionController = async (
 	request: FastifyRequest<{ Body: { productId: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const user = request.currentUser;
-		if (!user || !user.email) {
-			return reply.status(401).send({ message: 'Authentication required' });
-		}
-		const result = await purchaseService.changePlan(
-			user.email,
-			request.body.productId,
-			'upgrade',
-		);
-		return reply.status(200).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const user = request.currentUser;
+	if (!user || !user.email) {
+		return reply.status(401).send({ message: 'Authentication required' });
+	}
+	const { data: result, error } = await purchaseService.changePlan(
+		user.email,
+		request.body.productId,
+		'upgrade',
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(200).send(result);
 };
 
 export const downgradeSubscriptionController = async (
 	request: FastifyRequest<{ Body: { productId: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const user = request.currentUser;
-		if (!user || !user.email) {
-			return reply.status(401).send({ message: 'Authentication required' });
-		}
-		const result = await purchaseService.changePlan(
-			user.email,
-			request.body.productId,
-			'downgrade',
-		);
-		return reply.status(200).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const user = request.currentUser;
+	if (!user || !user.email) {
+		return reply.status(401).send({ message: 'Authentication required' });
+	}
+	const { data: result, error } = await purchaseService.changePlan(
+		user.email,
+		request.body.productId,
+		'downgrade',
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(200).send(result);
 };

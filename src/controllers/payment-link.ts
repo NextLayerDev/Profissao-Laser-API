@@ -9,32 +9,29 @@ export const listPaymentLinksController = async (
 	_request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await paymentLinkService.listLinks();
-		return reply.status(200).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await paymentLinkService.listLinks();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(200).send(result);
 };
 
 export const createPaymentLinkController = async (
 	request: FastifyRequest<{ Body: CreatePaymentLink }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const user = request.currentUser;
-		if (!user || !user.email) {
-			return reply.status(401).send({ message: 'Authentication required' });
-		}
+	const user = request.currentUser;
+	if (!user || !user.email) {
+		return reply.status(401).send({ message: 'Authentication required' });
+	}
 
-		const result = await paymentLinkService.createLink(
-			request.body,
-			user.email,
-		);
-		return reply.status(201).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await paymentLinkService.createLink(
+		request.body,
+		user.email,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		if (
 			message.includes('Invalid CPF') ||
 			message.includes('Invalid phone number') ||
@@ -48,17 +45,18 @@ export const createPaymentLinkController = async (
 		}
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(result);
 };
 
 export const getPaymentLinkInfoController = async (
 	request: FastifyRequest<{ Params: { token: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await paymentLinkService.getLinkInfo(request.params.token);
-		return reply.status(200).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await paymentLinkService.getLinkInfo(
+		request.params.token,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		if (message.includes('not found')) {
 			return reply.status(404).send({ message });
 		}
@@ -67,6 +65,7 @@ export const getPaymentLinkInfoController = async (
 		}
 		return reply.status(500).send({ message });
 	}
+	return reply.status(200).send(result);
 };
 
 export const redeemPaymentLinkController = async (
@@ -76,14 +75,12 @@ export const redeemPaymentLinkController = async (
 	}>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await paymentLinkService.redeemLink(
-			request.params.token,
-			request.body,
-		);
-		return reply.status(201).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await paymentLinkService.redeemLink(
+		request.params.token,
+		request.body,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		if (message.includes('not found')) {
 			return reply.status(404).send({ message });
 		}
@@ -95,4 +92,5 @@ export const redeemPaymentLinkController = async (
 		}
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(result);
 };
