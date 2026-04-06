@@ -43,13 +43,7 @@ class UsersRepository {
 	}
 
 	async getPermissionByRole(role: string) {
-		const { data, error } = await supabase
-			.from('Permissions')
-			.select('id')
-			.eq('role', role)
-			.single();
-		if (error) throw error;
-		return data;
+		return supabase.from('Permissions').select('id').eq('role', role).single();
 	}
 
 	async getUserPermissions(userId: string) {
