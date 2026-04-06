@@ -6,6 +6,13 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- PlanType enum (usado pelo Prisma no campo Company.plan)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PlanType') THEN
+    CREATE TYPE "PlanType" AS ENUM ('PRATA', 'OURO', 'PLATINA');
+  END IF;
+END $$;
+
 -- Company
 CREATE TABLE IF NOT EXISTS "Company" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
@@ -556,3 +563,240 @@ CREATE TABLE IF NOT EXISTS "IAMessage" (
 );
 CREATE INDEX IF NOT EXISTS "idx_iamsg_chat_id" ON "IAMessage"("chat_id");
 CREATE INDEX IF NOT EXISTS "idx_iamsg_chat_seq" ON "IAMessage"("chat_id", "sequence_order");
+
+-- ============== CATEGORIAS ICONES (migration 20260401) ==============
+
+ALTER TABLE "ConfiguracaoLoja" ADD COLUMN IF NOT EXISTS "categoriasIcones" JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- ============== TABELAS FISCAIS (migration 20260331) ==============
+
+-- DadosFiscaisEmpresa
+CREATE TABLE IF NOT EXISTS "DadosFiscaisEmpresa" (
+    "id" TEXT NOT NULL,
+    "company_id" TEXT NOT NULL,
+    "razao_social" TEXT NOT NULL DEFAULT '',
+    "nome_fantasia" TEXT NOT NULL DEFAULT '',
+    "cnpj" TEXT NOT NULL DEFAULT '',
+    "inscricao_estadual" TEXT NOT NULL DEFAULT '',
+    "inscricao_municipal" TEXT,
+    "codigo_regime_tributario" INTEGER NOT NULL DEFAULT 1,
+    "logradouro" TEXT NOT NULL DEFAULT '',
+    "numero" TEXT NOT NULL DEFAULT '',
+    "complemento" TEXT,
+    "bairro" TEXT NOT NULL DEFAULT '',
+    "municipio" TEXT NOT NULL DEFAULT '',
+    "uf" TEXT NOT NULL DEFAULT '',
+    "cep" TEXT NOT NULL DEFAULT '',
+    "codigo_municipio" TEXT,
+    "codigo_pais" TEXT DEFAULT '1058',
+    "telefone" TEXT,
+    "email" TEXT,
+    "ambiente" INTEGER NOT NULL DEFAULT 1,
+    "serie" INTEGER NOT NULL DEFAULT 1,
+    "numero_nota_atual" INTEGER NOT NULL DEFAULT 1,
+    "tipo_certificado" TEXT,
+    "certificado_url" TEXT,
+    "senha_certificado" TEXT,
+    "validade_certificado" TIMESTAMP(3),
+    "serial_number_certificado" TEXT,
+    "csc_id" TEXT,
+    "csc_token" TEXT,
+    "modelo_documento" TEXT DEFAULT '55',
+    "id_enotas" TEXT,
+    "emissao_nfe_ativa" BOOLEAN NOT NULL DEFAULT true,
+    "ativo" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "DadosFiscaisEmpresa_company_id_idx" ON "DadosFiscaisEmpresa"("company_id");
+
+-- ConfiguracaoFiscal
+CREATE TABLE IF NOT EXISTS "ConfiguracaoFiscal" (
+    "id" TEXT NOT NULL,
+    "company_id" TEXT NOT NULL,
+    "tipo_emissao" INTEGER NOT NULL DEFAULT 1,
+    "forma_pagamento_padrao" INTEGER NOT NULL DEFAULT 99,
+    "tipo_impressao" INTEGER NOT NULL DEFAULT 1,
+    "ncm_padrao" TEXT,
+    "cfop_saida_estado" INTEGER,
+    "cfop_saida_fora_estado" INTEGER,
+    "cfop_entrada_estado" INTEGER,
+    "cfop_entrada_fora_estado" INTEGER,
+    "aliquota_icms_padrao" DECIMAL(5, 2),
+    "aliquota_ipi_padrao" DECIMAL(5, 2),
+    "aliquota_pis_padrao" DECIMAL(5, 2),
+    "aliquota_cofins_padrao" DECIMAL(5, 2),
+    "icms_situacao_tributaria" TEXT,
+    "icms_origem" INTEGER,
+    "pis_situacao_tributaria" TEXT,
+    "cofins_situacao_tributaria" TEXT,
+    "percentual_aproximado_tributos" DECIMAL(5, 2),
+    "ibs_cbs_classificacao" TEXT,
+    "backup_automatico" BOOLEAN DEFAULT false,
+    "dias_retencao_backup" INTEGER,
+    "observacoes" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "ConfiguracaoFiscal_company_id_key" ON "ConfiguracaoFiscal"("company_id");
+
+-- PadraoFiscal
+CREATE TABLE IF NOT EXISTS "PadraoFiscal" (
+    "id" TEXT NOT NULL,
+    "company_id" TEXT NOT NULL,
+    "nome" TEXT NOT NULL DEFAULT '',
+    "ncm_padrao" TEXT,
+    "cfop_saida_estado" INTEGER,
+    "cfop_saida_fora_estado" INTEGER,
+    "cfop_entrada_estado" INTEGER,
+    "cfop_entrada_fora_estado" INTEGER,
+    "principal" BOOLEAN NOT NULL DEFAULT false,
+    "ordem" INTEGER NOT NULL DEFAULT 1,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "PadraoFiscal_company_id_idx" ON "PadraoFiscal"("company_id");
+
+-- NfeEmitida
+CREATE TABLE IF NOT EXISTS "NfeEmitida" (
+    "id" TEXT NOT NULL,
+    "company_id" TEXT NOT NULL,
+    "pedido_id" TEXT,
+    "tipo_operacao" TEXT NOT NULL,
+    "chave_acesso" TEXT,
+    "numero" INTEGER NOT NULL,
+    "serie" INTEGER NOT NULL,
+    "xml_url" TEXT,
+    "pdf_url" TEXT,
+    "data_emissao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "id_enotas" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pendente',
+    "protocolo" TEXT,
+    "motivo_cancelamento" TEXT,
+    "data_cancelamento" TIMESTAMP(3),
+    "valor_total" DECIMAL(12, 2),
+    "nome_cliente" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "NfeEmitida_company_id_idx" ON "NfeEmitida"("company_id");
+CREATE INDEX IF NOT EXISTS "NfeEmitida_data_emissao_idx" ON "NfeEmitida"("data_emissao" DESC);
+
+-- CartaCorrecao
+CREATE TABLE IF NOT EXISTS "CartaCorrecao" (
+    "id" TEXT NOT NULL,
+    "company_id" TEXT NOT NULL,
+    "nfe_emitida_id" TEXT NOT NULL,
+    "id_enotas" TEXT,
+    "sequencia" INTEGER NOT NULL DEFAULT 1,
+    "texto_correcao" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pendente',
+    "protocolo" TEXT,
+    "data_evento" TIMESTAMP(3),
+    "xml_url" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "CartaCorrecao_nfe_emitida_id_idx" ON "CartaCorrecao"("nfe_emitida_id");
+
+-- Inutilizacao
+CREATE TABLE IF NOT EXISTS "Inutilizacao" (
+    "id" TEXT NOT NULL,
+    "company_id" TEXT NOT NULL,
+    "id_enotas" TEXT,
+    "serie" INTEGER NOT NULL,
+    "numero_inicial" INTEGER NOT NULL,
+    "numero_final" INTEGER NOT NULL,
+    "justificativa" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pendente',
+    "protocolo" TEXT,
+    "xml_url" TEXT,
+    "ano" INTEGER NOT NULL,
+    "data_evento" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "Inutilizacao_company_id_idx" ON "Inutilizacao"("company_id");
+
+-- NfeLog
+CREATE TABLE IF NOT EXISTS "NfeLog" (
+    "id" TEXT NOT NULL,
+    "company_id" TEXT NOT NULL,
+    "nfe_emitida_id" TEXT,
+    "acao" TEXT NOT NULL,
+    "status_code" INTEGER,
+    "erro_codigo" TEXT,
+    "erro_mensagem" TEXT,
+    "payload_enviado" TEXT,
+    "resposta_enotas" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "NfeLog_company_id_idx" ON "NfeLog"("company_id");
+CREATE INDEX IF NOT EXISTS "NfeLog_nfe_emitida_id_idx" ON "NfeLog"("nfe_emitida_id");
+
+-- Foreign Keys fiscais
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema='public' AND table_name='NfeEmitida' AND constraint_name='NfeEmitida_pedido_id_fkey'
+  ) THEN
+    ALTER TABLE "NfeEmitida"
+      ADD CONSTRAINT "NfeEmitida_pedido_id_fkey"
+      FOREIGN KEY ("pedido_id") REFERENCES "Pedido"("pedido_id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema='public' AND table_name='CartaCorrecao' AND constraint_name='CartaCorrecao_nfe_emitida_id_fkey'
+  ) THEN
+    ALTER TABLE "CartaCorrecao"
+      ADD CONSTRAINT "CartaCorrecao_nfe_emitida_id_fkey"
+      FOREIGN KEY ("nfe_emitida_id") REFERENCES "NfeEmitida"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema='public' AND table_name='NfeLog' AND constraint_name='NfeLog_nfe_emitida_id_fkey'
+  ) THEN
+    ALTER TABLE "NfeLog"
+      ADD CONSTRAINT "NfeLog_nfe_emitida_id_fkey"
+      FOREIGN KEY ("nfe_emitida_id") REFERENCES "NfeEmitida"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
+
+-- ============== PRISMA MIGRATIONS BASELINE ==============
+-- Marca as migrations do Prisma como já aplicadas para que
+-- `prisma migrate deploy` no build do Vercel não falhe (P3005).
+
+CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
+    "id" VARCHAR(36) NOT NULL,
+    "checksum" VARCHAR(64) NOT NULL,
+    "finished_at" TIMESTAMPTZ,
+    "migration_name" VARCHAR(255) NOT NULL,
+    "logs" TEXT,
+    "rolled_back_at" TIMESTAMPTZ,
+    "started_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "applied_steps_count" INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY ("id")
+);
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '0_init', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '0_init');
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '20260331_add_tabelas_fiscais', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260331_add_tabelas_fiscais');
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '20260401_add_categorias_icones', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260401_add_categorias_icones');
