@@ -1,34 +1,33 @@
+import { withCapture } from '@/lib/sentry.js';
 import { classRepository } from '../repositories/class.js';
 import type { ClassCreate, ClassUpdate } from '../types/class.js';
 
-class ClassService {
+export const classService = {
 	async listClasses() {
-		return await classRepository.listAll();
-	}
+		return withCapture(() => classRepository.listAll());
+	},
 
 	async getClassById(id: string) {
-		return await classRepository.findById(id);
-	}
+		return withCapture(() => classRepository.findById(id));
+	},
 
 	async createClass(data: ClassCreate) {
-		return await classRepository.create(data);
-	}
+		return withCapture(() => classRepository.create(data));
+	},
 
 	async updateClass(id: string, data: ClassUpdate) {
-		return await classRepository.update(id, data);
-	}
+		return withCapture(() => classRepository.update(id, data));
+	},
 
 	async deleteClass(id: string) {
-		return await classRepository.delete(id);
-	}
+		return withCapture(() => classRepository.delete(id));
+	},
 
 	async addProduct(classId: string, productId: string) {
-		return await classRepository.addProduct(classId, productId);
-	}
+		return withCapture(() => classRepository.addProduct(classId, productId));
+	},
 
 	async removeProduct(classId: string, productId: string) {
-		return await classRepository.removeProduct(classId, productId);
-	}
-}
-
-export const classService = new ClassService();
+		return withCapture(() => classRepository.removeProduct(classId, productId));
+	},
+};

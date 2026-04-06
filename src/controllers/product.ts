@@ -12,60 +12,59 @@ export const getProductsController = async (
 	_request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const products = await productService.listProducts();
-		return reply.send(products);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: products, error } = await productService.listProducts();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(products);
 };
 
 export const createProductController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const data = createProductSchema.parse(request.body);
-		const product = await productService.createProduct(data);
-		return reply.status(201).send(product);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const data = createProductSchema.parse(request.body);
+	const { data: product, error } = await productService.createProduct(data);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(product);
 };
 
 export const updateProductStatusController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const { active } = updateProductStatusSchema.parse(request.body);
-		const product = await productService.updateProductStatus(
-			request.params.id,
-			active,
-		);
-		return reply.send(product);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { active } = updateProductStatusSchema.parse(request.body);
+	const { data: product, error } = await productService.updateProductStatus(
+		request.params.id,
+		active,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		const status = message === 'Product not found' ? 404 : 500;
 		return reply.status(status).send({ message });
 	}
+	return reply.send(product);
 };
 
 export const updateProductController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const data = updateProductSchema.parse(request.body);
-		const product = await productService.updateProduct(request.params.id, data);
-		return reply.send(product);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const data = updateProductSchema.parse(request.body);
+	const { data: product, error } = await productService.updateProduct(
+		request.params.id,
+		data,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		const status = message === 'Product not found' ? 404 : 500;
 		return reply.status(status).send({ message });
 	}
+	return reply.send(product);
 };
 
 export const updateProductFormController = async (
@@ -97,7 +96,16 @@ export const updateProductFormController = async (
 		if (fields.price) data.price = Number(fields.price);
 		if (fields.refundDays) data.refundDays = Number(fields.refundDays);
 
-		let product = await productService.updateProduct(request.params.id, data);
+		const { data: updatedProduct, error: updateError } =
+			await productService.updateProduct(request.params.id, data);
+		if (updateError) {
+			const message =
+				updateError instanceof Error ? updateError.message : 'Unknown error';
+			const status = message === 'Product not found' ? 404 : 500;
+			return reply.status(status).send({ message });
+		}
+
+		let product = updatedProduct;
 
 		if (fileBuffer) {
 			const storagePath = `${request.params.id}/${crypto.randomUUID()}.${fileExt}`;
@@ -144,12 +152,11 @@ export const deleteProductController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		await productService.deleteProduct(request.params.id);
-		return reply.status(204).send();
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { error } = await productService.deleteProduct(request.params.id);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		const status = message === 'Product not found' ? 404 : 500;
 		return reply.status(status).send({ message });
 	}
+	return reply.status(204).send();
 };

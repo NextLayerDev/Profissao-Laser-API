@@ -18,56 +18,57 @@ export const createLessonController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const data = createLessonSchema.parse(request.body);
-		const lesson = await lessonService.create(data);
-		return reply.status(201).send(lesson);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const data = createLessonSchema.parse(request.body);
+	const { data: lesson, error } = await lessonService.create(data);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(lesson);
 };
 
 export const updateLessonController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const data = updateLessonSchema.parse(request.body);
-		const lesson = await lessonService.update(request.params.id, data);
-		return reply.send(lesson);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const data = updateLessonSchema.parse(request.body);
+	const { data: lesson, error } = await lessonService.update(
+		request.params.id,
+		data,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		const status = message === 'Lesson not found' ? 404 : 500;
 		return reply.status(status).send({ message });
 	}
+	return reply.send(lesson);
 };
 
 export const deleteLessonController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		await lessonService.delete(request.params.id);
-		return reply.status(204).send();
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { error } = await lessonService.delete(request.params.id);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		const status = message === 'Lesson not found' ? 404 : 500;
 		return reply.status(status).send({ message });
 	}
+	return reply.status(204).send();
 };
 
 export const listLessonsController = async (
 	request: FastifyRequest<{ Params: { moduleId: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const lessons = await lessonService.listByModule(request.params.moduleId);
-		return reply.send(lessons);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: lessons, error } = await lessonService.listByModule(
+		request.params.moduleId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(lessons);
 };
 
 export const createPresignedVideoUrlController = async (
@@ -143,12 +144,11 @@ export const reorderLessonsController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const { lessonIds } = reorderLessonsSchema.parse(request.body);
-		await lessonService.reorder(lessonIds);
-		return reply.status(204).send();
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { lessonIds } = reorderLessonsSchema.parse(request.body);
+	const { error } = await lessonService.reorder(lessonIds);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(204).send();
 };

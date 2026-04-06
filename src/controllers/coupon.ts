@@ -15,7 +15,11 @@ export const createCouponController = async (
 				.send({ message: 'percent_off or amount_off is required.' });
 		}
 
-		const coupon = await productService.createCoupon(data);
+		const { data: coupon, error } = await productService.createCoupon(data);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(500).send({ message });
+		}
 		return reply.status(201).send(coupon);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
@@ -27,26 +31,25 @@ export const getCouponsByProductController = async (
 	request: FastifyRequest<{ Params: { product_id: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const { product_id } = request.params;
-		const coupons = await productService.listCouponsByProduct(product_id);
-		return reply.send(coupons);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { product_id } = request.params;
+	const { data: coupons, error } =
+		await productService.listCouponsByProduct(product_id);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(coupons);
 };
 
 export const deleteCouponController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const { id } = request.params;
-		const deleted = await productService.deleteCoupon(id);
-		return reply.send(deleted);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { id } = request.params;
+	const { data: deleted, error } = await productService.deleteCoupon(id);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(deleted);
 };

@@ -23,6 +23,16 @@ class ProvisioningRepository {
 		return result;
 	}
 
+	async findNamesByEmails(emails: string[]): Promise<Record<string, string>> {
+		if (emails.length === 0) return {};
+		const { data, error } = await supabase
+			.from('pl_provisioning_customer')
+			.select('email, name')
+			.in('email', emails);
+		if (error) throw new Error(error.message);
+		return Object.fromEntries((data ?? []).map((r) => [r.email, r.name]));
+	}
+
 	async findCustomerByEmail(email: string) {
 		const { data, error } = await supabase
 			.from('pl_provisioning_customer')
@@ -242,6 +252,15 @@ class ProvisioningRepository {
 			.maybeSingle();
 		if (error) throw new Error(error.message);
 		return data as Tenant | null;
+	}
+
+	async findAllTenants() {
+		const { data, error } = await supabase
+			.from('pl_tenant')
+			.select('*, pl_provisioning_customer(name, email)')
+			.order('created_at', { ascending: false });
+		if (error) throw new Error(error.message);
+		return data ?? [];
 	}
 
 	async findActiveTenantByCustomerEmail(email: string) {

@@ -10,16 +10,17 @@ export const createPromoLinkController = async (
 	request: FastifyRequest<{ Body: CreatePromoLink }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const user = request.currentUser;
-		if (!user || !user.email) {
-			return reply.status(401).send({ message: 'Authentication required' });
-		}
+	const user = request.currentUser;
+	if (!user || !user.email) {
+		return reply.status(401).send({ message: 'Authentication required' });
+	}
 
-		const result = await promoLinkService.createLink(request.body, user.email);
-		return reply.status(201).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await promoLinkService.createLink(
+		request.body,
+		user.email,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		if (message.includes('not configured for payments')) {
 			return reply.status(400).send({ message });
 		}
@@ -28,17 +29,18 @@ export const createPromoLinkController = async (
 		}
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(result);
 };
 
 export const getPromoLinkInfoController = async (
 	request: FastifyRequest<{ Params: { token: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await promoLinkService.getLinkInfo(request.params.token);
-		return reply.status(200).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await promoLinkService.getLinkInfo(
+		request.params.token,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		if (message.includes('not found')) {
 			return reply.status(404).send({ message });
 		}
@@ -51,6 +53,7 @@ export const getPromoLinkInfoController = async (
 		}
 		return reply.status(500).send({ message });
 	}
+	return reply.status(200).send(result);
 };
 
 export const redeemPromoLinkController = async (
@@ -60,14 +63,12 @@ export const redeemPromoLinkController = async (
 	}>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await promoLinkService.redeemLink(
-			request.params.token,
-			request.body,
-		);
-		return reply.status(201).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await promoLinkService.redeemLink(
+		request.params.token,
+		request.body,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		if (message.includes('not found')) {
 			return reply.status(404).send({ message });
 		}
@@ -86,6 +87,7 @@ export const redeemPromoLinkController = async (
 		}
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(result);
 };
 
 export const updatePromoLinkStatusController = async (
@@ -95,30 +97,28 @@ export const updatePromoLinkStatusController = async (
 	}>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await promoLinkService.updateStatus(
-			request.params.id,
-			request.body,
-		);
-		return reply.status(200).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await promoLinkService.updateStatus(
+		request.params.id,
+		request.body,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		if (message.includes('not found')) {
 			return reply.status(404).send({ message });
 		}
 		return reply.status(500).send({ message });
 	}
+	return reply.status(200).send(result);
 };
 
 export const listPromoLinksController = async (
 	_request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await promoLinkService.listLinks();
-		return reply.status(200).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await promoLinkService.listLinks();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(200).send(result);
 };

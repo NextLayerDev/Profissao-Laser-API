@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate, authenticateAdmin } from '@/middleware/auth.js';
+import {
+	authenticate,
+	authenticateAdmin,
+	authenticateCustomer,
+} from '@/middleware/auth.js';
 import {
 	createPurchaseController,
 	createSubscriptionController,
@@ -86,7 +90,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 	server.post(
 		'/subscription/upgrade',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateCustomer],
 			schema: {
 				description: 'Upgrade the current subscription to a higher plan.',
 				body: planChangeBodySchema,
@@ -105,7 +109,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 	server.post(
 		'/subscription/downgrade',
 		{
-			preHandler: [authenticate],
+			preHandler: [authenticateCustomer],
 			schema: {
 				description: 'Downgrade the current subscription to a lower plan.',
 				body: planChangeBodySchema,
@@ -139,6 +143,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 							customer: z.object({
 								name: z.string(),
 								email: z.string(),
+								phone: z.string().nullable(),
 							}),
 							receipt_url: z.string().nullable(),
 						}),
@@ -177,6 +182,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 							customer: z.object({
 								name: z.string(),
 								email: z.string(),
+								phone: z.string().nullable(),
 							}),
 							receipt_url: z.string().nullable(),
 						}),

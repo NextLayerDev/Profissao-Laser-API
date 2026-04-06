@@ -568,178 +568,178 @@ CREATE INDEX IF NOT EXISTS "idx_iamsg_chat_seq" ON "IAMessage"("chat_id", "seque
 
 ALTER TABLE "ConfiguracaoLoja" ADD COLUMN IF NOT EXISTS "categoriasIcones" JSONB NOT NULL DEFAULT '[]'::jsonb;
 
--- ============== TABELAS FISCAIS (migration 20260331) ==============
+-- ============== FISCAL / NFe ==============
 
 -- DadosFiscaisEmpresa
 CREATE TABLE IF NOT EXISTS "DadosFiscaisEmpresa" (
-    "id" TEXT NOT NULL,
-    "company_id" TEXT NOT NULL,
-    "razao_social" TEXT NOT NULL DEFAULT '',
-    "nome_fantasia" TEXT NOT NULL DEFAULT '',
-    "cnpj" TEXT NOT NULL DEFAULT '',
-    "inscricao_estadual" TEXT NOT NULL DEFAULT '',
-    "inscricao_municipal" TEXT,
-    "codigo_regime_tributario" INTEGER NOT NULL DEFAULT 1,
-    "logradouro" TEXT NOT NULL DEFAULT '',
-    "numero" TEXT NOT NULL DEFAULT '',
-    "complemento" TEXT,
-    "bairro" TEXT NOT NULL DEFAULT '',
-    "municipio" TEXT NOT NULL DEFAULT '',
-    "uf" TEXT NOT NULL DEFAULT '',
-    "cep" TEXT NOT NULL DEFAULT '',
-    "codigo_municipio" TEXT,
-    "codigo_pais" TEXT DEFAULT '1058',
-    "telefone" TEXT,
-    "email" TEXT,
-    "ambiente" INTEGER NOT NULL DEFAULT 1,
-    "serie" INTEGER NOT NULL DEFAULT 1,
-    "numero_nota_atual" INTEGER NOT NULL DEFAULT 1,
-    "tipo_certificado" TEXT,
-    "certificado_url" TEXT,
-    "senha_certificado" TEXT,
-    "validade_certificado" TIMESTAMP(3),
+    "id"                        TEXT        NOT NULL,
+    "company_id"                TEXT        NOT NULL,
+    "razao_social"              TEXT        NOT NULL DEFAULT '',
+    "nome_fantasia"             TEXT        NOT NULL DEFAULT '',
+    "cnpj"                      TEXT        NOT NULL DEFAULT '',
+    "inscricao_estadual"        TEXT        NOT NULL DEFAULT '',
+    "inscricao_municipal"       TEXT,
+    "codigo_regime_tributario"  INTEGER     NOT NULL DEFAULT 1,
+    "logradouro"                TEXT        NOT NULL DEFAULT '',
+    "numero"                    TEXT        NOT NULL DEFAULT '',
+    "complemento"               TEXT,
+    "bairro"                    TEXT        NOT NULL DEFAULT '',
+    "municipio"                 TEXT        NOT NULL DEFAULT '',
+    "uf"                        TEXT        NOT NULL DEFAULT '',
+    "cep"                       TEXT        NOT NULL DEFAULT '',
+    "codigo_municipio"          TEXT,
+    "codigo_pais"               TEXT                 DEFAULT '1058',
+    "telefone"                  TEXT,
+    "email"                     TEXT,
+    "ambiente"                  INTEGER     NOT NULL DEFAULT 1,
+    "serie"                     INTEGER     NOT NULL DEFAULT 1,
+    "numero_nota_atual"         INTEGER     NOT NULL DEFAULT 1,
+    "tipo_certificado"          TEXT,
+    "certificado_url"           TEXT,
+    "senha_certificado"         TEXT,
+    "validade_certificado"      TIMESTAMPTZ,
     "serial_number_certificado" TEXT,
-    "csc_id" TEXT,
-    "csc_token" TEXT,
-    "modelo_documento" TEXT DEFAULT '55',
-    "id_enotas" TEXT,
-    "emissao_nfe_ativa" BOOLEAN NOT NULL DEFAULT true,
-    "ativo" BOOLEAN NOT NULL DEFAULT true,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "csc_id"                    TEXT,
+    "csc_token"                 TEXT,
+    "modelo_documento"          TEXT                 DEFAULT '55',
+    "id_enotas"                 TEXT,
+    "emissao_nfe_ativa"         BOOLEAN     NOT NULL DEFAULT true,
+    "ativo"                     BOOLEAN     NOT NULL DEFAULT true,
+    "created_at"                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at"                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY ("id")
 );
-CREATE INDEX IF NOT EXISTS "DadosFiscaisEmpresa_company_id_idx" ON "DadosFiscaisEmpresa"("company_id");
+CREATE INDEX IF NOT EXISTS "idx_dados_fiscais_company_id" ON "DadosFiscaisEmpresa"("company_id");
 
 -- ConfiguracaoFiscal
 CREATE TABLE IF NOT EXISTS "ConfiguracaoFiscal" (
-    "id" TEXT NOT NULL,
-    "company_id" TEXT NOT NULL,
-    "tipo_emissao" INTEGER NOT NULL DEFAULT 1,
-    "forma_pagamento_padrao" INTEGER NOT NULL DEFAULT 99,
-    "tipo_impressao" INTEGER NOT NULL DEFAULT 1,
-    "ncm_padrao" TEXT,
-    "cfop_saida_estado" INTEGER,
-    "cfop_saida_fora_estado" INTEGER,
-    "cfop_entrada_estado" INTEGER,
-    "cfop_entrada_fora_estado" INTEGER,
-    "aliquota_icms_padrao" DECIMAL(5, 2),
-    "aliquota_ipi_padrao" DECIMAL(5, 2),
-    "aliquota_pis_padrao" DECIMAL(5, 2),
-    "aliquota_cofins_padrao" DECIMAL(5, 2),
-    "icms_situacao_tributaria" TEXT,
-    "icms_origem" INTEGER,
-    "pis_situacao_tributaria" TEXT,
-    "cofins_situacao_tributaria" TEXT,
-    "percentual_aproximado_tributos" DECIMAL(5, 2),
-    "ibs_cbs_classificacao" TEXT,
-    "backup_automatico" BOOLEAN DEFAULT false,
-    "dias_retencao_backup" INTEGER,
-    "observacoes" TEXT,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "id"                             TEXT        NOT NULL,
+    "company_id"                     TEXT        NOT NULL UNIQUE,
+    "tipo_emissao"                   INTEGER     NOT NULL DEFAULT 1,
+    "forma_pagamento_padrao"         INTEGER     NOT NULL DEFAULT 99,
+    "tipo_impressao"                 INTEGER     NOT NULL DEFAULT 1,
+    "ncm_padrao"                     TEXT,
+    "cfop_saida_estado"              INTEGER,
+    "cfop_saida_fora_estado"         INTEGER,
+    "cfop_entrada_estado"            INTEGER,
+    "cfop_entrada_fora_estado"       INTEGER,
+    "aliquota_icms_padrao"           NUMERIC(5,2),
+    "aliquota_ipi_padrao"            NUMERIC(5,2),
+    "aliquota_pis_padrao"            NUMERIC(5,2),
+    "aliquota_cofins_padrao"         NUMERIC(5,2),
+    "icms_situacao_tributaria"       TEXT,
+    "icms_origem"                    INTEGER,
+    "pis_situacao_tributaria"        TEXT,
+    "cofins_situacao_tributaria"     TEXT,
+    "percentual_aproximado_tributos" NUMERIC(5,2),
+    "ibs_cbs_classificacao"          TEXT,
+    "backup_automatico"              BOOLEAN              DEFAULT false,
+    "dias_retencao_backup"           INTEGER,
+    "observacoes"                    TEXT,
+    "created_at"                     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at"                     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY ("id")
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "ConfiguracaoFiscal_company_id_key" ON "ConfiguracaoFiscal"("company_id");
 
 -- PadraoFiscal
 CREATE TABLE IF NOT EXISTS "PadraoFiscal" (
-    "id" TEXT NOT NULL,
-    "company_id" TEXT NOT NULL,
-    "nome" TEXT NOT NULL DEFAULT '',
-    "ncm_padrao" TEXT,
-    "cfop_saida_estado" INTEGER,
-    "cfop_saida_fora_estado" INTEGER,
-    "cfop_entrada_estado" INTEGER,
+    "id"                       TEXT        NOT NULL,
+    "company_id"               TEXT        NOT NULL,
+    "nome"                     TEXT        NOT NULL DEFAULT '',
+    "ncm_padrao"               TEXT,
+    "cfop_saida_estado"        INTEGER,
+    "cfop_saida_fora_estado"   INTEGER,
+    "cfop_entrada_estado"      INTEGER,
     "cfop_entrada_fora_estado" INTEGER,
-    "principal" BOOLEAN NOT NULL DEFAULT false,
-    "ordem" INTEGER NOT NULL DEFAULT 1,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "principal"                BOOLEAN     NOT NULL DEFAULT false,
+    "ordem"                    INTEGER     NOT NULL DEFAULT 1,
+    "created_at"               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at"               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY ("id")
 );
-CREATE INDEX IF NOT EXISTS "PadraoFiscal_company_id_idx" ON "PadraoFiscal"("company_id");
+CREATE INDEX IF NOT EXISTS "idx_padrao_fiscal_company_id" ON "PadraoFiscal"("company_id");
 
 -- NfeEmitida
 CREATE TABLE IF NOT EXISTS "NfeEmitida" (
-    "id" TEXT NOT NULL,
-    "company_id" TEXT NOT NULL,
-    "pedido_id" TEXT,
-    "tipo_operacao" TEXT NOT NULL,
-    "chave_acesso" TEXT,
-    "numero" INTEGER NOT NULL,
-    "serie" INTEGER NOT NULL,
-    "xml_url" TEXT,
-    "pdf_url" TEXT,
-    "data_emissao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "id_enotas" TEXT,
-    "status" TEXT NOT NULL DEFAULT 'pendente',
-    "protocolo" TEXT,
+    "id"                  TEXT        NOT NULL,
+    "company_id"          TEXT        NOT NULL,
+    "pedido_id"           TEXT,
+    "tipo_operacao"       TEXT        NOT NULL,
+    "chave_acesso"        TEXT,
+    "numero"              INTEGER     NOT NULL,
+    "serie"               INTEGER     NOT NULL,
+    "xml_url"             TEXT,
+    "pdf_url"             TEXT,
+    "data_emissao"        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "id_enotas"           TEXT,
+    "status"              TEXT        NOT NULL DEFAULT 'pendente',
+    "protocolo"           TEXT,
     "motivo_cancelamento" TEXT,
-    "data_cancelamento" TIMESTAMP(3),
-    "valor_total" DECIMAL(12, 2),
-    "nome_cliente" TEXT,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "data_cancelamento"   TIMESTAMPTZ,
+    "valor_total"         NUMERIC(12,2),
+    "nome_cliente"        TEXT,
+    "created_at"          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at"          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY ("id")
 );
-CREATE INDEX IF NOT EXISTS "NfeEmitida_company_id_idx" ON "NfeEmitida"("company_id");
-CREATE INDEX IF NOT EXISTS "NfeEmitida_data_emissao_idx" ON "NfeEmitida"("data_emissao" DESC);
+CREATE INDEX IF NOT EXISTS "idx_nfe_emitida_company_id"   ON "NfeEmitida"("company_id");
+CREATE INDEX IF NOT EXISTS "idx_nfe_emitida_data_emissao" ON "NfeEmitida"("data_emissao" DESC);
 
 -- CartaCorrecao
 CREATE TABLE IF NOT EXISTS "CartaCorrecao" (
-    "id" TEXT NOT NULL,
-    "company_id" TEXT NOT NULL,
-    "nfe_emitida_id" TEXT NOT NULL,
-    "id_enotas" TEXT,
-    "sequencia" INTEGER NOT NULL DEFAULT 1,
-    "texto_correcao" TEXT NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'pendente',
-    "protocolo" TEXT,
-    "data_evento" TIMESTAMP(3),
-    "xml_url" TEXT,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY ("id")
+    "id"              TEXT        NOT NULL,
+    "company_id"      TEXT        NOT NULL,
+    "nfe_emitida_id"  TEXT        NOT NULL,
+    "id_enotas"       TEXT,
+    "sequencia"       INTEGER     NOT NULL DEFAULT 1,
+    "texto_correcao"  TEXT        NOT NULL,
+    "status"          TEXT        NOT NULL DEFAULT 'pendente',
+    "protocolo"       TEXT,
+    "data_evento"     TIMESTAMPTZ,
+    "xml_url"         TEXT,
+    "created_at"      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY ("id"),
+    FOREIGN KEY ("nfe_emitida_id") REFERENCES "NfeEmitida"("id") ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS "CartaCorrecao_nfe_emitida_id_idx" ON "CartaCorrecao"("nfe_emitida_id");
+CREATE INDEX IF NOT EXISTS "idx_carta_correcao_nfe_id" ON "CartaCorrecao"("nfe_emitida_id");
 
 -- Inutilizacao
 CREATE TABLE IF NOT EXISTS "Inutilizacao" (
-    "id" TEXT NOT NULL,
-    "company_id" TEXT NOT NULL,
-    "id_enotas" TEXT,
-    "serie" INTEGER NOT NULL,
-    "numero_inicial" INTEGER NOT NULL,
-    "numero_final" INTEGER NOT NULL,
-    "justificativa" TEXT NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'pendente',
-    "protocolo" TEXT,
-    "xml_url" TEXT,
-    "ano" INTEGER NOT NULL,
-    "data_evento" TIMESTAMP(3),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "id"             TEXT        NOT NULL,
+    "company_id"     TEXT        NOT NULL,
+    "id_enotas"      TEXT,
+    "serie"          INTEGER     NOT NULL,
+    "numero_inicial" INTEGER     NOT NULL,
+    "numero_final"   INTEGER     NOT NULL,
+    "justificativa"  TEXT        NOT NULL,
+    "status"         TEXT        NOT NULL DEFAULT 'pendente',
+    "protocolo"      TEXT,
+    "xml_url"        TEXT,
+    "ano"            INTEGER     NOT NULL,
+    "data_evento"    TIMESTAMPTZ,
+    "created_at"     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY ("id")
 );
-CREATE INDEX IF NOT EXISTS "Inutilizacao_company_id_idx" ON "Inutilizacao"("company_id");
+CREATE INDEX IF NOT EXISTS "idx_inutilizacao_company_id" ON "Inutilizacao"("company_id");
 
 -- NfeLog
 CREATE TABLE IF NOT EXISTS "NfeLog" (
-    "id" TEXT NOT NULL,
-    "company_id" TEXT NOT NULL,
-    "nfe_emitida_id" TEXT,
-    "acao" TEXT NOT NULL,
-    "status_code" INTEGER,
-    "erro_codigo" TEXT,
-    "erro_mensagem" TEXT,
+    "id"              TEXT        NOT NULL,
+    "company_id"      TEXT        NOT NULL,
+    "nfe_emitida_id"  TEXT,
+    "acao"            TEXT        NOT NULL,
+    "status_code"     INTEGER,
+    "erro_codigo"     TEXT,
+    "erro_mensagem"   TEXT,
     "payload_enviado" TEXT,
     "resposta_enotas" TEXT,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at"      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY ("id")
 );
-CREATE INDEX IF NOT EXISTS "NfeLog_company_id_idx" ON "NfeLog"("company_id");
-CREATE INDEX IF NOT EXISTS "NfeLog_nfe_emitida_id_idx" ON "NfeLog"("nfe_emitida_id");
+CREATE INDEX IF NOT EXISTS "idx_nfe_log_company_id"      ON "NfeLog"("company_id");
+CREATE INDEX IF NOT EXISTS "idx_nfe_log_nfe_emitida_id"  ON "NfeLog"("nfe_emitida_id");
 
--- Foreign Keys fiscais
+-- Foreign Keys fiscais (idempotente)
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.table_constraints
@@ -748,17 +748,6 @@ DO $$ BEGIN
     ALTER TABLE "NfeEmitida"
       ADD CONSTRAINT "NfeEmitida_pedido_id_fkey"
       FOREIGN KEY ("pedido_id") REFERENCES "Pedido"("pedido_id") ON DELETE SET NULL ON UPDATE CASCADE;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema='public' AND table_name='CartaCorrecao' AND constraint_name='CartaCorrecao_nfe_emitida_id_fkey'
-  ) THEN
-    ALTER TABLE "CartaCorrecao"
-      ADD CONSTRAINT "CartaCorrecao_nfe_emitida_id_fkey"
-      FOREIGN KEY ("nfe_emitida_id") REFERENCES "NfeEmitida"("id") ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 END $$;
 

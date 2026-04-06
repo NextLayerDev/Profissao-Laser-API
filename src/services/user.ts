@@ -1,26 +1,25 @@
+import { withCapture } from '@/lib/sentry.js';
 import { usersRepository } from '../repositories/user.js';
 import type { UserUpdate } from '../types/user.js';
 
-export class UsersService {
+export const usersService = {
 	async getAllUsers() {
-		return await usersRepository.getAllUsers();
-	}
+		return withCapture(() => usersRepository.getAllUsers());
+	},
 
 	async getUserById(id: string) {
-		return await usersRepository.getUser(id);
-	}
+		return withCapture(() => usersRepository.getUser(id));
+	},
 
 	async updateUser(id: string, data: UserUpdate) {
-		return await usersRepository.updateUser(id, data);
-	}
+		return withCapture(() => usersRepository.updateUser(id, data));
+	},
 
 	async deleteUser(id: string) {
-		return await usersRepository.deleteUser(id);
-	}
+		return withCapture(() => usersRepository.deleteUser(id));
+	},
 
 	async getUserPermissions(id: string) {
-		return await usersRepository.getUserPermissions(id);
-	}
-}
-
-export const usersService = new UsersService();
+		return withCapture(() => usersRepository.getUserPermissions(id));
+	},
+};

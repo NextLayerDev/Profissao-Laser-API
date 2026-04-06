@@ -80,6 +80,14 @@ export async function uploadDoubtFile(
 	return upload('doubt-files', buffer, path, mimetype);
 }
 
+export async function uploadVectorSupportFile(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('vector-support-files', buffer, path, mimetype);
+}
+
 export async function uploadFaqImage(
 	buffer: Buffer,
 	path: string,

@@ -1,5 +1,5 @@
+import { supabase } from '../lib/supabase.js';
 import type { ProvisioningPlan } from '../types/provisioning.js';
-import { supabase } from './supabase.js';
 
 export const PLAN_ORDER: Record<ProvisioningPlan, number> = {
 	prata: 1,

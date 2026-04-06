@@ -10,34 +10,31 @@ export const createGlobalPromoLinkController = async (
 	request: FastifyRequest<{ Body: CreateGlobalPromoLink }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const user = request.currentUser;
-		if (!user || !user.email) {
-			return reply.status(401).send({ message: 'Authentication required' });
-		}
+	const user = request.currentUser;
+	if (!user || !user.email) {
+		return reply.status(401).send({ message: 'Authentication required' });
+	}
 
-		const result = await globalPromoLinkService.createLink(
-			request.body,
-			user.email,
-		);
-		return reply.status(201).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await globalPromoLinkService.createLink(
+		request.body,
+		user.email,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(result);
 };
 
 export const getGlobalPromoLinkInfoController = async (
 	request: FastifyRequest<{ Params: { token: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await globalPromoLinkService.getLinkInfo(
-			request.params.token,
-		);
-		return reply.status(200).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await globalPromoLinkService.getLinkInfo(
+		request.params.token,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		if (message.includes('not found')) {
 			return reply.status(404).send({ message });
 		}
@@ -50,6 +47,7 @@ export const getGlobalPromoLinkInfoController = async (
 		}
 		return reply.status(500).send({ message });
 	}
+	return reply.status(200).send(result);
 };
 
 export const redeemGlobalPromoLinkController = async (
@@ -59,14 +57,12 @@ export const redeemGlobalPromoLinkController = async (
 	}>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await globalPromoLinkService.redeemLink(
-			request.params.token,
-			request.body,
-		);
-		return reply.status(201).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await globalPromoLinkService.redeemLink(
+		request.params.token,
+		request.body,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		if (message.includes('not found')) {
 			return reply.status(404).send({ message });
 		}
@@ -88,6 +84,7 @@ export const redeemGlobalPromoLinkController = async (
 		}
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(result);
 };
 
 export const updateGlobalPromoLinkStatusController = async (
@@ -97,30 +94,28 @@ export const updateGlobalPromoLinkStatusController = async (
 	}>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await globalPromoLinkService.updateStatus(
-			request.params.id,
-			request.body,
-		);
-		return reply.status(200).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await globalPromoLinkService.updateStatus(
+		request.params.id,
+		request.body,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		if (message.includes('not found')) {
 			return reply.status(404).send({ message });
 		}
 		return reply.status(500).send({ message });
 	}
+	return reply.status(200).send(result);
 };
 
 export const listGlobalPromoLinksController = async (
 	_request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const result = await globalPromoLinkService.listLinks();
-		return reply.status(200).send(result);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: result, error } = await globalPromoLinkService.listLinks();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(200).send(result);
 };

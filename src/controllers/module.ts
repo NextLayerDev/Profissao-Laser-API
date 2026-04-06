@@ -10,68 +10,68 @@ export const createModuleController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const data = createModuleSchema.parse(request.body);
-		const module = await moduleService.create(data);
-		return reply.status(201).send(module);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const data = createModuleSchema.parse(request.body);
+	const { data: module, error } = await moduleService.create(data);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(201).send(module);
 };
 
 export const updateModuleController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const data = updateModuleSchema.parse(request.body);
-		const module = await moduleService.update(request.params.id, data);
-		return reply.send(module);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const data = updateModuleSchema.parse(request.body);
+	const { data: module, error } = await moduleService.update(
+		request.params.id,
+		data,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		const status = message === 'Module not found' ? 404 : 500;
 		return reply.status(status).send({ message });
 	}
+	return reply.send(module);
 };
 
 export const deleteModuleController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		await moduleService.delete(request.params.id);
-		return reply.status(204).send();
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { error } = await moduleService.delete(request.params.id);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		const status = message === 'Module not found' ? 404 : 500;
 		return reply.status(status).send({ message });
 	}
+	return reply.status(204).send();
 };
 
 export const listModulesController = async (
 	request: FastifyRequest<{ Params: { productId: string } }>,
 	reply: FastifyReply,
 ) => {
-	try {
-		const modules = await moduleService.listByProduct(request.params.productId);
-		return reply.send(modules);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { data: modules, error } = await moduleService.listByProduct(
+		request.params.productId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.send(modules);
 };
 
 export const reorderModulesController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	try {
-		const { moduleIds } = reorderModulesSchema.parse(request.body);
-		await moduleService.reorder(moduleIds);
-		return reply.status(204).send();
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
+	const { moduleIds } = reorderModulesSchema.parse(request.body);
+	const { error } = await moduleService.reorder(moduleIds);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+	return reply.status(204).send();
 };
