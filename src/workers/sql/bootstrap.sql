@@ -6,6 +6,13 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- PlanType enum (usado pelo Prisma no campo Company.plan)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PlanType') THEN
+    CREATE TYPE "PlanType" AS ENUM ('PRATA', 'OURO', 'PLATINA');
+  END IF;
+END $$;
+
 -- Company
 CREATE TABLE IF NOT EXISTS "Company" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
@@ -557,6 +564,10 @@ CREATE TABLE IF NOT EXISTS "IAMessage" (
 CREATE INDEX IF NOT EXISTS "idx_iamsg_chat_id" ON "IAMessage"("chat_id");
 CREATE INDEX IF NOT EXISTS "idx_iamsg_chat_seq" ON "IAMessage"("chat_id", "sequence_order");
 
+-- ============== CATEGORIAS ICONES (migration 20260401) ==============
+
+ALTER TABLE "ConfiguracaoLoja" ADD COLUMN IF NOT EXISTS "categoriasIcones" JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 -- ============== FISCAL / NFe ==============
 
 -- DadosFiscaisEmpresa
@@ -727,3 +738,54 @@ CREATE TABLE IF NOT EXISTS "NfeLog" (
 );
 CREATE INDEX IF NOT EXISTS "idx_nfe_log_company_id"      ON "NfeLog"("company_id");
 CREATE INDEX IF NOT EXISTS "idx_nfe_log_nfe_emitida_id"  ON "NfeLog"("nfe_emitida_id");
+
+-- Foreign Keys fiscais (idempotente)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema='public' AND table_name='NfeEmitida' AND constraint_name='NfeEmitida_pedido_id_fkey'
+  ) THEN
+    ALTER TABLE "NfeEmitida"
+      ADD CONSTRAINT "NfeEmitida_pedido_id_fkey"
+      FOREIGN KEY ("pedido_id") REFERENCES "Pedido"("pedido_id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema='public' AND table_name='NfeLog' AND constraint_name='NfeLog_nfe_emitida_id_fkey'
+  ) THEN
+    ALTER TABLE "NfeLog"
+      ADD CONSTRAINT "NfeLog_nfe_emitida_id_fkey"
+      FOREIGN KEY ("nfe_emitida_id") REFERENCES "NfeEmitida"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
+
+-- ============== PRISMA MIGRATIONS BASELINE ==============
+-- Marca as migrations do Prisma como já aplicadas para que
+-- `prisma migrate deploy` no build do Vercel não falhe (P3005).
+
+CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
+    "id" VARCHAR(36) NOT NULL,
+    "checksum" VARCHAR(64) NOT NULL,
+    "finished_at" TIMESTAMPTZ,
+    "migration_name" VARCHAR(255) NOT NULL,
+    "logs" TEXT,
+    "rolled_back_at" TIMESTAMPTZ,
+    "started_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "applied_steps_count" INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY ("id")
+);
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '0_init', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '0_init');
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '20260331_add_tabelas_fiscais', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260331_add_tabelas_fiscais');
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '20260401_add_categorias_icones', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260401_add_categorias_icones');
