@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-// ── Files ────────────────────────────────────────────────────────────────────
-
 export const vectorSupportFileSchema = z.object({
 	id: z.string(),
 	messageId: z.string(),
@@ -10,8 +8,6 @@ export const vectorSupportFileSchema = z.object({
 	fileType: z.string(),
 	createdAt: z.string(),
 });
-
-// ── Messages ─────────────────────────────────────────────────────────────────
 
 export const vectorSupportMessageSchema = z.object({
 	id: z.string(),
@@ -23,8 +19,6 @@ export const vectorSupportMessageSchema = z.object({
 	files: z.array(vectorSupportFileSchema),
 	createdAt: z.string(),
 });
-
-// ── Tickets ──────────────────────────────────────────────────────────────────
 
 export const vectorSupportTicketSummarySchema = z.object({
 	id: z.string(),
@@ -41,8 +35,6 @@ export const vectorSupportTicketSchema =
 		messages: z.array(vectorSupportMessageSchema),
 	});
 
-// ── Input schemas ────────────────────────────────────────────────────────────
-
 export const createTicketSchema = z.object({
 	subject: z.string().min(1),
 	initialMessage: z.string().min(1).optional(),
@@ -51,8 +43,6 @@ export const createTicketSchema = z.object({
 export const sendVectorSupportMessageSchema = z.object({
 	content: z.string().min(1).optional(),
 });
-
-// ── Types ────────────────────────────────────────────────────────────────────
 
 export type VectorSupportFile = z.infer<typeof vectorSupportFileSchema>;
 export type VectorSupportMessage = z.infer<typeof vectorSupportMessageSchema>;

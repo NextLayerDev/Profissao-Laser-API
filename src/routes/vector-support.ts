@@ -17,8 +17,6 @@ import {
 } from '../types/vector-support.js';
 
 export async function vectorSupportRoute(server: FastifyInstance) {
-	// ── Customer Tickets ──────────────────────────────────────────────────────
-
 	server.get(
 		'/vector-support/tickets',
 		{
@@ -75,8 +73,6 @@ export async function vectorSupportRoute(server: FastifyInstance) {
 		getTicketController,
 	);
 
-	// ── Admin Tickets ─────────────────────────────────────────────────────────
-
 	server.get(
 		'/vector-support/tickets/admin',
 		{
@@ -96,8 +92,6 @@ export async function vectorSupportRoute(server: FastifyInstance) {
 		listAdminTicketsController,
 	);
 
-	// ── Messages ──────────────────────────────────────────────────────────────
-
 	server.post(
 		'/vector-support/tickets/:id/messages',
 		{
@@ -116,8 +110,6 @@ export async function vectorSupportRoute(server: FastifyInstance) {
 		},
 		sendMessageController,
 	);
-
-	// ── Close ─────────────────────────────────────────────────────────────────
 
 	server.post(
 		'/vector-support/tickets/:id/close',

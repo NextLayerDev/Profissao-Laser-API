@@ -13,8 +13,6 @@ import type {
 } from '../types/community.js';
 
 export const communityService = {
-	// ── Posts ────────────────────────────────────────────────────────────────
-
 	async listPosts(page: number, limit: number, currentUserId: string) {
 		return withCapture(() =>
 			communityRepository.listPosts(page, limit, currentUserId),
@@ -35,8 +33,6 @@ export const communityService = {
 		);
 	},
 
-	// ── Channels ─────────────────────────────────────────────────────────────
-
 	async listChannels() {
 		return withCapture(() => communityRepository.listChannels());
 	},
@@ -56,8 +52,6 @@ export const communityService = {
 	async deleteChannel(id: string) {
 		return withCapture(() => communityRepository.deleteChannel(id));
 	},
-
-	// ── Messages ──────────────────────────────────────────────────────────────
 
 	async listMessages(
 		channelId: string,
@@ -93,13 +87,9 @@ export const communityService = {
 		);
 	},
 
-	// ── Members ───────────────────────────────────────────────────────────────
-
 	async listMembers(search?: string, category?: string) {
 		return withCapture(() => communityRepository.listMembers(search, category));
 	},
-
-	// ── Projects ──────────────────────────────────────────────────────────────
 
 	async listProjects(
 		page: number,
@@ -158,8 +148,6 @@ export const communityService = {
 		);
 	},
 
-	// ── Post Comments ─────────────────────────────────────────────────────────
-
 	async listPostComments(postId: string, page: number, limit: number) {
 		return withCapture(() =>
 			communityRepository.listPostComments(postId, page, limit),
@@ -184,15 +172,11 @@ export const communityService = {
 		);
 	},
 
-	// ── Post Likes ────────────────────────────────────────────────────────────
-
 	async togglePostLike(postId: string, customerId: string) {
 		return withCapture(() =>
 			communityRepository.togglePostLike(postId, customerId),
 		);
 	},
-
-	// ── Events ────────────────────────────────────────────────────────────────
 
 	async listEvents(from?: string, to?: string) {
 		return withCapture(() => communityRepository.listEvents(from, to));
@@ -209,8 +193,6 @@ export const communityService = {
 	async deleteEvent(id: string) {
 		return withCapture(() => communityRepository.deleteEvent(id));
 	},
-
-	// ── Ranking ───────────────────────────────────────────────────────────────
 
 	async getRanking(period?: string) {
 		return withCapture(async () => {

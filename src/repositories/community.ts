@@ -12,8 +12,6 @@ import type {
 } from '../types/community.js';
 
 class CommunityRepository {
-	// ── Posts ────────────────────────────────────────────────────────────────
-
 	async listPosts(page: number, limit: number, currentUserId: string) {
 		const from = (page - 1) * limit;
 		const to = from + limit - 1;
@@ -109,8 +107,6 @@ class CommunityRepository {
 		return post;
 	}
 
-	// ── Channels ─────────────────────────────────────────────────────────────
-
 	async listChannels() {
 		const { data, error } = await supabase
 			.from('pl_community_channel')
@@ -205,8 +201,6 @@ class CommunityRepository {
 		if (error) throw new Error(error.message);
 	}
 
-	// ── Messages ──────────────────────────────────────────────────────────────
-
 	async listMessages(
 		channelId: string,
 		before: string | undefined,
@@ -287,8 +281,6 @@ class CommunityRepository {
 		if (error) throw new Error(error.message);
 	}
 
-	// ── Members ───────────────────────────────────────────────────────────────
-
 	async listMembers(search?: string, category?: string) {
 		let query = supabase.from('Customers').select(`
 				id,
@@ -334,8 +326,6 @@ class CommunityRepository {
 					!category || m.category === category,
 			);
 	}
-
-	// ── Projects ──────────────────────────────────────────────────────────────
 
 	async listProjects(
 		page: number,
@@ -555,8 +545,6 @@ class CommunityRepository {
 		return project;
 	}
 
-	// ── Events ────────────────────────────────────────────────────────────────
-
 	async listEvents(from?: string, to?: string) {
 		let query = supabase
 			.from('pl_community_event')
@@ -616,8 +604,6 @@ class CommunityRepository {
 			.eq('id', id);
 		if (error) throw new Error(error.message);
 	}
-
-	// ── Post Comments ─────────────────────────────────────────────────────────
 
 	async listPostComments(postId: string, page: number, limit: number) {
 		const from = (page - 1) * limit;
@@ -684,8 +670,6 @@ class CommunityRepository {
 		};
 	}
 
-	// ── Post Likes ────────────────────────────────────────────────────────────
-
 	async togglePostLike(postId: string, customerId: string) {
 		const { data: existing } = await supabase
 			.from('pl_community_post_like')
@@ -709,8 +693,6 @@ class CommunityRepository {
 		});
 		return { liked: true };
 	}
-
-	// ── Ranking ───────────────────────────────────────────────────────────────
 
 	async getRanking(period?: string) {
 		const now = new Date();

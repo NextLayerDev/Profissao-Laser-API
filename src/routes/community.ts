@@ -51,8 +51,6 @@ import {
 import { ErrorSchema } from '../types/error.js';
 
 export async function communityRoute(server: FastifyInstance) {
-	// ── Posts ────────────────────────────────────────────────────────────────
-
 	server.get(
 		'/community/posts',
 		{
@@ -91,8 +89,6 @@ export async function communityRoute(server: FastifyInstance) {
 		},
 		createPostController,
 	);
-
-	// ── Post Comments ────────────────────────────────────────────────────────
 
 	server.get(
 		'/community/posts/:postId/comments',
@@ -135,8 +131,6 @@ export async function communityRoute(server: FastifyInstance) {
 		createPostCommentController,
 	);
 
-	// ── Post Likes ───────────────────────────────────────────────────────────
-
 	server.post(
 		'/community/posts/:postId/like',
 		{
@@ -154,8 +148,6 @@ export async function communityRoute(server: FastifyInstance) {
 		},
 		togglePostLikeController,
 	);
-
-	// ── Channels ─────────────────────────────────────────────────────────────
 
 	server.get(
 		'/community/channels',
@@ -229,8 +221,6 @@ export async function communityRoute(server: FastifyInstance) {
 		deleteChannelController,
 	);
 
-	// ── Messages ──────────────────────────────────────────────────────────────
-
 	server.get(
 		'/community/channels/:channelId/messages',
 		{
@@ -290,8 +280,6 @@ export async function communityRoute(server: FastifyInstance) {
 		deleteMessageController,
 	);
 
-	// ── Members ───────────────────────────────────────────────────────────────
-
 	server.get(
 		'/community/members',
 		{
@@ -313,8 +301,6 @@ export async function communityRoute(server: FastifyInstance) {
 		},
 		getMembersController,
 	);
-
-	// ── Projects ──────────────────────────────────────────────────────────────
 
 	server.get(
 		'/community/projects',
@@ -458,8 +444,6 @@ export async function communityRoute(server: FastifyInstance) {
 		createProjectCommentController,
 	);
 
-	// ── Events ─────────────────────────────────────────────────────────────────
-
 	server.get(
 		'/community/events',
 		{
@@ -536,8 +520,6 @@ export async function communityRoute(server: FastifyInstance) {
 		},
 		deleteEventController,
 	);
-
-	// ── Ranking ────────────────────────────────────────────────────────────────
 
 	server.get(
 		'/community/ranking',

@@ -90,8 +90,6 @@ function mapPost(
 // ─── Repository ───────────────────────────────────────────────────────────────
 
 class ForumRepository {
-	// ── Categories ────────────────────────────────────────────────────────────
-
 	async listCategories() {
 		const { data: categories, error } = await supabase
 			.from('forum_categories')
@@ -160,8 +158,6 @@ class ForumRepository {
 
 		if (error) throw new Error(error.message);
 	}
-
-	// ── Posts ─────────────────────────────────────────────────────────────────
 
 	async listPosts(params: {
 		page: number;
@@ -428,8 +424,6 @@ class ForumRepository {
 
 		return this.getPost(postId, userId);
 	}
-
-	// ── Replies ───────────────────────────────────────────────────────────────
 
 	async createReply(
 		postId: string,

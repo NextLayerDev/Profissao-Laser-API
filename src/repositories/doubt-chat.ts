@@ -9,8 +9,6 @@ import type {
 } from '../types/doubt-chat.js';
 
 class DoubtChatRepository {
-	// ── Categories ──────────────────────────────────────────────────────────────
-
 	async listCategories() {
 		const { data, error } = await supabase
 			.from('pl_doubt_category')
@@ -75,8 +73,6 @@ class DoubtChatRepository {
 		}
 	}
 
-	// ── Technicians ─────────────────────────────────────────────────────────────
-
 	async listTechnicians() {
 		const { data, error } = await supabase
 			.from('Users')
@@ -100,8 +96,6 @@ class DoubtChatRepository {
 
 		return { ...user, defaultQuestions: questions };
 	}
-
-	// ── Default Questions ───────────────────────────────────────────────────────
 
 	async listDefaultQuestions(technicianId: string) {
 		const { data, error } = await supabase
@@ -171,8 +165,6 @@ class DoubtChatRepository {
 			if (error) throw new Error(error.message);
 		}
 	}
-
-	// ── Chats ───────────────────────────────────────────────────────────────────
 
 	async listChatsByCustomer(customerId: string, status?: string) {
 		let query = supabase
@@ -375,8 +367,6 @@ class DoubtChatRepository {
 
 		return this.getChatById(chatId);
 	}
-
-	// ── Messages ────────────────────────────────────────────────────────────────
 
 	async createMessage(
 		chatId: string,

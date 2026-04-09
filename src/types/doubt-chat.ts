@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-// ── Categories ────────────────────────────────────────────────────────────────
-
 export const doubtCategorySchema = z.object({
 	id: z.string(),
 	title: z.string(),
@@ -21,15 +19,11 @@ export const reorderSchema = z.object({
 	ids: z.array(z.string()),
 });
 
-// ── Technicians ───────────────────────────────────────────────────────────────
-
 export const technicianSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	email: z.string(),
 });
-
-// ── Default Questions ─────────────────────────────────────────────────────────
 
 export const defaultQuestionSchema = z.object({
 	id: z.string(),
@@ -49,8 +43,6 @@ export const createDefaultQuestionSchema = z.object({
 export const updateDefaultQuestionSchema =
 	createDefaultQuestionSchema.partial();
 
-// ── Chat Messages ─────────────────────────────────────────────────────────────
-
 export const chatMessageSchema = z.object({
 	id: z.string(),
 	content: z.string(),
@@ -60,8 +52,6 @@ export const chatMessageSchema = z.object({
 	isTechnician: z.boolean(),
 	createdAt: z.string(),
 });
-
-// ── Chats ─────────────────────────────────────────────────────────────────────
 
 export const doubtChatSummarySchema = z.object({
 	id: z.string(),
@@ -90,8 +80,6 @@ export const createChatSchema = z.object({
 export const sendChatMessageSchema = z.object({
 	content: z.string().min(1).optional(),
 });
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 export type DoubtCategory = z.infer<typeof doubtCategorySchema>;
 export type CreateDoubtCategory = z.infer<typeof createDoubtCategorySchema>;

@@ -12,8 +12,6 @@ import {
 	updateProjectSchema,
 } from '../types/community.js';
 
-// ── Posts ──────────────────────────────────────────────────────────────────
-
 export const getPostsController = async (
 	request: FastifyRequest<{ Querystring: { page?: string; limit?: string } }>,
 	reply: FastifyReply,
@@ -56,8 +54,6 @@ export const createPostController = async (
 		return reply.status(400).send({ message });
 	}
 };
-
-// ── Post Comments ─────────────────────────────────────────────────────────
 
 export const getPostCommentsController = async (
 	request: FastifyRequest<{
@@ -115,8 +111,6 @@ export const createPostCommentController = async (
 	}
 };
 
-// ── Post Likes ────────────────────────────────────────────────────────────
-
 export const togglePostLikeController = async (
 	request: FastifyRequest<{ Params: { postId: string } }>,
 	reply: FastifyReply,
@@ -134,8 +128,6 @@ export const togglePostLikeController = async (
 	}
 	return reply.send(result);
 };
-
-// ── Channels ───────────────────────────────────────────────────────────────
 
 export const getChannelsController = async (
 	request: FastifyRequest,
@@ -202,8 +194,6 @@ export const deleteChannelController = async (
 	}
 	return reply.status(204).send();
 };
-
-// ── Messages ───────────────────────────────────────────────────────────────
 
 export const getMessagesController = async (
 	request: FastifyRequest<{
@@ -302,8 +292,6 @@ export const deleteMessageController = async (
 	return reply.status(204).send();
 };
 
-// ── Members ────────────────────────────────────────────────────────────────
-
 export const getMembersController = async (
 	request: FastifyRequest<{
 		Querystring: { search?: string; category?: string };
@@ -321,8 +309,6 @@ export const getMembersController = async (
 	}
 	return reply.send(members);
 };
-
-// ── Projects ───────────────────────────────────────────────────────────────
 
 export const getProjectsController = async (
 	request: FastifyRequest<{
@@ -482,8 +468,6 @@ export const createProjectController = async (
 	}
 };
 
-// ── Events ─────────────────────────────────────────────────────────────────
-
 export const getEventsController = async (
 	request: FastifyRequest<{ Querystring: { from?: string; to?: string } }>,
 	reply: FastifyReply,
@@ -549,8 +533,6 @@ export const deleteEventController = async (
 	}
 	return reply.status(204).send();
 };
-
-// ── Ranking ────────────────────────────────────────────────────────────────
 
 export const getRankingController = async (
 	request: FastifyRequest<{ Querystring: { period?: string } }>,

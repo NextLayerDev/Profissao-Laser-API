@@ -8,8 +8,6 @@ interface FileInput {
 }
 
 class VectorSupportRepository {
-	// ── Tickets ───────────────────────────────────────────────────────────────
-
 	async listTicketsByCustomer(customerId: string, status?: string) {
 		let query = supabase
 			.from('pl_vector_support_ticket')
@@ -244,8 +242,6 @@ class VectorSupportRepository {
 			.eq('id', id);
 		if (error) throw new Error(error.message);
 	}
-
-	// ── Helpers ───────────────────────────────────────────────────────────────
 
 	private mapTicketSummary(ticket: {
 		id: string;
