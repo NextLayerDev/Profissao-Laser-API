@@ -379,7 +379,7 @@ export const purchaseService = {
 				productName = product.name;
 			}
 
-			const periodEnd = item?.current_period_end ?? sub.current_period_end;
+			const periodEnd = item?.current_period_end;
 
 			return {
 				id: sub.id,
@@ -423,8 +423,7 @@ export const purchaseService = {
 				cancel_at_period_end: true,
 			});
 
-			const periodEnd =
-				updated.items.data[0]?.current_period_end ?? updated.current_period_end;
+			const periodEnd = updated.items.data[0]?.current_period_end;
 
 			return {
 				message:
@@ -469,7 +468,7 @@ export const purchaseService = {
 							? (productRef as { id: string }).id
 							: null;
 
-				const periodEnd = item?.current_period_end ?? sub.current_period_end;
+				const periodEnd = item?.current_period_end;
 
 				return {
 					id: sub.id,
