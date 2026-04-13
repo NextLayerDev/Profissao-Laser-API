@@ -373,6 +373,8 @@ export const purchaseService = {
 				productName = product.name;
 			}
 
+			const periodEnd = item?.current_period_end ?? sub.current_period_end;
+
 			return {
 				id: sub.id,
 				status: sub.status,
@@ -380,8 +382,8 @@ export const purchaseService = {
 				amount: price?.unit_amount ? price.unit_amount / 100 : 0,
 				currency: price?.currency ?? 'brl',
 				interval: price?.recurring?.interval ?? null,
-				currentPeriodEnd: sub.current_period_end
-					? new Date(sub.current_period_end * 1000).toISOString()
+				currentPeriodEnd: periodEnd
+					? new Date(periodEnd * 1000).toISOString()
 					: null,
 				cancelAtPeriodEnd: sub.cancel_at_period_end,
 			};
@@ -415,12 +417,15 @@ export const purchaseService = {
 				cancel_at_period_end: true,
 			});
 
+			const periodEnd =
+				updated.items.data[0]?.current_period_end ?? updated.current_period_end;
+
 			return {
 				message:
 					'Subscription will be cancelled at the end of the billing period.',
 				cancelAtPeriodEnd: updated.cancel_at_period_end,
-				currentPeriodEnd: updated.current_period_end
-					? new Date(updated.current_period_end * 1000).toISOString()
+				currentPeriodEnd: periodEnd
+					? new Date(periodEnd * 1000).toISOString()
 					: null,
 			};
 		});
@@ -458,10 +463,16 @@ export const purchaseService = {
 							? (productRef as { id: string }).id
 							: null;
 
+				const periodEnd = item?.current_period_end ?? sub.current_period_end;
+
 				return {
 					id: sub.id,
 					status: sub.status,
 					stripeProductId,
+					currentPeriodEnd: periodEnd
+						? new Date(periodEnd * 1000).toISOString()
+						: null,
+					cancelAtPeriodEnd: sub.cancel_at_period_end,
 				};
 			});
 		});

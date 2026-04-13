@@ -162,6 +162,8 @@ class CustomerController {
 					status: sub.status,
 					product_name: product?.name ?? 'Unknown',
 					slug: product?.slug ?? null,
+					currentPeriodEnd: sub.currentPeriodEnd,
+					cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
 				};
 			}),
 		);

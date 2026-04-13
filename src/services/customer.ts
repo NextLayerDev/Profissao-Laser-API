@@ -1,7 +1,63 @@
 import { withCapture } from '@/lib/sentry.js';
 import { encrypt } from '../lib/crypto.js';
+import { stripe } from '../lib/stripe.js';
 import { supabase } from '../lib/supabase.js';
 import { customerRepository } from '../repositories/customer.js';
+
+type SubscriptionInfo = {
+	status: string;
+	currentPeriodEnd: string | null;
+	cancelAtPeriodEnd: boolean;
+};
+
+async function fetchAllStripeSubscriptions(): Promise<
+	Map<string, SubscriptionInfo>
+> {
+	const map = new Map<string, SubscriptionInfo>();
+
+	for (const status of ['active', 'trialing'] as const) {
+		let hasMore = true;
+		let startingAfter: string | undefined;
+
+		while (hasMore) {
+			const page = await stripe.subscriptions.list({
+				status,
+				limit: 100,
+				expand: ['data.customer'],
+				...(startingAfter && { starting_after: startingAfter }),
+			});
+
+			for (const sub of page.data) {
+				const customer = sub.customer;
+				const email =
+					typeof customer === 'object' &&
+					customer !== null &&
+					!('deleted' in customer)
+						? customer.email
+						: null;
+
+				if (!email) continue;
+
+				if (!map.has(email)) {
+					const periodEnd =
+						sub.items.data[0]?.current_period_end ?? sub.current_period_end;
+					map.set(email, {
+						status: sub.status,
+						currentPeriodEnd: periodEnd
+							? new Date(periodEnd * 1000).toISOString()
+							: null,
+						cancelAtPeriodEnd: sub.cancel_at_period_end,
+					});
+				}
+			}
+
+			hasMore = page.has_more;
+			if (hasMore) startingAfter = page.data[page.data.length - 1].id;
+		}
+	}
+
+	return map;
+}
 
 export const customerService = {
 	async getCustomerById(id: string) {
@@ -24,11 +80,13 @@ export const customerService = {
 				await customerRepository.getAllCustomers();
 			if (error) throw new Error(error.message);
 
-			const { data: authData } = await supabase.auth.admin.listUsers({
-				perPage: 1000,
-			});
+			const [authData, stripeSubscriptions] = await Promise.all([
+				supabase.auth.admin.listUsers({ perPage: 1000 }),
+				fetchAllStripeSubscriptions(),
+			]);
+
 			const banMap = new Map(
-				(authData?.users ?? []).map((u) => {
+				(authData.data?.users ?? []).map((u) => {
 					const banned =
 						!!u.banned_until && new Date(u.banned_until) > new Date();
 					return [u.id, banned];
@@ -38,6 +96,7 @@ export const customerService = {
 			return (dbData ?? []).map((c) => ({
 				...c,
 				banned: banMap.get(c.id) ?? false,
+				subscription: stripeSubscriptions.get(c.email) ?? null,
 			}));
 		});
 	},

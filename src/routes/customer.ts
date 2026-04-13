@@ -18,6 +18,13 @@ export async function customerRoute(server: FastifyInstance) {
 							stripe: z.string().nullable(),
 							access: z.string().nullable(),
 							banned: z.boolean(),
+							subscription: z
+								.object({
+									status: z.string(),
+									currentPeriodEnd: z.string().nullable(),
+									cancelAtPeriodEnd: z.boolean(),
+								})
+								.nullable(),
 						}),
 					),
 					401: ErrorSchema,
@@ -161,7 +168,16 @@ export async function customerRoute(server: FastifyInstance) {
 				description: 'Get the user plans',
 				params: z.object({ email: z.email() }),
 				response: {
-					200: z.any(),
+					200: z.array(
+						z.object({
+							id: z.string(),
+							status: z.string(),
+							product_name: z.string(),
+							slug: z.string().nullable(),
+							currentPeriodEnd: z.string().nullable(),
+							cancelAtPeriodEnd: z.boolean(),
+						}),
+					),
 					404: ErrorSchema,
 				},
 				tags: ['Customer'],
