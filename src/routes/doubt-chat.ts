@@ -41,8 +41,6 @@ import {
 import { ErrorSchema } from '../types/error.js';
 
 export async function doubtChatRoute(server: FastifyInstance) {
-	// ── Categories ─────────────────────────────────────────────────────────────
-
 	server.get(
 		'/doubt-categories',
 		{
@@ -125,8 +123,6 @@ export async function doubtChatRoute(server: FastifyInstance) {
 		},
 		deleteCategoryController,
 	);
-
-	// ── Technicians ────────────────────────────────────────────────────────────
 
 	server.get(
 		'/technicians',
@@ -214,8 +210,6 @@ export async function doubtChatRoute(server: FastifyInstance) {
 		reorderDefaultQuestionsController,
 	);
 
-	// ── Default Questions (standalone) ─────────────────────────────────────────
-
 	server.patch(
 		'/doubt-default-questions/:id',
 		{
@@ -250,8 +244,6 @@ export async function doubtChatRoute(server: FastifyInstance) {
 		},
 		deleteDefaultQuestionController,
 	);
-
-	// ── Chats ──────────────────────────────────────────────────────────────────
 
 	server.get(
 		'/doubt-chats',

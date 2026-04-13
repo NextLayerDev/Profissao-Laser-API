@@ -14,8 +14,6 @@ async function isStaff(userId: string): Promise<boolean> {
 	return !!data;
 }
 
-// ── Tickets ──────────────────────────────────────────────────────────────────
-
 export const listTicketsController = async (
 	request: FastifyRequest<{ Querystring: { status?: string } }>,
 	reply: FastifyReply,
@@ -140,8 +138,6 @@ export const createTicketController = async (
 	}
 };
 
-// ── Messages ─────────────────────────────────────────────────────────────────
-
 export const sendMessageController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
@@ -217,8 +213,6 @@ export const sendMessageController = async (
 		return reply.status(400).send({ message });
 	}
 };
-
-// ── Close ────────────────────────────────────────────────────────────────────
 
 export const closeTicketController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,

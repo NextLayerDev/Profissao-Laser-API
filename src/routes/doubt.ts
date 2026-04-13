@@ -19,8 +19,6 @@ import { ErrorSchema } from '../types/error.js';
 import { createRatingSchema, ratingResponseSchema } from '../types/rating.js';
 
 export async function doubtRoute(server: FastifyInstance) {
-	// ── Doubts ────────────────────────────────────────────────────────────────
-
 	server.get(
 		'/lesson/:lessonId/doubts',
 		{
@@ -82,8 +80,6 @@ export async function doubtRoute(server: FastifyInstance) {
 		},
 		createReplyController,
 	);
-
-	// ── Ratings ───────────────────────────────────────────────────────────────
 
 	server.get(
 		'/lesson/:lessonId/rating',

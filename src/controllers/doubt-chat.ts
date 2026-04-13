@@ -21,8 +21,6 @@ async function isStaff(userId: string): Promise<boolean> {
 	return !!data;
 }
 
-// ── Categories ────────────────────────────────────────────────────────────────
-
 export const listCategoriesController = async (
 	_request: FastifyRequest,
 	reply: FastifyReply,
@@ -113,8 +111,6 @@ export const reorderCategoriesController = async (
 	}
 };
 
-// ── Technicians ───────────────────────────────────────────────────────────────
-
 export const listTechniciansController = async (
 	_request: FastifyRequest,
 	reply: FastifyReply,
@@ -144,8 +140,6 @@ export const getTechnicianController = async (
 		return reply.status(500).send({ message });
 	}
 };
-
-// ── Default Questions ─────────────────────────────────────────────────────────
 
 export const listDefaultQuestionsController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
@@ -238,8 +232,6 @@ export const reorderDefaultQuestionsController = async (
 		return reply.status(400).send({ message });
 	}
 };
-
-// ── Chats ─────────────────────────────────────────────────────────────────────
 
 export const listChatsController = async (
 	request: FastifyRequest<{ Querystring: { status?: string } }>,

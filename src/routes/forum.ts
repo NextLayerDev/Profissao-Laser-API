@@ -30,8 +30,6 @@ import {
 } from '../types/forum.js';
 
 export async function forumRoute(server: FastifyInstance) {
-	// ── Categories ────────────────────────────────────────────────────────────
-
 	server.get(
 		'/forum/categories',
 		{
@@ -99,8 +97,6 @@ export async function forumRoute(server: FastifyInstance) {
 		},
 		deleteForumCategoryController,
 	);
-
-	// ── Posts ─────────────────────────────────────────────────────────────────
 
 	server.get(
 		'/forum/posts',
@@ -197,8 +193,6 @@ export async function forumRoute(server: FastifyInstance) {
 		},
 		upvoteForumPostController,
 	);
-
-	// ── Replies ───────────────────────────────────────────────────────────────
 
 	server.post(
 		'/forum/post/:id/reply',
