@@ -47,6 +47,7 @@ export const purchaseService = {
 					'data.line_items',
 					'data.customer',
 					'data.payment_intent.latest_charge',
+					'data.subscription.latest_invoice',
 				],
 				limit: 100,
 			});
@@ -70,7 +71,12 @@ export const purchaseService = {
 				const customer = session.customer as any;
 				// biome-ignore lint/suspicious/noExplicitAny: payment_intent is expanded with latest_charge.
 				const paymentIntent = session.payment_intent as any;
-				const receiptUrl = paymentIntent?.latest_charge?.receipt_url ?? null;
+				// biome-ignore lint/suspicious/noExplicitAny: subscription is expanded with latest_invoice.
+				const subscription = session.subscription as any;
+				const receiptUrl =
+					paymentIntent?.latest_charge?.receipt_url ??
+					subscription?.latest_invoice?.hosted_invoice_url ??
+					null;
 				const email = customer?.email || session.customer_details?.email || '';
 
 				return {
