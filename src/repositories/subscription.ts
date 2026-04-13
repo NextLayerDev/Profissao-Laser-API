@@ -1,6 +1,14 @@
 import { supabase } from '../lib/supabase.js';
 
 class SubscriptionRepository {
+	async deleteByUserId(userId: string) {
+		const { error } = await supabase
+			.from('pl_subscription')
+			.delete()
+			.eq('userId', userId);
+		if (error) throw new Error(error.message);
+	}
+
 	async upsertByStripeSubscriptionId(data: {
 		userId: string;
 		productId: string;
