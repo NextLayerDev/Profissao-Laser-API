@@ -10,10 +10,12 @@ type SubscriptionInfo = {
 	cancelAtPeriodEnd: boolean;
 };
 
-async function fetchAllStripeSubscriptions(): Promise<
-	Map<string, SubscriptionInfo>
-> {
-	const map = new Map<string, SubscriptionInfo>();
+async function fetchAllStripeSubscriptions(): Promise<{
+	subscriptions: Map<string, SubscriptionInfo>;
+	phones: Map<string, string>;
+}> {
+	const subscriptions = new Map<string, SubscriptionInfo>();
+	const phones = new Map<string, string>();
 
 	for (const status of ['active', 'trialing'] as const) {
 		let hasMore = true;
@@ -29,19 +31,23 @@ async function fetchAllStripeSubscriptions(): Promise<
 
 			for (const sub of page.data) {
 				const customer = sub.customer;
-				const email =
+				const isFullCustomer =
 					typeof customer === 'object' &&
 					customer !== null &&
-					!('deleted' in customer)
-						? customer.email
-						: null;
+					!('deleted' in customer);
 
+				if (!isFullCustomer) continue;
+
+				const email = customer.email;
 				if (!email) continue;
 
-				if (!map.has(email)) {
-					const periodEnd =
-						sub.items.data[0]?.current_period_end ?? sub.current_period_end;
-					map.set(email, {
+				if (customer.phone && !phones.has(email)) {
+					phones.set(email, customer.phone);
+				}
+
+				if (!subscriptions.has(email)) {
+					const periodEnd = sub.items.data[0]?.current_period_end;
+					subscriptions.set(email, {
 						status: sub.status,
 						currentPeriodEnd: periodEnd
 							? new Date(periodEnd * 1000).toISOString()
@@ -56,7 +62,7 @@ async function fetchAllStripeSubscriptions(): Promise<
 		}
 	}
 
-	return map;
+	return { subscriptions, phones };
 }
 
 export const customerService = {
@@ -80,9 +86,12 @@ export const customerService = {
 				await customerRepository.getAllCustomers();
 			if (error) throw new Error(error.message);
 
-			const [authData, stripeSubscriptions] = await Promise.all([
+			const emails = (dbData ?? []).map((c) => c.email);
+
+			const [authData, stripeData, phoneMap] = await Promise.all([
 				supabase.auth.admin.listUsers({ perPage: 1000 }),
 				fetchAllStripeSubscriptions(),
+				customerRepository.findPhonesByEmails(emails),
 			]);
 
 			const banMap = new Map(
@@ -95,8 +104,13 @@ export const customerService = {
 
 			return (dbData ?? []).map((c) => ({
 				...c,
+				phone:
+					c.phone ||
+					stripeData.phones.get(c.email) ||
+					phoneMap[c.email] ||
+					null,
 				banned: banMap.get(c.id) ?? false,
-				subscription: stripeSubscriptions.get(c.email) ?? null,
+				subscription: stripeData.subscriptions.get(c.email) ?? null,
 			}));
 		});
 	},
