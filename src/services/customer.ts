@@ -3,6 +3,8 @@ import { encrypt } from '../lib/crypto.js';
 import { stripe } from '../lib/stripe.js';
 import { supabase } from '../lib/supabase.js';
 import { customerRepository } from '../repositories/customer.js';
+import { subscriptionRepository } from '../repositories/subscription.js';
+import { usersRepository } from '../repositories/user.js';
 
 type SubscriptionInfo = {
 	status: string;
@@ -117,6 +119,39 @@ export const customerService = {
 
 	async deleteCustomer(id: string) {
 		return withCapture(async () => {
+			const { data: customer, error: customerError } =
+				await customerRepository.getCustomerById(id);
+			if (customerError) throw new Error(customerError.message);
+
+			if (customer?.email) {
+				const stripeCustomers = await stripe.customers.list({
+					email: customer.email,
+					limit: 1,
+				});
+
+				if (stripeCustomers.data.length > 0) {
+					const stripeCustomerId = stripeCustomers.data[0].id;
+
+					const [activeSubs, trialingSubs] = await Promise.all([
+						stripe.subscriptions.list({
+							customer: stripeCustomerId,
+							status: 'active',
+						}),
+						stripe.subscriptions.list({
+							customer: stripeCustomerId,
+							status: 'trialing',
+						}),
+					]);
+
+					const allSubs = [...activeSubs.data, ...trialingSubs.data];
+					await Promise.all(
+						allSubs.map((sub) => stripe.subscriptions.cancel(sub.id)),
+					);
+				}
+			}
+
+			await subscriptionRepository.deleteByUserId(id);
+			await usersRepository.deleteUser(id);
 			await customerRepository.deleteCustomer(id);
 			const { error: authError } = await supabase.auth.admin.deleteUser(id);
 			if (authError) throw new Error(authError.message);
