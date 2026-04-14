@@ -25,3 +25,47 @@ SELECT
 WHERE NOT EXISTS (
     SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '0_init'
 );
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT
+    gen_random_uuid()::text,
+    'baseline',
+    '20260331_add_tabelas_fiscais',
+    now(),
+    1
+WHERE NOT EXISTS (
+    SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260331_add_tabelas_fiscais'
+);
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT
+    gen_random_uuid()::text,
+    'baseline',
+    '20260401_add_categorias_icones',
+    now(),
+    1
+WHERE NOT EXISTS (
+    SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260401_add_categorias_icones'
+);
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT
+    gen_random_uuid()::text,
+    'baseline',
+    '20260401_add_ecommerce_module',
+    now(),
+    1
+WHERE NOT EXISTS (
+    SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260401_add_ecommerce_module'
+);
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT
+    gen_random_uuid()::text,
+    'baseline',
+    '20260413_add_ecommerce_webhooks_tables',
+    now(),
+    1
+WHERE NOT EXISTS (
+    SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260413_add_ecommerce_webhooks_tables'
+);
