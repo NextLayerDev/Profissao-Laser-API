@@ -226,6 +226,7 @@ export const paymentLinkService = {
 				customer: stripeCustomer.id,
 				line_items: [{ price: product.stripePriceId, quantity: 1 }],
 				mode,
+				payment_method_types: ['card', 'boleto'],
 				discounts: [{ coupon: link.stripe_coupon_id }],
 				success_url: `${process.env.SUCCESS_URL ?? 'http://localhost:3000/checkout/success'}?session_id={CHECKOUT_SESSION_ID}`,
 				cancel_url: process.env.CANCEL_URL ?? 'http://localhost:3000/cancelado',
