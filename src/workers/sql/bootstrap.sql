@@ -663,7 +663,7 @@ CREATE INDEX IF NOT EXISTS "idx_padrao_fiscal_company_id" ON "PadraoFiscal"("com
 CREATE TABLE IF NOT EXISTS "NfeEmitida" (
     "id"                  TEXT        NOT NULL,
     "company_id"          TEXT        NOT NULL,
-    "pedido_id"           TEXT,
+    "pedido_id"           UUID,
     "tipo_operacao"       TEXT        NOT NULL,
     "chave_acesso"        TEXT,
     "numero"              INTEGER     NOT NULL,
@@ -762,6 +762,186 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- ============== ECOMMERCE / MARKETPLACE ==============
+
+-- Campo accessEcommerce na Company
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'Company' AND column_name = 'accessEcommerce'
+  ) THEN
+    ALTER TABLE "Company" ADD COLUMN "accessEcommerce" BOOLEAN DEFAULT false;
+  END IF;
+END $$;
+
+-- EcommerceStore (credenciais OAuth por loja/marketplace)
+CREATE TABLE IF NOT EXISTS "EcommerceStore" (
+    "id"              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "companyId"       UUID NOT NULL REFERENCES "Company"("id") ON DELETE CASCADE,
+    "platform"        TEXT NOT NULL DEFAULT 'mercadolivre',
+    "storeName"       TEXT NOT NULL,
+    "sellerId"        TEXT,
+    "sellerNickname"  TEXT,
+    "accessToken"     TEXT,
+    "refreshToken"    TEXT,
+    "tokenExpiresAt"  TIMESTAMPTZ,
+    "appId"           TEXT NOT NULL,
+    "appSecret"       TEXT NOT NULL,
+    "redirectUri"     TEXT NOT NULL,
+    "webhookSecret"   TEXT,
+    "isActive"        BOOLEAN NOT NULL DEFAULT true,
+    "syncEstoque"     BOOLEAN NOT NULL DEFAULT true,
+    "syncPedidos"     BOOLEAN NOT NULL DEFAULT true,
+    "syncProdutos"    BOOLEAN NOT NULL DEFAULT true,
+    "syncPerguntas"   BOOLEAN NOT NULL DEFAULT true,
+    "syncMensagens"   BOOLEAN NOT NULL DEFAULT true,
+    "subscribedTopics" JSONB DEFAULT '["orders_v2","created_orders","items","questions","shipments","messages","payments","claims"]',
+    "lastSyncAt"      TIMESTAMPTZ,
+    "metadata"        JSONB DEFAULT '{}',
+    "createdAt"       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "updatedAt"       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "EcommerceStore_companyId_idx" ON "EcommerceStore"("companyId");
+CREATE UNIQUE INDEX IF NOT EXISTS "EcommerceStore_company_platform_seller_key" ON "EcommerceStore"("companyId", "platform", "sellerId");
+
+-- EcommerceProductLink (mapa produto local <-> marketplace)
+CREATE TABLE IF NOT EXISTS "EcommerceProductLink" (
+    "id"                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "storeId"               UUID NOT NULL REFERENCES "EcommerceStore"("id") ON DELETE CASCADE,
+    "produtoId"             UUID NOT NULL,
+    "varianteId"            UUID,
+    "externalItemId"        TEXT NOT NULL,
+    "externalVariationId"   TEXT,
+    "externalSku"           TEXT,
+    "externalTitle"         TEXT,
+    "syncStatus"            TEXT NOT NULL DEFAULT 'synced',
+    "lastSyncAt"            TIMESTAMPTZ,
+    "createdAt"             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "updatedAt"             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "EcommerceProductLink_store_item_variation_key" ON "EcommerceProductLink"("storeId", "externalItemId", "externalVariationId");
+CREATE INDEX IF NOT EXISTS "EcommerceProductLink_storeId_produtoId_idx" ON "EcommerceProductLink"("storeId", "produtoId");
+CREATE INDEX IF NOT EXISTS "EcommerceProductLink_storeId_idx" ON "EcommerceProductLink"("storeId");
+
+-- EcommerceOrder (pedidos importados do marketplace)
+CREATE TABLE IF NOT EXISTS "EcommerceOrder" (
+    "id"              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "storeId"         UUID NOT NULL REFERENCES "EcommerceStore"("id") ON DELETE CASCADE,
+    "externalOrderId" TEXT NOT NULL,
+    "externalPackId"  TEXT,
+    "status"          TEXT NOT NULL DEFAULT 'confirmed',
+    "buyerNickname"   TEXT,
+    "buyerName"       TEXT,
+    "totalAmount"     DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "shippingCost"    DECIMAL(12,2),
+    "items"           JSONB DEFAULT '[]',
+    "shippingData"    JSONB DEFAULT '{}',
+    "paymentData"     JSONB DEFAULT '{}',
+    "rawData"         JSONB DEFAULT '{}',
+    "pedidoId"        UUID,
+    "stockDeducted"   BOOLEAN NOT NULL DEFAULT false,
+    "processedAt"     TIMESTAMPTZ,
+    "createdAt"       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "updatedAt"       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "EcommerceOrder_store_orderId_key" ON "EcommerceOrder"("storeId", "externalOrderId");
+CREATE INDEX IF NOT EXISTS "EcommerceOrder_storeId_idx" ON "EcommerceOrder"("storeId");
+CREATE INDEX IF NOT EXISTS "EcommerceOrder_status_idx" ON "EcommerceOrder"("status");
+CREATE INDEX IF NOT EXISTS "EcommerceOrder_createdAt_idx" ON "EcommerceOrder"("createdAt" DESC);
+
+-- EcommerceSyncLog (auditoria de sincronizações)
+CREATE TABLE IF NOT EXISTS "EcommerceSyncLog" (
+    "id"        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "storeId"   UUID NOT NULL REFERENCES "EcommerceStore"("id") ON DELETE CASCADE,
+    "type"      TEXT NOT NULL,
+    "direction" TEXT NOT NULL,
+    "status"    TEXT NOT NULL DEFAULT 'success',
+    "entityId"  TEXT,
+    "details"   JSONB DEFAULT '{}',
+    "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "EcommerceSyncLog_storeId_createdAt_idx" ON "EcommerceSyncLog"("storeId", "createdAt" DESC);
+
+-- EcommerceQuestion (perguntas do marketplace)
+CREATE TABLE IF NOT EXISTS "EcommerceQuestion" (
+    "id"                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "storeId"           UUID NOT NULL REFERENCES "EcommerceStore"("id") ON DELETE CASCADE,
+    "externalId"        INTEGER NOT NULL,
+    "itemId"            TEXT NOT NULL,
+    "itemTitle"         TEXT,
+    "status"            TEXT NOT NULL DEFAULT 'UNANSWERED',
+    "questionText"      TEXT NOT NULL,
+    "answerText"        TEXT,
+    "answeredAt"        TIMESTAMPTZ,
+    "fromBuyerId"       INTEGER,
+    "fromBuyerNickname" TEXT,
+    "rawData"           JSONB DEFAULT '{}',
+    "createdAt"         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "updatedAt"         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "EcommerceQuestion_storeId_externalId_key" ON "EcommerceQuestion"("storeId", "externalId");
+CREATE INDEX IF NOT EXISTS "EcommerceQuestion_storeId_status_idx" ON "EcommerceQuestion"("storeId", "status");
+CREATE INDEX IF NOT EXISTS "EcommerceQuestion_storeId_createdAt_idx" ON "EcommerceQuestion"("storeId", "createdAt" DESC);
+
+-- EcommerceMessage (mensagens do marketplace)
+CREATE TABLE IF NOT EXISTS "EcommerceMessage" (
+    "id"                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "storeId"           UUID NOT NULL REFERENCES "EcommerceStore"("id") ON DELETE CASCADE,
+    "externalMessageId" TEXT NOT NULL,
+    "packId"            TEXT,
+    "orderId"           TEXT,
+    "senderId"          TEXT,
+    "senderNickname"    TEXT,
+    "receiverId"        TEXT,
+    "text"              TEXT NOT NULL,
+    "isRead"            BOOLEAN NOT NULL DEFAULT false,
+    "isSeller"          BOOLEAN NOT NULL DEFAULT false,
+    "attachments"       JSONB DEFAULT '[]',
+    "rawData"           JSONB DEFAULT '{}',
+    "messageDate"       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "createdAt"         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "updatedAt"         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "EcommerceMessage_storeId_externalMessageId_key" ON "EcommerceMessage"("storeId", "externalMessageId");
+CREATE INDEX IF NOT EXISTS "EcommerceMessage_storeId_packId_idx" ON "EcommerceMessage"("storeId", "packId");
+CREATE INDEX IF NOT EXISTS "EcommerceMessage_storeId_isRead_idx" ON "EcommerceMessage"("storeId", "isRead");
+CREATE INDEX IF NOT EXISTS "EcommerceMessage_storeId_createdAt_idx" ON "EcommerceMessage"("storeId", "createdAt" DESC);
+
+-- EcommerceClaim (reclamações do marketplace)
+CREATE TABLE IF NOT EXISTS "EcommerceClaim" (
+    "id"              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "storeId"         UUID NOT NULL REFERENCES "EcommerceStore"("id") ON DELETE CASCADE,
+    "externalClaimId" TEXT NOT NULL,
+    "orderId"         TEXT,
+    "type"            TEXT,
+    "status"          TEXT NOT NULL DEFAULT 'opened',
+    "reason"          TEXT,
+    "buyerNickname"   TEXT,
+    "resolution"      TEXT,
+    "rawData"         JSONB DEFAULT '{}',
+    "createdAt"       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "updatedAt"       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "EcommerceClaim_storeId_externalClaimId_key" ON "EcommerceClaim"("storeId", "externalClaimId");
+CREATE INDEX IF NOT EXISTS "EcommerceClaim_storeId_status_idx" ON "EcommerceClaim"("storeId", "status");
+CREATE INDEX IF NOT EXISTS "EcommerceClaim_storeId_createdAt_idx" ON "EcommerceClaim"("storeId", "createdAt" DESC);
+
+-- EcommerceNotification (notificações webhook)
+CREATE TABLE IF NOT EXISTS "EcommerceNotification" (
+    "id"        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "storeId"   UUID NOT NULL REFERENCES "EcommerceStore"("id") ON DELETE CASCADE,
+    "topic"     TEXT NOT NULL,
+    "resource"  TEXT NOT NULL,
+    "category"  TEXT NOT NULL,
+    "title"     TEXT,
+    "isRead"    BOOLEAN NOT NULL DEFAULT false,
+    "rawData"   JSONB DEFAULT '{}',
+    "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "EcommerceNotification_storeId_isRead_idx" ON "EcommerceNotification"("storeId", "isRead");
+CREATE INDEX IF NOT EXISTS "EcommerceNotification_storeId_topic_idx" ON "EcommerceNotification"("storeId", "topic");
+CREATE INDEX IF NOT EXISTS "EcommerceNotification_storeId_createdAt_idx" ON "EcommerceNotification"("storeId", "createdAt" DESC);
+
 -- ============== PRISMA MIGRATIONS BASELINE ==============
 -- Marca as migrations do Prisma como já aplicadas para que
 -- `prisma migrate deploy` no build do Vercel não falhe (P3005).
@@ -789,3 +969,11 @@ WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '2
 INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
 SELECT gen_random_uuid(), 'baseline', '20260401_add_categorias_icones', now(), 1
 WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260401_add_categorias_icones');
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '20260401_add_ecommerce_module', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260401_add_ecommerce_module');
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '20260413_add_ecommerce_webhooks_tables', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260413_add_ecommerce_webhooks_tables');
