@@ -266,6 +266,7 @@ export const purchaseService = {
 				customer: customer.id,
 				line_items: [{ price: product.stripePriceId, quantity: 1 }],
 				mode,
+				payment_method_types: ['card', 'boleto'],
 				success_url: `${process.env.SUCCESS_URL ?? 'http://localhost:3000/checkout/success'}?session_id={CHECKOUT_SESSION_ID}`,
 				cancel_url: process.env.CANCEL_URL ?? 'http://localhost:3000/cancelado',
 				...(data.companyName && {
