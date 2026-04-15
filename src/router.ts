@@ -12,6 +12,7 @@ import { faqRoute } from './routes/faq.js';
 import { forumRoute } from './routes/forum.js';
 import { globalPromoLinkRoute } from './routes/global-promo-link.js';
 import { lessonRoute } from './routes/lesson.js';
+import { mercadoLivreOAuthRoute } from './routes/mercado-livre-oauth.js';
 import { moduleRoute } from './routes/module.js';
 import { paymentLinkRoute } from './routes/payment-link.js';
 import { productRoute } from './routes/product.js';
@@ -57,4 +58,5 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(faqRoute);
 	app.register(forumRoute);
 	app.register(provisioningRoute);
+	app.register(mercadoLivreOAuthRoute);
 };
