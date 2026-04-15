@@ -375,6 +375,7 @@ export async function runProvisionTenant(jobId: string): Promise<void> {
 			const envVars: Record<string, string> = {
 				// Tenant identity
 				NEXT_PUBLIC_COMPANY_SYSTEM: customer.company_name,
+				TENANT_SLUG: slug,
 
 				// Fixed secrets (loaded from .env — NEVER hardcode credentials)
 				SESSION_SECRET: process.env.TENANT_SESSION_SECRET ?? '',
