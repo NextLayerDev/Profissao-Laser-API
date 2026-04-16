@@ -21,7 +21,6 @@ TENANT_ENCRYPTION_KEY=            # Chave AES-256 em hex (64 caracteres)
 
 # Token para endpoints internos
 API_SECRET_TOKEN=                 # Token compartilhado para autenticar chamadas internas
-                                  # Ex: nextlayerkey28230105@services321123-01
 
 # Mercado Livre OAuth (proxy central)
 TENANT_MERCADOLIVRE_APP_ID=            # client_id do app ML (DevCenter)
