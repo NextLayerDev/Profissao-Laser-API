@@ -413,6 +413,15 @@ export async function runProvisionTenant(jobId: string): Promise<void> {
 				STRIPE_SECRET_KEY: process.env.TENANT_STRIPE_SECRET_KEY ?? '',
 				ENOTASGW_API_KEY: process.env.TENANT_ENOTASGW_API_KEY ?? '',
 
+				// Mercado Livre OAuth (app central — mesmo client_id/secret para todos
+				// os tenants; URL central serve como redirect_uri fixo, exigido pelo
+				// DevCenter do ML)
+				MERCADOLIVRE_APP_ID: process.env.TENANT_MERCADOLIVRE_APP_ID ?? '',
+				MERCADOLIVRE_APP_SECRET:
+					process.env.TENANT_MERCADOLIVRE_APP_SECRET ?? '',
+				MERCADOLIVRE_OAUTH_CENTRAL_URL:
+					process.env.TENANT_MERCADOLIVRE_OAUTH_CENTRAL_URL ?? '',
+
 				// Conditional — platina only
 				...getPlanForEnvVars(plan),
 			};
