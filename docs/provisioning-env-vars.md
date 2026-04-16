@@ -21,7 +21,12 @@ TENANT_ENCRYPTION_KEY=            # Chave AES-256 em hex (64 caracteres)
 
 # Token para endpoints internos
 API_SECRET_TOKEN=                 # Token compartilhado para autenticar chamadas internas
-                                  # Ex: nextlayerkey28230105@services321123-01
+
+# Mercado Livre OAuth (proxy central)
+TENANT_MERCADOLIVRE_APP_ID=            # client_id do app ML (DevCenter)
+TENANT_MERCADOLIVRE_APP_SECRET=        # client_secret do app ML
+TENANT_MERCADOLIVRE_OAUTH_CENTRAL_URL= # URL publica desta API (ex: https://api.profissaolaser.com)
+                                       # usada como redirect_uri fixo pelo ML
 ```
 
 ## Variaveis injetadas em cada projeto Vercel (tenant)
@@ -47,6 +52,9 @@ SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=nextlayerdev@gmail.com
 SMTP_PASS=hpwh vyzn jgye pliq
+MERCADOLIVRE_APP_ID=
+MERCADOLIVRE_APP_SECRET=
+MERCADOLIVRE_OAUTH_CENTRAL_URL=
 ```
 
 ### Dinamicas (geradas no provisionamento)

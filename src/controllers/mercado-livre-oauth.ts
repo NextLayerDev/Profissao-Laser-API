@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { normalizeVercelUrl } from '../lib/vercel-url.js';
 import { provisioningRepository } from '../repositories/provisioning.js';
 
 /**
@@ -34,24 +35,6 @@ function decodeState(raw: string): z.infer<typeof stateSchema> | null {
 		return stateSchema.parse(parsed);
 	} catch {
 		return null;
-	}
-}
-
-/**
- * Extrai só o origin (scheme + host + porta) do vercel_url armazenado em
- * pl_tenant. O campo é guardado como `<domain>/login` pelo worker de
- * provisionamento (usado como link direto de login em e-mails/pós-compra),
- * mas aqui precisamos da raiz do deploy pra concatenar rotas de API.
- */
-function normalizeVercelUrl(url: string): string {
-	const trimmed = url.trim();
-	const withScheme = /^https?:\/\//i.test(trimmed)
-		? trimmed
-		: `https://${trimmed}`;
-	try {
-		return new URL(withScheme).origin;
-	} catch {
-		return withScheme.replace(/\/$/, '');
 	}
 }
 
