@@ -11,6 +11,7 @@ import { doubtChatRoute } from './routes/doubt-chat.js';
 import { faqRoute } from './routes/faq.js';
 import { forumRoute } from './routes/forum.js';
 import { globalPromoLinkRoute } from './routes/global-promo-link.js';
+import { mlSellerRoute } from './routes/internal/ml-seller.js';
 import { lessonRoute } from './routes/lesson.js';
 import { mercadoLivreOAuthRoute } from './routes/mercado-livre-oauth.js';
 import { moduleRoute } from './routes/module.js';
@@ -28,6 +29,7 @@ import { vectorRoute } from './routes/vector.js';
 import { vectorLibraryRoute } from './routes/vector-library.js';
 import { vectorSupportRoute } from './routes/vector-support.js';
 import { webhookRoute } from './routes/webhook.js';
+import { mercadoLivreWebhookRoute } from './routes/webhooks/mercado-livre.js';
 
 export const routes = async (app: FastifyInstance) => {
 	app.register(webhookRoute);
@@ -59,4 +61,6 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(forumRoute);
 	app.register(provisioningRoute);
 	app.register(mercadoLivreOAuthRoute);
+	app.register(mercadoLivreWebhookRoute);
+	app.register(mlSellerRoute);
 };
