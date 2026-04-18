@@ -296,6 +296,7 @@ export const purchaseService = {
 		email: string,
 		productId: string,
 		direction?: 'upgrade' | 'downgrade',
+		options?: { skipValidation?: boolean },
 	) {
 		return withCapture(async () => {
 			const tenant =
@@ -313,7 +314,7 @@ export const purchaseService = {
 				direction ??
 				(PLAN_ORDER[newPlan] >= PLAN_ORDER[oldPlan] ? 'upgrade' : 'downgrade');
 
-			if (direction) {
+			if (direction && !options?.skipValidation) {
 				if (
 					direction === 'upgrade' &&
 					PLAN_ORDER[newPlan] <= PLAN_ORDER[oldPlan]

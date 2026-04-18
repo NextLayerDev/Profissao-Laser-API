@@ -157,6 +157,7 @@ export const adminChangePlanController = async (
 		customer.email,
 		request.body.productId,
 		'downgrade',
+		{ skipValidation: true },
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
