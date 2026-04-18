@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { customerRepository } from '../repositories/customer.js';
 import { purchaseService } from '../services/purchase.js';
 
 export const getPurchasesController = async (
@@ -132,6 +133,29 @@ export const downgradeSubscriptionController = async (
 		user.email,
 		request.body.productId,
 		'downgrade',
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.status(200).send(result);
+};
+
+export const adminChangePlanController = async (
+	request: FastifyRequest<{
+		Params: { id: string };
+		Body: { productId: string };
+	}>,
+	reply: FastifyReply,
+) => {
+	const { data: customer, error: customerError } =
+		await customerRepository.getCustomerById(request.params.id);
+	if (customerError || !customer) {
+		return reply.status(404).send({ message: 'Customer not found' });
+	}
+	const { data: result, error } = await purchaseService.changePlan(
+		customer.email,
+		request.body.productId,
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';

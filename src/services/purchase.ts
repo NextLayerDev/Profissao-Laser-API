@@ -197,6 +197,15 @@ export const purchaseService = {
 					? existing.data[0]
 					: await stripe.customers.create({ email: data.email });
 
+			const existingSubs = await stripe.subscriptions.list({
+				customer: customer.id,
+				status: 'active',
+				limit: 100,
+			});
+			await Promise.all(
+				existingSubs.data.map((sub) => stripe.subscriptions.cancel(sub.id)),
+			);
+
 			const price = await stripe.prices.create({
 				product: data.stripeProductId,
 				unit_amount: Math.round(data.amount * 100),
@@ -286,7 +295,7 @@ export const purchaseService = {
 	async changePlan(
 		email: string,
 		productId: string,
-		direction: 'upgrade' | 'downgrade',
+		direction?: 'upgrade' | 'downgrade',
 	) {
 		return withCapture(async () => {
 			const tenant =
@@ -300,17 +309,26 @@ export const purchaseService = {
 			const newPlan = await resolvePlanFromProduct(product.id);
 			const oldPlan = tenant.current_plan as ProvisioningPlan;
 
-			if (direction === 'upgrade' && PLAN_ORDER[newPlan] <= PLAN_ORDER[oldPlan])
-				throw new Error(
-					`New plan (${newPlan}) is not higher than current plan (${oldPlan})`,
-				);
-			if (
-				direction === 'downgrade' &&
-				PLAN_ORDER[newPlan] >= PLAN_ORDER[oldPlan]
-			)
-				throw new Error(
-					`New plan (${newPlan}) is not lower than current plan (${oldPlan})`,
-				);
+			const resolvedDirection =
+				direction ??
+				(PLAN_ORDER[newPlan] >= PLAN_ORDER[oldPlan] ? 'upgrade' : 'downgrade');
+
+			if (direction) {
+				if (
+					direction === 'upgrade' &&
+					PLAN_ORDER[newPlan] <= PLAN_ORDER[oldPlan]
+				)
+					throw new Error(
+						`New plan (${newPlan}) is not higher than current plan (${oldPlan})`,
+					);
+				if (
+					direction === 'downgrade' &&
+					PLAN_ORDER[newPlan] >= PLAN_ORDER[oldPlan]
+				)
+					throw new Error(
+						`New plan (${newPlan}) is not lower than current plan (${oldPlan})`,
+					);
+			}
 
 			const customers = await stripe.customers.list({ email, limit: 1 });
 			if (!customers.data.length) throw new Error('No Stripe customer found');
@@ -336,7 +354,7 @@ export const purchaseService = {
 			const updated = await stripe.subscriptions.update(subscription.id, {
 				items: [{ id: item.id, price: product.stripePriceId }],
 				proration_behavior:
-					direction === 'upgrade' ? 'create_prorations' : 'none',
+					resolvedDirection === 'upgrade' ? 'create_prorations' : 'none',
 			});
 
 			return {

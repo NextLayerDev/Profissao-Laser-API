@@ -6,6 +6,7 @@ import {
 	authenticateCustomer,
 } from '@/middleware/auth.js';
 import {
+	adminChangePlanController,
 	createPurchaseController,
 	createSubscriptionController,
 	downgradeSubscriptionController,
@@ -123,6 +124,27 @@ export async function purchaseRoute(server: FastifyInstance) {
 			},
 		},
 		downgradeSubscriptionController,
+	);
+
+	server.patch(
+		'/customer/:id/subscription',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description:
+					'Change the subscription plan of a customer (Admin). Direction is inferred automatically.',
+				params: z.object({ id: z.string() }),
+				body: planChangeBodySchema,
+				response: {
+					200: planChangeResponseSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		adminChangePlanController,
 	);
 
 	server.get(
