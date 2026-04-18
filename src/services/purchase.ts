@@ -355,6 +355,7 @@ export const purchaseService = {
 				items: [{ id: item.id, price: product.stripePriceId }],
 				proration_behavior:
 					resolvedDirection === 'upgrade' ? 'create_prorations' : 'none',
+				billing_cycle_anchor: 'unchanged',
 			});
 
 			return {

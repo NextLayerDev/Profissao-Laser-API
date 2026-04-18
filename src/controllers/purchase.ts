@@ -156,6 +156,7 @@ export const adminChangePlanController = async (
 	const { data: result, error } = await purchaseService.changePlan(
 		customer.email,
 		request.body.productId,
+		'downgrade',
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';

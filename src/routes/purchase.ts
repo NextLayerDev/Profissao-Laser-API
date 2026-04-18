@@ -132,7 +132,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 			preHandler: [authenticateAdmin],
 			schema: {
 				description:
-					'Change the subscription plan of a customer (Admin). Direction is inferred automatically.',
+					'Downgrade the subscription plan of a customer (Admin). Renewal date is preserved.',
 				params: z.object({ id: z.string() }),
 				body: planChangeBodySchema,
 				response: {
