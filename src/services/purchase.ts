@@ -457,6 +457,89 @@ export const purchaseService = {
 		});
 	},
 
+	async listAllRecurringSubscriptions(options?: {
+		status?: 'active' | 'trialing' | 'all';
+		limit?: number;
+		starting_after?: string;
+	}) {
+		return withCapture(async () => {
+			const statusFilter = options?.status ?? 'all';
+			const limit = options?.limit ?? 100;
+
+			const fetchSubs = async (status: 'active' | 'trialing') =>
+				stripe.subscriptions.list({
+					status,
+					limit,
+					...(options?.starting_after && {
+						starting_after: options.starting_after,
+					}),
+					expand: ['data.customer', 'data.items.data.price'],
+				});
+
+			const [activeRes, trialingRes] = await Promise.all([
+				statusFilter !== 'trialing' ? fetchSubs('active') : null,
+				statusFilter !== 'active' ? fetchSubs('trialing') : null,
+			]);
+
+			const subscriptions = [
+				...(activeRes?.data ?? []),
+				...(trialingRes?.data ?? []),
+			];
+
+			const productIds = [
+				...new Set(
+					subscriptions
+						.map((sub) => {
+							const productRef = sub.items.data[0]?.price?.product;
+							return typeof productRef === 'string' ? productRef : null;
+						})
+						.filter(Boolean) as string[],
+				),
+			];
+
+			const productMap = Object.fromEntries(
+				await Promise.all(
+					productIds.map(async (id) => {
+						const p = await stripe.products.retrieve(id);
+						return [id, p.name] as [string, string];
+					}),
+				),
+			);
+
+			return subscriptions.map((sub) => {
+				const customer = sub.customer as Stripe.Customer | null;
+				const item = sub.items.data[0];
+				const price = item?.price;
+				const productRef = price?.product;
+				const productName =
+					typeof productRef === 'string'
+						? (productMap[productRef] ?? 'Unknown Product')
+						: 'Unknown Product';
+
+				const periodEnd = item?.current_period_end;
+
+				return {
+					id: sub.id,
+					status: sub.status,
+					customer: {
+						name: customer?.name ?? 'Unknown',
+						email: customer?.email ?? 'No email',
+						phone: customer?.phone ?? null,
+					},
+					product: productName,
+					amount: price?.unit_amount ? price.unit_amount / 100 : 0,
+					currency: price?.currency ?? 'brl',
+					interval: price?.recurring?.interval ?? null,
+					intervalCount: price?.recurring?.interval_count ?? null,
+					nextChargeAt: periodEnd
+						? new Date(periodEnd * 1000).toISOString()
+						: null,
+					cancelAtPeriodEnd: sub.cancel_at_period_end,
+				};
+			});
+		});
+	},
+
 	async listActiveSubscriptions(email: string) {
 		return withCapture(async () => {
 			const customers = await stripe.customers.list({ email, limit: 1 });

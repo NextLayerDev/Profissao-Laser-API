@@ -101,6 +101,25 @@ export const getPaymentAttemptsController = async (
 	return reply.send(attempts);
 };
 
+export const getRecurringSubscriptionsController = async (
+	request: FastifyRequest<{
+		Querystring: {
+			status?: 'active' | 'trialing' | 'all';
+			limit?: number;
+			starting_after?: string;
+		};
+	}>,
+	reply: FastifyReply,
+) => {
+	const { data: subscriptions, error } =
+		await purchaseService.listAllRecurringSubscriptions(request.query);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(subscriptions);
+};
+
 export const upgradeSubscriptionController = async (
 	request: FastifyRequest<{ Body: { productId: string } }>,
 	reply: FastifyReply,
