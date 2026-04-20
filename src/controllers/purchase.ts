@@ -81,6 +81,22 @@ export const getAllPurchasesController = async (
 	return reply.send(purchases);
 };
 
+export const getRefundsController = async (
+	request: FastifyRequest<{
+		Querystring: { limit?: number; starting_after?: string };
+	}>,
+	reply: FastifyReply,
+) => {
+	const { data: refunds, error } = await purchaseService.listRefunds(
+		request.query,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(refunds);
+};
+
 export const getPaymentAttemptsController = async (
 	request: FastifyRequest<{
 		Querystring: {

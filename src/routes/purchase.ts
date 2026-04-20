@@ -13,6 +13,7 @@ import {
 	getAllPurchasesController,
 	getPaymentAttemptsController,
 	getRecurringSubscriptionsController,
+	getRefundsController,
 	upgradeSubscriptionController,
 } from '../controllers/purchase.js';
 import { ErrorSchema } from '../types/error.js';
@@ -162,6 +163,7 @@ export async function purchaseRoute(server: FastifyInstance) {
 							amount: z.number(),
 							currency: z.string().nullable(),
 							status: z.string(),
+							subscriptionMonth: z.number(),
 							product: z.string(),
 							customer: z.object({
 								name: z.string(),
@@ -218,6 +220,42 @@ export async function purchaseRoute(server: FastifyInstance) {
 			},
 		},
 		getRecurringSubscriptionsController,
+	);
+
+	server.get(
+		'/sales/refunds',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description: 'List all Stripe refunds.',
+				querystring: z.object({
+					limit: z.coerce.number().int().min(1).max(100).optional(),
+					starting_after: z.string().optional(),
+				}),
+				response: {
+					200: z.array(
+						z.object({
+							id: z.string(),
+							date: z.string(),
+							amount: z.number(),
+							currency: z.string(),
+							status: z.string(),
+							reason: z.string().nullable(),
+							charge_id: z.string().nullable(),
+							customer: z.object({
+								name: z.string(),
+								email: z.string(),
+								phone: z.string().nullable(),
+							}),
+						}),
+					),
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getRefundsController,
 	);
 
 	server.get(
