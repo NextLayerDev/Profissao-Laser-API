@@ -6,11 +6,13 @@ import {
 	authenticateCustomer,
 } from '@/middleware/auth.js';
 import {
+	adminChangePlanController,
 	createPurchaseController,
 	createSubscriptionController,
 	downgradeSubscriptionController,
 	getAllPurchasesController,
 	getPaymentAttemptsController,
+	getRecurringSubscriptionsController,
 	upgradeSubscriptionController,
 } from '../controllers/purchase.js';
 import { ErrorSchema } from '../types/error.js';
@@ -125,6 +127,27 @@ export async function purchaseRoute(server: FastifyInstance) {
 		downgradeSubscriptionController,
 	);
 
+	server.patch(
+		'/customer/:id/subscription',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description:
+					'Downgrade the subscription plan of a customer (Admin). Renewal date is preserved.',
+				params: z.object({ id: z.string() }),
+				body: planChangeBodySchema,
+				response: {
+					200: planChangeResponseSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		adminChangePlanController,
+	);
+
 	server.get(
 		'/sales',
 		{
@@ -155,6 +178,46 @@ export async function purchaseRoute(server: FastifyInstance) {
 			},
 		},
 		getAllPurchasesController,
+	);
+
+	server.get(
+		'/sales/recurring',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description:
+					'List all active recurring subscriptions with next charge date. Filter by status (active/trialing/all) and paginate with limit/starting_after.',
+				querystring: z.object({
+					status: z.enum(['active', 'trialing', 'all']).optional(),
+					limit: z.coerce.number().int().min(1).max(100).optional(),
+					starting_after: z.string().optional(),
+				}),
+				response: {
+					200: z.array(
+						z.object({
+							id: z.string(),
+							status: z.string(),
+							customer: z.object({
+								name: z.string(),
+								email: z.string(),
+								phone: z.string().nullable(),
+							}),
+							product: z.string(),
+							amount: z.number(),
+							currency: z.string(),
+							interval: z.string().nullable(),
+							intervalCount: z.number().nullable(),
+							nextChargeAt: z.string().nullable(),
+							cancelAtPeriodEnd: z.boolean(),
+						}),
+					),
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getRecurringSubscriptionsController,
 	);
 
 	server.get(

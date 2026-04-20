@@ -1,5 +1,10 @@
 # Profissao Laser API
 
+![License](https://img.shields.io/badge/license-ISC-blue)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
+![Language](https://img.shields.io/badge/language-TypeScript-3178C6)
+![Version](https://img.shields.io/badge/version-1.0.0-orange)
+
 Backend API for an e-learning platform with course management, payment processing via Stripe, and user authentication. Built with Fastify and TypeScript.
 
 ## Tech Stack
