@@ -8,6 +8,7 @@ import {
 import {
 	adminChangePlanController,
 	createPurchaseController,
+	createRefundController,
 	createSubscriptionController,
 	downgradeSubscriptionController,
 	getAllPurchasesController,
@@ -220,6 +221,35 @@ export async function purchaseRoute(server: FastifyInstance) {
 			},
 		},
 		getRecurringSubscriptionsController,
+	);
+
+	server.post(
+		'/refund',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description: 'Create a full refund for a charge (Admin).',
+				body: z.object({
+					chargeId: z.string(),
+					email: z.email(),
+				}),
+				response: {
+					201: z.object({
+						id: z.string(),
+						chargeId: z.string(),
+						amount: z.number(),
+						currency: z.string(),
+						status: z.string(),
+						reason: z.string().nullable(),
+					}),
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		createRefundController,
 	);
 
 	server.get(
