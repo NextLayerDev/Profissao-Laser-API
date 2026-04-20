@@ -81,6 +81,39 @@ export const getAllPurchasesController = async (
 	return reply.send(purchases);
 };
 
+export const createRefundController = async (
+	request: FastifyRequest<{
+		Body: { chargeId: string; email: string };
+	}>,
+	reply: FastifyReply,
+) => {
+	const { data: refund, error } = await purchaseService.createRefund(
+		request.body,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		const status = message === 'Charge not found' ? 404 : 500;
+		return reply.status(status).send({ message });
+	}
+	return reply.status(201).send(refund);
+};
+
+export const getRefundsController = async (
+	request: FastifyRequest<{
+		Querystring: { limit?: number; starting_after?: string };
+	}>,
+	reply: FastifyReply,
+) => {
+	const { data: refunds, error } = await purchaseService.listRefunds(
+		request.query,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(refunds);
+};
+
 export const getPaymentAttemptsController = async (
 	request: FastifyRequest<{
 		Querystring: {

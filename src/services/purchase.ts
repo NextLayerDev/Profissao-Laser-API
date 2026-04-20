@@ -41,22 +41,48 @@ export const purchaseService = {
 
 	async listAllPurchases() {
 		return withCapture(async () => {
-			const sessions = await stripe.checkout.sessions.list({
-				status: 'complete',
-				expand: [
-					'data.line_items',
-					'data.customer',
-					'data.payment_intent.latest_charge',
-					'data.subscription.latest_invoice',
-				],
+			const charges: Stripe.Charge[] = [];
+			for await (const charge of stripe.charges.list({
 				limit: 100,
-			});
+				expand: ['data.customer'],
+			})) {
+				if (charge.status === 'succeeded') charges.push(charge);
+			}
 
-			const emails = sessions.data
-				.map((s) => {
-					// biome-ignore lint/suspicious/noExplicitAny: Stripe types require any for expanded nested objects.
-					const c = s.customer as any;
-					return c?.email || s.customer_details?.email;
+			const chargeIdToProduct = new Map<string, string>();
+			const productIdToName = new Map<string, string>();
+			for await (const invoice of stripe.invoices.list({
+				limit: 100,
+				status: 'paid',
+				expand: ['data.payments'],
+			})) {
+				const line = invoice.lines?.data[0];
+				const productRef = line?.pricing?.price_details?.product;
+				if (!productRef) continue;
+				let productName = productIdToName.get(productRef);
+				if (!productName) {
+					try {
+						const p = await stripe.products.retrieve(productRef);
+						productName = p.name;
+						productIdToName.set(productRef, productName);
+					} catch {
+						continue;
+					}
+				}
+				for (const p of invoice.payments?.data ?? []) {
+					const ch = p.payment?.charge;
+					const chId = typeof ch === 'string' ? ch : ch?.id;
+					if (chId) chargeIdToProduct.set(chId, productName);
+					const pi = p.payment?.payment_intent;
+					const piId = typeof pi === 'string' ? pi : pi?.id;
+					if (piId) chargeIdToProduct.set(piId, productName);
+				}
+			}
+
+			const emails = charges
+				.map((c) => {
+					const customer = c.customer as Stripe.Customer | null;
+					return customer?.email ?? c.billing_details?.email ?? null;
 				})
 				.filter(Boolean) as string[];
 
@@ -65,41 +91,156 @@ export const purchaseService = {
 				provisioningRepository.findNamesByEmails(emails),
 			]);
 
-			return sessions.data.map((session) => {
-				const item = session.line_items?.data[0];
-				// biome-ignore lint/suspicious/noExplicitAny: Stripe types require any for expanded nested objects.
-				const customer = session.customer as any;
-				// biome-ignore lint/suspicious/noExplicitAny: payment_intent is expanded with latest_charge.
-				const paymentIntent = session.payment_intent as any;
-				// biome-ignore lint/suspicious/noExplicitAny: subscription is expanded with latest_invoice.
-				const subscription = session.subscription as any;
-				const receiptUrl =
-					paymentIntent?.latest_charge?.receipt_url ??
-					subscription?.latest_invoice?.hosted_invoice_url ??
-					null;
-				const email = customer?.email || session.customer_details?.email || '';
+			const getProductName = (c: Stripe.Charge) => {
+				const piId =
+					typeof c.payment_intent === 'string'
+						? c.payment_intent
+						: c.payment_intent?.id;
+				const fromInvoice =
+					chargeIdToProduct.get(c.id) ??
+					(piId ? chargeIdToProduct.get(piId) : undefined);
+				if (fromInvoice) return fromInvoice;
+				if (
+					c.description &&
+					c.description !== 'Subscription update' &&
+					c.description !== 'Subscription creation'
+				) {
+					return c.description;
+				}
+				return 'Unknown Product';
+			};
+
+			const counters = new Map<string, number>();
+			const sorted = [...charges].sort((a, b) => a.created - b.created);
+			const monthMap = new Map<string, number>();
+			for (const c of sorted) {
+				const customer = c.customer as Stripe.Customer | null;
+				const email = customer?.email || c.billing_details?.email || '';
+				const key = `${email}||${getProductName(c)}`;
+				const next = (counters.get(key) ?? 0) + 1;
+				counters.set(key, next);
+				monthMap.set(c.id, next);
+			}
+
+			return charges.map((charge) => {
+				const customer = charge.customer as Stripe.Customer | null;
+				const email = customer?.email || charge.billing_details?.email || '';
 
 				return {
-					id: session.id,
-					date: new Date(session.created * 1000).toISOString(),
-					amount: session.amount_total ? session.amount_total / 100 : 0,
-					currency: session.currency,
-					status: session.payment_status,
-					product: item?.description || 'Unknown Product',
+					id: charge.id,
+					date: new Date(charge.created * 1000).toISOString(),
+					amount: charge.amount ? charge.amount / 100 : 0,
+					currency: charge.currency,
+					status: charge.refunded
+						? 'reembolsado'
+						: (charge.status ?? 'unknown'),
+					subscriptionMonth: monthMap.get(charge.id) ?? 1,
+					product: getProductName(charge),
 					customer: {
 						name:
 							customer?.name ||
-							session.customer_details?.name ||
+							charge.billing_details?.name ||
 							dbNames[email] ||
 							'Unknown',
 						email: email || 'No email',
 						phone:
 							customer?.phone ||
-							session.customer_details?.phone ||
+							charge.billing_details?.phone ||
 							dbPhones[email] ||
 							null,
 					},
-					receipt_url: receiptUrl,
+					receipt_url: charge.receipt_url ?? null,
+				};
+			});
+		});
+	},
+
+	async createRefund(data: { chargeId: string; email: string }) {
+		return withCapture(async () => {
+			const charge = await stripe.charges.retrieve(data.chargeId, {
+				expand: ['customer'],
+			});
+			if (!charge) throw new Error('Charge not found');
+			if (charge.status !== 'succeeded')
+				throw new Error('Charge is not refundable');
+			if (charge.refunded) throw new Error('Charge already refunded');
+
+			const customer = charge.customer as Stripe.Customer | null;
+			const chargeEmail = customer?.email ?? charge.billing_details?.email;
+			if (chargeEmail && chargeEmail !== data.email) {
+				throw new Error('Charge does not belong to this customer');
+			}
+
+			const refund = await stripe.refunds.create({ charge: data.chargeId });
+
+			return {
+				id: refund.id,
+				chargeId: data.chargeId,
+				amount: refund.amount / 100,
+				currency: refund.currency,
+				status: refund.status ?? 'unknown',
+				reason: refund.reason ?? null,
+			};
+		});
+	},
+
+	async listRefunds(options?: { limit?: number; starting_after?: string }) {
+		return withCapture(async () => {
+			const refunds = await stripe.refunds.list({
+				limit: options?.limit ?? 50,
+				...(options?.starting_after && {
+					starting_after: options.starting_after,
+				}),
+			});
+
+			const chargeIds = refunds.data
+				.map((r) => (typeof r.charge === 'string' ? r.charge : null))
+				.filter(Boolean) as string[];
+
+			const charges = await Promise.all(
+				chargeIds.map((id) =>
+					stripe.charges.retrieve(id, {
+						expand: ['customer'],
+					}),
+				),
+			);
+
+			const chargeMap = new Map(charges.map((c) => [c.id, c]));
+
+			const emails = charges
+				.map((c) => {
+					// biome-ignore lint/suspicious/noExplicitAny: Stripe expanded customer
+					const customer = c.customer as any;
+					return customer?.email || c.billing_details?.email;
+				})
+				.filter(Boolean) as string[];
+
+			const [dbPhones, dbNames] = await Promise.all([
+				customerRepository.findPhonesByEmails(emails),
+				provisioningRepository.findNamesByEmails(emails),
+			]);
+
+			return refunds.data.map((refund) => {
+				const chargeId =
+					typeof refund.charge === 'string' ? refund.charge : null;
+				const charge = chargeId ? chargeMap.get(chargeId) : null;
+				// biome-ignore lint/suspicious/noExplicitAny: Stripe expanded customer
+				const customer = charge?.customer as any;
+				const email = customer?.email || charge?.billing_details?.email || '';
+
+				return {
+					id: refund.id,
+					date: new Date(refund.created * 1000).toISOString(),
+					amount: refund.amount / 100,
+					currency: refund.currency,
+					status: refund.status ?? 'unknown',
+					reason: refund.reason ?? null,
+					charge_id: chargeId,
+					customer: {
+						name: customer?.name || dbNames[email] || 'Unknown',
+						email: email || 'No email',
+						phone: customer?.phone || dbPhones[email] || null,
+					},
 				};
 			});
 		});
