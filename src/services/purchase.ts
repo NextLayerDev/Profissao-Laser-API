@@ -598,6 +598,49 @@ export const purchaseService = {
 		});
 	},
 
+	async cancelSubscriptionById(data: {
+		email: string;
+		subscriptionId: string;
+	}) {
+		return withCapture(async () => {
+			const subscription = await stripe.subscriptions.retrieve(
+				data.subscriptionId,
+				{ expand: ['customer'] },
+			);
+			if (!subscription) throw new Error('Subscription not found');
+
+			const customer = subscription.customer as Stripe.Customer | null;
+			const subscriptionEmail =
+				customer && !('deleted' in customer) ? customer.email : null;
+			if (subscriptionEmail && subscriptionEmail !== data.email) {
+				throw new Error('Subscription does not belong to this customer');
+			}
+
+			if (
+				subscription.status === 'canceled' ||
+				subscription.status === 'incomplete_expired'
+			) {
+				throw new Error('Subscription is already cancelled');
+			}
+
+			const updated = await stripe.subscriptions.update(data.subscriptionId, {
+				cancel_at_period_end: true,
+			});
+
+			const periodEnd = updated.items.data[0]?.current_period_end;
+
+			return {
+				id: updated.id,
+				message:
+					'Subscription will be cancelled at the end of the billing period.',
+				cancelAtPeriodEnd: updated.cancel_at_period_end,
+				currentPeriodEnd: periodEnd
+					? new Date(periodEnd * 1000).toISOString()
+					: null,
+			};
+		});
+	},
+
 	async listAllRecurringSubscriptions(options?: {
 		status?: 'active' | 'trialing' | 'all';
 		limit?: number;
