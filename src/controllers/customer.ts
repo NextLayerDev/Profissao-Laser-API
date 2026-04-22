@@ -132,6 +132,28 @@ class CustomerController {
 		reply.status(200).send(result);
 	}
 
+	async cancelCustomerSubscription(
+		request: FastifyRequest<{
+			Body: { email: string; subscriptionId: string };
+		}>,
+		reply: FastifyReply,
+	) {
+		const { data: result, error } =
+			await purchaseService.cancelSubscriptionById(request.body);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			const status =
+				message === 'Subscription not found'
+					? 404
+					: message === 'Subscription does not belong to this customer' ||
+							message === 'Subscription is already cancelled'
+						? 400
+						: 500;
+			return reply.status(status).send({ message });
+		}
+		reply.status(200).send(result);
+	}
+
 	async getCustomerPlans(
 		request: FastifyRequest<{ Params: { email: string } }>,
 		reply: FastifyReply,

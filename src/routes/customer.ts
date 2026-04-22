@@ -161,6 +161,36 @@ export async function customerRoute(server: FastifyInstance) {
 		customerController.cancelMySubscription,
 	);
 
+	server.post(
+		'/customer/subscription/cancel',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description:
+					'Cancel a customer subscription at period end by email and subscription ID (Admin).',
+				body: z.object({
+					email: z.email(),
+					subscriptionId: z.string(),
+				}),
+				response: {
+					200: z.object({
+						id: z.string(),
+						message: z.string(),
+						cancelAtPeriodEnd: z.boolean(),
+						currentPeriodEnd: z.string().nullable(),
+					}),
+					400: ErrorSchema,
+					401: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		customerController.cancelCustomerSubscription,
+	);
+
 	server.get(
 		'/customer/plans/:email',
 		{
