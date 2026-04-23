@@ -942,6 +942,22 @@ CREATE INDEX IF NOT EXISTS "EcommerceNotification_storeId_isRead_idx" ON "Ecomme
 CREATE INDEX IF NOT EXISTS "EcommerceNotification_storeId_topic_idx" ON "EcommerceNotification"("storeId", "topic");
 CREATE INDEX IF NOT EXISTS "EcommerceNotification_storeId_createdAt_idx" ON "EcommerceNotification"("storeId", "createdAt" DESC);
 
+-- ============== SVGS / PRODUCAO CHECKLIST (migration 20260416_add_svgs_field) ==============
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'Pedido' AND column_name = 'svgs'
+  ) THEN
+    ALTER TABLE "Pedido" ADD COLUMN "svgs" TEXT[] NOT NULL DEFAULT '{}';
+  END IF;
+END $$;
+
+ALTER TABLE "Pedido" ADD COLUMN IF NOT EXISTS "producao_checklist" jsonb;
+
+-- ============== ONBOARDING (migration 20260420_add_company_onboarding) ==============
+ALTER TABLE "Company" ADD COLUMN IF NOT EXISTS "segmento" TEXT;
+ALTER TABLE "Company" ADD COLUMN IF NOT EXISTS "onboarding_data" JSONB;
+
 -- ============== PRISMA MIGRATIONS BASELINE ==============
 -- Marca as migrations do Prisma como já aplicadas para que
 -- `prisma migrate deploy` no build do Vercel não falhe (P3005).
@@ -977,3 +993,11 @@ WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '2
 INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
 SELECT gen_random_uuid(), 'baseline', '20260413_add_ecommerce_webhooks_tables', now(), 1
 WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260413_add_ecommerce_webhooks_tables');
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '20260416_add_svgs_field', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260416_add_svgs_field');
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '20260420_add_company_onboarding', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260420_add_company_onboarding');
