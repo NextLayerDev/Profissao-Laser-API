@@ -12,6 +12,7 @@ import { faqRoute } from './routes/faq.js';
 import { forumRoute } from './routes/forum.js';
 import { globalPromoLinkRoute } from './routes/global-promo-link.js';
 import { mlSellerRoute } from './routes/internal/ml-seller.js';
+import { shopeeShopRoute } from './routes/internal/shopee-shop.js';
 import { lessonRoute } from './routes/lesson.js';
 import { mercadoLivreOAuthRoute } from './routes/mercado-livre-oauth.js';
 import { moduleRoute } from './routes/module.js';
@@ -23,6 +24,7 @@ import { provisioningRoute } from './routes/provisioning.js';
 import { purchaseRoute } from './routes/purchase.js';
 import { quizRoute } from './routes/quiz.js';
 import { savedLessonRoute } from './routes/saved-lesson.js';
+import { shopeeOAuthRoute } from './routes/shopee-oauth.js';
 import { systemClassRoute } from './routes/system-class.js';
 import { userRoute } from './routes/user.js';
 import { vectorRoute } from './routes/vector.js';
@@ -30,6 +32,7 @@ import { vectorLibraryRoute } from './routes/vector-library.js';
 import { vectorSupportRoute } from './routes/vector-support.js';
 import { webhookRoute } from './routes/webhook.js';
 import { mercadoLivreWebhookRoute } from './routes/webhooks/mercado-livre.js';
+import { shopeeWebhookRoute } from './routes/webhooks/shopee.js';
 
 export const routes = async (app: FastifyInstance) => {
 	app.register(webhookRoute);
@@ -63,4 +66,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(mercadoLivreOAuthRoute);
 	app.register(mercadoLivreWebhookRoute);
 	app.register(mlSellerRoute);
+	app.register(shopeeOAuthRoute);
+	app.register(shopeeWebhookRoute);
+	app.register(shopeeShopRoute);
 };
