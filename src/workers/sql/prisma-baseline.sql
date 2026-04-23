@@ -69,3 +69,25 @@ SELECT
 WHERE NOT EXISTS (
     SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260413_add_ecommerce_webhooks_tables'
 );
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT
+    gen_random_uuid()::text,
+    'baseline',
+    '20260416_add_svgs_field',
+    now(),
+    1
+WHERE NOT EXISTS (
+    SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260416_add_svgs_field'
+);
+
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT
+    gen_random_uuid()::text,
+    'baseline',
+    '20260420_add_company_onboarding',
+    now(),
+    1
+WHERE NOT EXISTS (
+    SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260420_add_company_onboarding'
+);
