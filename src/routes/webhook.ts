@@ -213,16 +213,21 @@ async function handleSystemProvisioning(
 		let plan: 'prata' | 'ouro' | 'platina' = 'prata';
 		let systemClassName: string | null = null;
 		let onlyProfissao = true;
+		let gerenciamentoSistema = false;
 
 		const { data: scLinks } = await supabase
 			.from('pl_system_class_product')
-			.select('systemClassId, pl_system_class(name)')
+			.select('systemClassId, pl_system_class(name, gerenciamentoSistema)')
 			.eq('productId', product.id)
 			.limit(1);
 
 		if (scLinks && scLinks.length > 0) {
-			const scName = (scLinks[0].pl_system_class as unknown as { name: string })
-				?.name;
+			const sc = scLinks[0].pl_system_class as unknown as {
+				name: string;
+				gerenciamentoSistema: boolean;
+			} | null;
+			const scName = sc?.name;
+			gerenciamentoSistema = sc?.gerenciamentoSistema ?? false;
 			if (scName) {
 				systemClassName = scName;
 				onlyProfissao = false;
@@ -230,6 +235,22 @@ async function handleSystemProvisioning(
 				if (lower === 'platina') plan = 'platina';
 				else if (lower === 'ouro') plan = 'ouro';
 			}
+		}
+
+		// Produto sem class-system OU class-system com gerenciamentoSistema:false
+		// → não cria tenant; o upsert de pl_subscription (em handleCheckoutCompleted)
+		// já garante o acesso para subscription, e o frontend redireciona para /course.
+		if (!gerenciamentoSistema) {
+			server.log.info(
+				{
+					sessionId: session.id,
+					productId: product.id,
+					systemClassName,
+					mode: session.mode,
+				},
+				'Skipping tenant provisioning — product is not sistema-gerenciado',
+			);
+			return;
 		}
 
 		// Get company_name from checkout metadata
