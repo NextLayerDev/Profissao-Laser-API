@@ -9,6 +9,7 @@ import type {
 	UpdateGlobalPromoLinkStatus,
 } from '../types/global-promo-link.js';
 import { isValidCpf, normalizeDigits } from '../utils/cpf.js';
+import { resolveSuccessUrl } from '../utils/success-url.js';
 import { authService } from './auth.js';
 
 export const globalPromoLinkService = {
@@ -203,12 +204,14 @@ export const globalPromoLinkService = {
 
 			const companyName = data.companyName.trim();
 
+			const successUrl = await resolveSuccessUrl(data.productId);
+
 			const session = await stripe.checkout.sessions.create({
 				customer: stripeCustomer.id,
 				line_items: [{ price: product.stripePriceId, quantity: 1 }],
 				mode,
 				discounts: [{ coupon: link.stripe_coupon_id }],
-				success_url: `${process.env.SUCCESS_URL ?? 'http://localhost:3000/checkout/success'}?session_id={CHECKOUT_SESSION_ID}`,
+				success_url: successUrl,
 				cancel_url: process.env.CANCEL_URL ?? 'http://localhost:3000/cancelado',
 				metadata: {
 					company_name: companyName,
