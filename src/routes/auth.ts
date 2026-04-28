@@ -27,13 +27,24 @@ export async function authRoute(server: FastifyInstance) {
 		'/login/customer',
 		{
 			schema: {
-				description: 'Login as a customer.',
+				description:
+					'Login as a customer. Returns access_token, refresh_token and customer profile so the client can hydrate UI without an extra round-trip.',
 				body: z.object({
 					email: z.email(),
 					password: z.string().min(6),
 				}),
 				response: {
-					200: z.object({ token: z.string() }),
+					200: z.object({
+						token: z.string(),
+						refresh_token: z.string(),
+						expires_at: z.number().nullable(),
+						customer: z.object({
+							id: z.string(),
+							email: z.string(),
+							name: z.string(),
+							phone: z.string().nullable(),
+						}),
+					}),
 					401: ErrorSchema,
 					500: ErrorSchema,
 				},
@@ -65,13 +76,24 @@ export async function authRoute(server: FastifyInstance) {
 		'/login/user',
 		{
 			schema: {
-				description: 'Login as a user',
+				description:
+					'Login as a user (staff/admin). Returns access_token, refresh_token and user profile so the client can hydrate UI without an extra round-trip.',
 				body: z.object({
 					email: z.string().email(),
 					password: z.string().min(6),
 				}),
 				response: {
-					200: z.object({ token: z.string() }),
+					200: z.object({
+						token: z.string(),
+						refresh_token: z.string(),
+						expires_at: z.number().nullable(),
+						user: z.object({
+							id: z.string(),
+							email: z.string(),
+							name: z.string(),
+							role: z.string(),
+						}),
+					}),
 					401: ErrorSchema,
 					500: ErrorSchema,
 				},
@@ -95,5 +117,59 @@ export async function authRoute(server: FastifyInstance) {
 			},
 		},
 		authController.forgotPassword,
+	);
+
+	server.post(
+		'/auth/refresh',
+		{
+			schema: {
+				description:
+					'Exchange a refresh_token for a new access_token. Used by clients (e.g. system_porteira course-only deploy) to keep sessions alive without re-prompting the user.',
+				body: z.object({ refresh_token: z.string().min(10) }),
+				response: {
+					200: z.object({
+						token: z.string(),
+						refresh_token: z.string(),
+						expires_at: z.number().nullable(),
+					}),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Auth'],
+			},
+		},
+		authController.refresh,
+	);
+
+	server.get(
+		'/auth/me',
+		{
+			schema: {
+				description:
+					'Resolve the current identity from the Bearer token. Returns either { type: "user", ... } or { type: "customer", ... }. Used by external frontends (e.g. system_porteira course-only) to hydrate session on SSR without sharing JWT secrets.',
+				security: [{ bearerAuth: [] }],
+				response: {
+					200: z.union([
+						z.object({
+							type: z.literal('user'),
+							id: z.string(),
+							email: z.string(),
+							name: z.string(),
+							role: z.string(),
+						}),
+						z.object({
+							type: z.literal('customer'),
+							id: z.string(),
+							email: z.string(),
+							name: z.string(),
+							phone: z.string().nullable(),
+						}),
+					]),
+					401: ErrorSchema,
+				},
+				tags: ['Auth'],
+			},
+		},
+		authController.me,
 	);
 }

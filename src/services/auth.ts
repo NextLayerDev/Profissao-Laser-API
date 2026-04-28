@@ -82,7 +82,25 @@ export const authService = {
 
 			if (error) throw new Error(error.message);
 
-			return { token: data.session.access_token };
+			// Busca dados do user na tabela Users para enriquecer a resposta.
+			// Mantém retro-compat: campos opcionais e tolera ausência.
+			const { data: userRow } = await supabase
+				.from('Users')
+				.select('id, email, name, role')
+				.or(`id.eq.${data.user?.id},email.eq.${data.user?.email}`)
+				.maybeSingle();
+
+			return {
+				token: data.session.access_token,
+				refresh_token: data.session.refresh_token,
+				expires_at: data.session.expires_at ?? null,
+				user: {
+					id: data.user?.id ?? userRow?.id ?? '',
+					email: data.user?.email ?? userRow?.email ?? '',
+					name: userRow?.name ?? data.user?.user_metadata?.name ?? '',
+					role: userRow?.role ?? data.user?.user_metadata?.role ?? 'admin',
+				},
+			};
 		});
 	},
 
@@ -99,7 +117,96 @@ export const authService = {
 
 			if (error) throw new Error(error.message);
 
-			return { token: data.session.access_token };
+			const { data: customerRow } = await supabase
+				.from('Customers')
+				.select('id, email, name, phone')
+				.or(`id.eq.${data.user?.id},email.eq.${data.user?.email}`)
+				.maybeSingle();
+
+			return {
+				token: data.session.access_token,
+				refresh_token: data.session.refresh_token,
+				expires_at: data.session.expires_at ?? null,
+				customer: {
+					id: data.user?.id ?? customerRow?.id ?? '',
+					email: data.user?.email ?? customerRow?.email ?? '',
+					name: customerRow?.name ?? data.user?.user_metadata?.name ?? '',
+					phone: customerRow?.phone ?? null,
+				},
+			};
+		});
+	},
+
+	async refreshSession(refreshToken: string) {
+		return withCapture(async () => {
+			if (!refreshToken) {
+				throw new Error('refresh_token not provided');
+			}
+			const { data, error } = await supabase.auth.refreshSession({
+				refresh_token: refreshToken,
+			});
+			if (error) throw new Error(error.message);
+			if (!data.session) throw new Error('No session returned by refresh');
+			return {
+				token: data.session.access_token,
+				refresh_token: data.session.refresh_token,
+				expires_at: data.session.expires_at ?? null,
+			};
+		});
+	},
+
+	/**
+	 * Resolve o user/customer do token. Distingue entre:
+	 * - user (tabela Users — staff/admin)
+	 * - customer (tabela Customers — aluno do curso)
+	 * Para uso em GET /me.
+	 */
+	async getMeFromToken(accessToken: string) {
+		return withCapture(async () => {
+			const {
+				data: { user },
+				error,
+			} = await supabase.auth.getUser(accessToken);
+
+			if (error || !user) throw new Error('Invalid or expired token');
+
+			// Tenta primeiro como user (staff)
+			const { data: userRow } = await supabase
+				.from('Users')
+				.select('id, email, name, role')
+				.or(`id.eq.${user.id},email.eq.${user.email}`)
+				.maybeSingle();
+
+			if (userRow) {
+				return {
+					type: 'user' as const,
+					id: userRow.id,
+					email: userRow.email,
+					name: userRow.name,
+					role: userRow.role ?? 'admin',
+				};
+			}
+
+			// Senão, tenta como customer
+			const { data: customerRow } = await supabase
+				.from('Customers')
+				.select('id, email, name, phone')
+				.or(`id.eq.${user.id},email.eq.${user.email}`)
+				.maybeSingle();
+
+			if (customerRow) {
+				return {
+					type: 'customer' as const,
+					id: customerRow.id,
+					email: customerRow.email,
+					name: customerRow.name,
+					phone: customerRow.phone ?? null,
+				};
+			}
+
+			throw new Error(
+				'Authenticated identity not found in Users nor Customers',
+			);
 		});
 	},
 

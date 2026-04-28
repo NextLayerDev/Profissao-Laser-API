@@ -57,6 +57,33 @@ class AuthController {
 		}
 		return reply.send(result);
 	}
+
+	async refresh(request: FastifyRequest, reply: FastifyReply) {
+		const { refresh_token } = request.body as { refresh_token: string };
+		const { data: result, error } =
+			await authService.refreshSession(refresh_token);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(401).send({ message });
+		}
+		return reply.send(result);
+	}
+
+	async me(request: FastifyRequest, reply: FastifyReply) {
+		const authHeader = request.headers.authorization;
+		const token = authHeader?.replace('Bearer ', '');
+		if (!token) {
+			return reply
+				.status(401)
+				.send({ message: 'Authorization header missing' });
+		}
+		const { data: result, error } = await authService.getMeFromToken(token);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(401).send({ message });
+		}
+		return reply.send(result);
+	}
 }
 
 export const authController = new AuthController();
