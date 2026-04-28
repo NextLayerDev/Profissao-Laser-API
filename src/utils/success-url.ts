@@ -18,5 +18,5 @@ export async function resolveSuccessUrl(productId: string): Promise<string> {
 		return `${process.env.SUCCESS_URL ?? 'http://localhost:3000/checkout/success'}?session_id={CHECKOUT_SESSION_ID}`;
 	}
 
-	return `${process.env.COURSES_URL ?? 'https://profissaolaser.com.br/cursos'}?session_id={CHECKOUT_SESSION_ID}`;
+	return `${process.env.COURSES_URL ?? 'https://profissaolaser.com.br/course'}?session_id={CHECKOUT_SESSION_ID}`;
 }
