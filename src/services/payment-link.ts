@@ -228,7 +228,7 @@ export const paymentLinkService = {
 				mode,
 				payment_method_types: ['card', 'boleto'],
 				discounts: [{ coupon: link.stripe_coupon_id }],
-				success_url: `${process.env.SUCCESS_URL ?? 'http://localhost:3000/checkout/success'}?session_id={CHECKOUT_SESSION_ID}`,
+				success_url: `${process.env.COURSES_URL ?? 'https://profissaolaser.com.br/course'}?session_id={CHECKOUT_SESSION_ID}`,
 				cancel_url: process.env.CANCEL_URL ?? 'http://localhost:3000/cancelado',
 				metadata: {
 					company_name: companyName,

@@ -6,6 +6,7 @@ import { productRepository } from '../repositories/product.js';
 import { provisioningRepository } from '../repositories/provisioning.js';
 import type { ProvisioningPlan } from '../types/provisioning.js';
 import { PLAN_ORDER, resolvePlanFromProduct } from '../utils/plan.js';
+import { resolveSuccessUrl } from '../utils/success-url.js';
 
 export const purchaseService = {
 	async listPurchases(email: string) {
@@ -412,12 +413,14 @@ export const purchaseService = {
 							...(normalizedPhone && { phone: normalizedPhone }),
 						});
 
+			const successUrl = await resolveSuccessUrl(data.productId);
+
 			const session = await stripe.checkout.sessions.create({
 				customer: customer.id,
 				line_items: [{ price: product.stripePriceId, quantity: 1 }],
 				mode,
 				payment_method_types: ['card', 'boleto'],
-				success_url: `${process.env.SUCCESS_URL ?? 'http://localhost:3000/checkout/success'}?session_id={CHECKOUT_SESSION_ID}`,
+				success_url: successUrl,
 				cancel_url: process.env.CANCEL_URL ?? 'http://localhost:3000/cancelado',
 				...(data.companyName && {
 					metadata: { company_name: data.companyName },
