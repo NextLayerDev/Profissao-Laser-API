@@ -7,6 +7,7 @@ import {
 	createForumReplySchema,
 	updateForumCategorySchema,
 	updateForumPostSchema,
+	updateForumReplySchema,
 } from '../types/forum.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -247,6 +248,35 @@ export const createForumReplyController = async (
 		const author = getAuthor(request);
 		const post = await forumRepository.createReply(postId, data, author);
 		return reply.status(201).send(post);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
+export const updateForumReplyController = async (
+	request: FastifyRequest<{ Params: { id: string; replyId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { id: postId, replyId } = request.params;
+		const currentUserId = request.currentUser?.id ?? '';
+
+		const post = await forumRepository.getPost(postId, currentUserId);
+		const replyObj = post.replies?.find((r) => r.id === replyId);
+		if (!replyObj)
+			return reply.status(404).send({ message: 'Reply not found' });
+
+		if (!(await requireOwnerOrAdmin(request, reply, replyObj.authorId))) return;
+
+		const data = updateForumReplySchema.parse(request.body);
+		const updated = await forumRepository.updateReply(
+			postId,
+			replyId,
+			data.content,
+			currentUserId,
+		);
+		return reply.send(updated);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(400).send({ message });
