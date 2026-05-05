@@ -87,8 +87,15 @@ export const communityService = {
 		);
 	},
 
-	async listMembers(search?: string, category?: string) {
-		return withCapture(() => communityRepository.listMembers(search, category));
+	async listMembers(
+		search?: string,
+		category?: string,
+		featured?: boolean,
+		online?: boolean,
+	) {
+		return withCapture(() =>
+			communityRepository.listMembers(search, category, featured, online),
+		);
 	},
 
 	async listProjects(

@@ -294,14 +294,21 @@ export const deleteMessageController = async (
 
 export const getMembersController = async (
 	request: FastifyRequest<{
-		Querystring: { search?: string; category?: string };
+		Querystring: {
+			search?: string;
+			category?: string;
+			featured?: string;
+			online?: string;
+		};
 	}>,
 	reply: FastifyReply,
 ) => {
-	const { search, category } = request.query;
+	const { search, category, featured, online } = request.query;
 	const { data: members, error } = await communityService.listMembers(
 		search,
 		category,
+		featured === 'true',
+		online === 'true',
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';

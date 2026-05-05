@@ -281,15 +281,24 @@ class CommunityRepository {
 		if (error) throw new Error(error.message);
 	}
 
-	async listMembers(search?: string, category?: string) {
+	async listMembers(
+		search?: string,
+		category?: string,
+		featured?: boolean,
+		online?: boolean,
+	) {
 		let query = supabase.from('Customers').select(`
 				id,
 				name,
 				pl_community_profile (
 					specialty,
 					badges,
+					badge,
+					"featuredRole",
+					featured,
 					category,
-					image
+					image,
+					"lastSeenAt"
 				)
 			`);
 
@@ -300,31 +309,32 @@ class CommunityRepository {
 		const { data, error } = await query;
 		if (error) throw new Error(error.message);
 
+		const onlineThreshold = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
 		return (data ?? [])
-			.map(
-				(m: {
-					name: string;
-					pl_community_profile: {
-						specialty: string | null;
-						badges: string[];
-						category: string | null;
-						image: string | null;
-					}[];
-				}) => {
-					const profile = m.pl_community_profile?.[0] ?? null;
-					return {
-						name: m.name,
-						specialty: profile?.specialty ?? null,
-						badges: profile?.badges ?? [],
-						category: profile?.category ?? null,
-						image: profile?.image ?? null,
-					};
-				},
-			)
-			.filter(
-				(m: { category: string | null }) =>
-					!category || m.category === category,
-			);
+			.map((m) => {
+				// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+				const member = m as any;
+				const profile = member.pl_community_profile?.[0] ?? null;
+				const lastSeenAt: string | null = profile?.lastSeenAt ?? null;
+				const isOnline = lastSeenAt ? lastSeenAt >= onlineThreshold : false;
+				return {
+					id: member.id as string,
+					name: member.name as string,
+					specialty: (profile?.specialty ?? null) as string | null,
+					badges: (profile?.badges ?? []) as string[],
+					badge: (profile?.badge ?? null) as string | null,
+					featuredRole: (profile?.featuredRole ?? null) as string | null,
+					featured: (profile?.featured ?? false) as boolean,
+					category: (profile?.category ?? null) as string | null,
+					image: (profile?.image ?? null) as string | null,
+					isOnline,
+					lastSeenAt,
+				};
+			})
+			.filter((m) => !category || m.category === category)
+			.filter((m) => !featured || m.featured === true)
+			.filter((m) => !online || m.isOnline === true);
 	}
 
 	async listProjects(

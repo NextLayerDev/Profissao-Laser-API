@@ -58,11 +58,17 @@ export const sendMessageSchema = z.object({
 });
 
 export const communityMemberSchema = z.object({
+	id: z.string(),
 	name: z.string(),
 	specialty: z.string().nullable(),
 	badges: z.array(z.string()),
+	badge: z.string().nullable(),
+	featuredRole: z.string().nullable(),
+	featured: z.boolean(),
 	category: z.string().nullable(),
-	image: z.string().nullable().optional(),
+	image: z.string().nullable(),
+	isOnline: z.boolean(),
+	lastSeenAt: z.string().nullable(),
 });
 
 export const communityProjectSchema = z.object({

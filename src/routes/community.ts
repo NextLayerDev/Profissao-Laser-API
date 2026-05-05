@@ -288,10 +288,12 @@ export async function communityRoute(server: FastifyInstance) {
 			preHandler: [authenticateCommunity],
 			schema: {
 				description:
-					'List community members, optionally filtered by search or category.',
+					'List community members, optionally filtered by search, category, featured or online status.',
 				querystring: z.object({
 					search: z.string().optional(),
 					category: z.string().optional(),
+					featured: z.enum(['true', 'false']).optional(),
+					online: z.enum(['true', 'false']).optional(),
 				}),
 				response: {
 					200: z.array(communityMemberSchema),
