@@ -23,6 +23,7 @@ import {
 	getProjectController,
 	getProjectsController,
 	getRankingController,
+	getStatsController,
 	sendMessageController,
 	togglePostLikeController,
 	updateChannelController,
@@ -38,6 +39,7 @@ import {
 	communityPostSchema,
 	communityProjectSchema,
 	communityRankingSchema,
+	communityStatsSchema,
 	createChannelSchema,
 	createCommentSchema,
 	createEventSchema,
@@ -564,5 +566,22 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		getActivityController,
+	);
+
+	server.get(
+		'/community/stats',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Estatísticas agregadas da plataforma.',
+				response: {
+					200: communityStatsSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getStatsController,
 	);
 }

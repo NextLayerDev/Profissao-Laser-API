@@ -214,4 +214,8 @@ export const communityService = {
 	async listActivity(page: number, limit: number) {
 		return withCapture(() => communityRepository.listActivity(page, limit));
 	},
+
+	async getStats() {
+		return withCapture(() => communityRepository.getStats());
+	},
 };

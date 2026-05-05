@@ -554,6 +554,18 @@ export const getRankingController = async (
 	return reply.send(ranking);
 };
 
+export const getStatsController = async (
+	_request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const { data: stats, error } = await communityService.getStats();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(stats);
+};
+
 export const getActivityController = async (
 	request: FastifyRequest<{ Querystring: { page?: string; limit?: string } }>,
 	reply: FastifyReply,

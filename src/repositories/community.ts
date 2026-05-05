@@ -762,6 +762,34 @@ class CommunityRepository {
 			.map((entry, i) => ({ pos: i + 1, name: entry.name, pts: entry.pts }));
 	}
 
+	async getStats() {
+		const [
+			{ count: membersCount },
+			{ count: projectsCount },
+			{ count: messagesCount },
+			{ count: livesCount },
+		] = await Promise.all([
+			supabase.from('Customers').select('*', { count: 'exact', head: true }),
+			supabase
+				.from('pl_community_project')
+				.select('*', { count: 'exact', head: true }),
+			supabase
+				.from('pl_community_message')
+				.select('*', { count: 'exact', head: true }),
+			supabase
+				.from('pl_community_event')
+				.select('*', { count: 'exact', head: true })
+				.eq('type', 'live'),
+		]);
+
+		return {
+			activeMembers: membersCount ?? 0,
+			completedProjects: projectsCount ?? 0,
+			messagesSent: messagesCount ?? 0,
+			livesRealized: livesCount ?? 0,
+		};
+	}
+
 	async listActivity(page: number, limit: number) {
 		const fetchLimit = page * limit;
 		const offset = (page - 1) * limit;

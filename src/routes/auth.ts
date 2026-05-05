@@ -96,4 +96,23 @@ export async function authRoute(server: FastifyInstance) {
 		},
 		authController.forgotPassword,
 	);
+
+	server.post(
+		'/reset-password',
+		{
+			schema: {
+				description: 'Resetar senha com token recebido por email.',
+				body: z.object({
+					token: z.string().uuid(),
+					newPassword: z.string().min(6),
+				}),
+				response: {
+					200: z.object({ message: z.string() }),
+					400: ErrorSchema,
+				},
+				tags: ['Auth Customer'],
+			},
+		},
+		authController.resetPassword,
+	);
 }

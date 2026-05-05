@@ -105,15 +105,64 @@ export const authService = {
 
 	async forgotPassword(email: string) {
 		return withCapture(async () => {
-			const { data, error } = await supabase.auth.admin.generateLink({
-				type: 'recovery',
-				email,
-			});
+			const { data: customer } = await supabase
+				.from('Customers')
+				.select('id')
+				.eq('email', email)
+				.maybeSingle();
 
-			if (error) throw new Error(error.message);
+			if (!customer) throw new Error('Email não encontrado');
 
-			await sendPasswordResetEmail(email, data.properties.action_link);
+			const token = crypto.randomUUID();
+			const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+			await supabase
+				.from('pl_password_reset_tokens')
+				.delete()
+				.eq('user_id', customer.id);
+
+			const { error: insertError } = await supabase
+				.from('pl_password_reset_tokens')
+				.insert({ token, user_id: customer.id, email, expires_at: expiresAt });
+
+			if (insertError) throw new Error(insertError.message);
+
+			const appUrl = process.env.APP_URL ?? '';
+			const resetLink = `${appUrl}/reset-password?token=${token}`;
+			await sendPasswordResetEmail(email, resetLink);
 			return { message: 'Email de recuperação enviado' };
+		});
+	},
+
+	async resetPassword(token: string, newPassword: string) {
+		return withCapture(async () => {
+			const { data: tokenRow } = await supabase
+				.from('pl_password_reset_tokens')
+				.select('user_id, expires_at')
+				.eq('token', token)
+				.maybeSingle();
+
+			if (!tokenRow) throw new Error('Token inválido');
+			if (new Date(tokenRow.expires_at) < new Date())
+				throw new Error('Token expirado');
+
+			const { error: authError } = await supabase.auth.admin.updateUserById(
+				tokenRow.user_id,
+				{ password: newPassword },
+			);
+			if (authError) throw new Error(authError.message);
+
+			await supabase
+				.from('Customers')
+				.update({ password_encrypted: encrypt(newPassword) })
+				.eq('id', tokenRow.user_id);
+
+			await supabase
+				.from('pl_password_reset_tokens')
+				.delete()
+				.eq('token', token);
+
+			return { message: 'Senha redefinida com sucesso' };
 		});
 	},
 };

@@ -57,6 +57,22 @@ class AuthController {
 		}
 		return reply.send(result);
 	}
+
+	async resetPassword(request: FastifyRequest, reply: FastifyReply) {
+		const { token, newPassword } = request.body as {
+			token: string;
+			newPassword: string;
+		};
+		const { data: result, error } = await authService.resetPassword(
+			token,
+			newPassword,
+		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(400).send({ message });
+		}
+		return reply.send(result);
+	}
 }
 
 export const authController = new AuthController();

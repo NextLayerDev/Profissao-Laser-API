@@ -174,6 +174,15 @@ export type PostComment = z.infer<typeof postCommentSchema>;
 export type CreateEvent = z.infer<typeof createEventSchema>;
 export type UpdateEvent = z.infer<typeof updateEventSchema>;
 
+// ─── Stats ───────────────────────────────────────────────────────────────────
+
+export const communityStatsSchema = z.object({
+	activeMembers: z.number(),
+	completedProjects: z.number(),
+	messagesSent: z.number(),
+	livesRealized: z.number(),
+});
+
 // ─── Activity feed ────────────────────────────────────────────────────────────
 
 export const activityTypeEnum = z.enum([
