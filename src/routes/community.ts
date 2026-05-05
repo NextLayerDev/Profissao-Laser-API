@@ -12,6 +12,7 @@ import {
 	deleteEventController,
 	deleteMessageController,
 	deleteProjectController,
+	getActivityController,
 	getChannelsController,
 	getEventsController,
 	getMembersController,
@@ -29,6 +30,7 @@ import {
 	updateProjectController,
 } from '../controllers/community.js';
 import {
+	activitySchema,
 	communityChannelSchema,
 	communityEventSchema,
 	communityMemberSchema,
@@ -539,5 +541,26 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		getRankingController,
+	);
+
+	server.get(
+		'/community/activity',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Feed de atividades recentes da comunidade (paginado).',
+				querystring: z.object({
+					page: z.string().optional(),
+					limit: z.string().optional(),
+				}),
+				response: {
+					200: z.array(activitySchema),
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getActivityController,
 	);
 }

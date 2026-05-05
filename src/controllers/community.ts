@@ -546,3 +546,20 @@ export const getRankingController = async (
 	}
 	return reply.send(ranking);
 };
+
+export const getActivityController = async (
+	request: FastifyRequest<{ Querystring: { page?: string; limit?: string } }>,
+	reply: FastifyReply,
+) => {
+	const page = Math.max(1, Number(request.query.page ?? 1));
+	const limit = Math.min(50, Math.max(1, Number(request.query.limit ?? 20)));
+	const { data: activity, error } = await communityService.listActivity(
+		page,
+		limit,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(activity);
+};

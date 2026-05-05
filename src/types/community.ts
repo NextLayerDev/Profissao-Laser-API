@@ -167,3 +167,27 @@ export type CreateComment = z.infer<typeof createCommentSchema>;
 export type PostComment = z.infer<typeof postCommentSchema>;
 export type CreateEvent = z.infer<typeof createEventSchema>;
 export type UpdateEvent = z.infer<typeof updateEventSchema>;
+
+// ─── Activity feed ────────────────────────────────────────────────────────────
+
+export const activityTypeEnum = z.enum([
+	'lesson_completed',
+	'badge_earned',
+	'forum_post',
+	'forum_reply',
+	'challenge_completed',
+	'opportunity_created',
+	'member_joined',
+]);
+
+export const activitySchema = z.object({
+	id: z.string(),
+	type: activityTypeEnum,
+	user: z.object({
+		id: z.string(),
+		name: z.string(),
+		avatar: z.string().nullable(),
+	}),
+	data: z.record(z.string(), z.unknown()),
+	createdAt: z.string(),
+});

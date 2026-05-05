@@ -751,6 +751,258 @@ class CommunityRepository {
 			.sort((a, b) => b.pts - a.pts)
 			.map((entry, i) => ({ pos: i + 1, name: entry.name, pts: entry.pts }));
 	}
+
+	async listActivity(page: number, limit: number) {
+		const fetchLimit = page * limit;
+		const offset = (page - 1) * limit;
+
+		const [
+			{ data: completions },
+			{ data: badges },
+			{ data: forumPosts },
+			{ data: forumReplies },
+			{ data: challengeParticipants },
+			{ data: newMembers },
+		] = await Promise.all([
+			supabase
+				.from('customer_lesson_completions')
+				.select('customer_id, lesson_id, completed_at')
+				.order('completed_at', { ascending: false })
+				.limit(fetchLimit),
+			supabase
+				.from('pl_gamification_user_badge')
+				.select(
+					'userId, badgeId, earnedAt, pl_gamification_badge(id, name, icon)',
+				)
+				.order('earnedAt', { ascending: false })
+				.limit(fetchLimit),
+			supabase
+				.from('forum_posts')
+				.select('id, title, author_id, author_name, created_at')
+				.order('created_at', { ascending: false })
+				.limit(fetchLimit),
+			supabase
+				.from('forum_replies')
+				.select('id, post_id, author_id, author_name, created_at')
+				.order('created_at', { ascending: false })
+				.limit(fetchLimit),
+			supabase
+				.from('pl_challenge_participant')
+				.select('id, userId, challengeId, joinedAt, pl_challenge(title)')
+				.order('joinedAt', { ascending: false })
+				.limit(fetchLimit),
+			supabase
+				.from('Customers')
+				.select('id, name, created_at, pl_community_profile(image)')
+				.order('created_at', { ascending: false })
+				.limit(fetchLimit),
+		]);
+
+		// Collect IDs for batch lookups
+		const lessonIds = [
+			...new Set(
+				(completions ?? []).map((c) => (c as { lesson_id: string }).lesson_id),
+			),
+		];
+		const customerIds = new Set<string>();
+
+		for (const c of completions ?? [])
+			customerIds.add((c as { customer_id: string }).customer_id);
+		for (const b of badges ?? [])
+			customerIds.add((b as { userId: string }).userId);
+		for (const fp of forumPosts ?? [])
+			customerIds.add((fp as { author_id: string }).author_id);
+		for (const fr of forumReplies ?? [])
+			customerIds.add((fr as { author_id: string }).author_id);
+		for (const cp of challengeParticipants ?? [])
+			customerIds.add((cp as { userId: string }).userId);
+
+		const replyPostIds = [
+			...new Set(
+				(forumReplies ?? []).map((r) => (r as { post_id: string }).post_id),
+			),
+		];
+
+		// Batch lookups
+		const [{ data: lessons }, { data: customerRows }, { data: postRows }] =
+			await Promise.all([
+				lessonIds.length > 0
+					? supabase
+							.from('pl_lesson')
+							.select('id, title, productId, pl_product(name)')
+							.in('id', lessonIds)
+					: Promise.resolve({ data: [] as unknown[] }),
+				customerIds.size > 0
+					? supabase
+							.from('Customers')
+							.select('id, name, pl_community_profile(image)')
+							.in('id', [...customerIds])
+					: Promise.resolve({ data: [] as unknown[] }),
+				replyPostIds.length > 0
+					? supabase
+							.from('forum_posts')
+							.select('id, title')
+							.in('id', replyPostIds)
+					: Promise.resolve({ data: [] as unknown[] }),
+			]);
+
+		// Build lookup maps
+		type UserInfo = { id: string; name: string; avatar: string | null };
+
+		const lessonMap = new Map<string, { title: string; courseName: string }>();
+		for (const l of lessons ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const lesson = l as any;
+			lessonMap.set(lesson.id, {
+				title: lesson.title ?? '',
+				courseName: lesson.pl_product?.name ?? '',
+			});
+		}
+
+		const customerMap = new Map<string, UserInfo>();
+		for (const c of customerRows ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const customer = c as any;
+			const profile = customer.pl_community_profile?.[0] ?? null;
+			customerMap.set(customer.id, {
+				id: customer.id,
+				name: customer.name,
+				avatar: profile?.image ?? null,
+			});
+		}
+		for (const m of newMembers ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const member = m as any;
+			if (!customerMap.has(member.id)) {
+				const profile = member.pl_community_profile?.[0] ?? null;
+				customerMap.set(member.id, {
+					id: member.id,
+					name: member.name,
+					avatar: profile?.image ?? null,
+				});
+			}
+		}
+
+		const postTitleMap = new Map<string, string>();
+		for (const p of postRows ?? []) {
+			const post = p as { id: string; title: string };
+			postTitleMap.set(post.id, post.title);
+		}
+
+		type ActivityItem = {
+			id: string;
+			type: string;
+			user: UserInfo;
+			data: Record<string, unknown>;
+			createdAt: string;
+		};
+
+		const items: ActivityItem[] = [];
+
+		for (const c of completions ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic row
+			const row = c as any;
+			if (!row.completed_at) continue;
+			const lesson = lessonMap.get(row.lesson_id);
+			const user = customerMap.get(row.customer_id);
+			if (!lesson || !user) continue;
+			items.push({
+				id: `lesson_completed_${row.customer_id}_${row.lesson_id}`,
+				type: 'lesson_completed',
+				user,
+				data: { lessonTitle: lesson.title, courseName: lesson.courseName },
+				createdAt: row.completed_at,
+			});
+		}
+
+		for (const b of badges ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const row = b as any;
+			if (!row.earnedAt) continue;
+			const user = customerMap.get(row.userId);
+			if (!user) continue;
+			const badge = row.pl_gamification_badge as {
+				name: string;
+				icon: string;
+			} | null;
+			items.push({
+				id: `badge_earned_${row.userId}_${row.badgeId}`,
+				type: 'badge_earned',
+				user,
+				data: { badgeName: badge?.name ?? '', badgeIcon: badge?.icon ?? '' },
+				createdAt: row.earnedAt,
+			});
+		}
+
+		for (const fp of forumPosts ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic row
+			const row = fp as any;
+			if (!row.created_at) continue;
+			const user: UserInfo = customerMap.get(row.author_id) ?? {
+				id: row.author_id,
+				name: row.author_name,
+				avatar: null,
+			};
+			items.push({
+				id: `forum_post_${row.id}`,
+				type: 'forum_post',
+				user,
+				data: { postTitle: row.title },
+				createdAt: row.created_at,
+			});
+		}
+
+		for (const fr of forumReplies ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic row
+			const row = fr as any;
+			if (!row.created_at) continue;
+			const user: UserInfo = customerMap.get(row.author_id) ?? {
+				id: row.author_id,
+				name: row.author_name,
+				avatar: null,
+			};
+			items.push({
+				id: `forum_reply_${row.id}`,
+				type: 'forum_reply',
+				user,
+				data: { postTitle: postTitleMap.get(row.post_id) ?? '' },
+				createdAt: row.created_at,
+			});
+		}
+
+		for (const cp of challengeParticipants ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const row = cp as any;
+			if (!row.joinedAt) continue;
+			const user = customerMap.get(row.userId);
+			if (!user) continue;
+			const challenge = row.pl_challenge as { title: string } | null;
+			items.push({
+				id: `challenge_completed_${row.id}`,
+				type: 'challenge_completed',
+				user,
+				data: { challengeTitle: challenge?.title ?? '' },
+				createdAt: row.joinedAt,
+			});
+		}
+
+		for (const m of newMembers ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const row = m as any;
+			if (!row.created_at) continue;
+			const profile = row.pl_community_profile?.[0] ?? null;
+			items.push({
+				id: `member_joined_${row.id}`,
+				type: 'member_joined',
+				user: { id: row.id, name: row.name, avatar: profile?.image ?? null },
+				data: {},
+				createdAt: row.created_at,
+			});
+		}
+
+		items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+		return items.slice(offset, offset + limit);
+	}
 }
 
 export const communityRepository = new CommunityRepository();
