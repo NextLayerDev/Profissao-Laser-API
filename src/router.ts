@@ -30,7 +30,6 @@ import { userRoute } from './routes/user.js';
 import { vectorRoute } from './routes/vector.js';
 import { vectorLibraryRoute } from './routes/vector-library.js';
 import { vectorSupportRoute } from './routes/vector-support.js';
-import { vectorizeRoute } from './routes/vectorize.js';
 import { webhookRoute } from './routes/webhook.js';
 import { mercadoLivreWebhookRoute } from './routes/webhooks/mercado-livre.js';
 
@@ -60,7 +59,6 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(progressRoute);
 	app.register(savedLessonRoute);
 	app.register(vectorRoute);
-	app.register(vectorizeRoute);
 	app.register(vectorLibraryRoute);
 	app.register(vectorSupportRoute);
 	app.register(faqRoute);
