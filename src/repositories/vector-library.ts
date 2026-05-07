@@ -1,6 +1,198 @@
 import { supabase } from '../lib/supabase.js';
 
+interface ListContentsFilters {
+	parentId?: string | null;
+	search?: string;
+	category?: string;
+	format?: string;
+	sort?: 'recent' | 'popular' | 'name';
+	page?: number;
+	limit?: number;
+}
+
 class VectorLibraryRepository {
+	async listContentsFiltered(
+		filters: ListContentsFilters,
+		customerId: string | null,
+	) {
+		const {
+			parentId = null,
+			search,
+			category,
+			format,
+			sort = 'name',
+			page = 1,
+			limit = 50,
+		} = filters;
+		const offset = (page - 1) * limit;
+
+		const folderQuery = supabase
+			.from('pl_vector_library_folder')
+			.select('*')
+			.order('order', { ascending: true });
+
+		if (parentId === null) folderQuery.is('parentId', null);
+		else folderQuery.eq('parentId', parentId);
+
+		let fileQuery = supabase
+			.from('pl_vector_library_file')
+			.select('*', { count: 'exact' });
+
+		if (parentId === null) fileQuery = fileQuery.is('folderId', null);
+		else fileQuery = fileQuery.eq('folderId', parentId);
+
+		if (search) fileQuery = fileQuery.ilike('name', `%${search}%`);
+		if (category) fileQuery = fileQuery.eq('category', category);
+		if (format) fileQuery = fileQuery.contains('formats', [format]);
+
+		if (sort === 'recent') {
+			fileQuery = fileQuery.order('createdAt', { ascending: false });
+		} else if (sort === 'popular') {
+			fileQuery = fileQuery.order('downloadCount', { ascending: false });
+		} else {
+			fileQuery = fileQuery.order('order', { ascending: true });
+		}
+
+		fileQuery = fileQuery.range(offset, offset + limit - 1);
+
+		const [foldersResult, filesResult] = await Promise.all([
+			folderQuery,
+			fileQuery,
+		]);
+
+		if (foldersResult.error) throw new Error(foldersResult.error.message);
+		if (filesResult.error) throw new Error(filesResult.error.message);
+
+		const files = filesResult.data ?? [];
+
+		// favorites
+		let favoritedSet = new Set<string>();
+		if (customerId && files.length > 0) {
+			const { data: favs } = await supabase
+				.from('pl_vector_library_favorite')
+				.select('fileId')
+				.eq('customerId', customerId)
+				.in(
+					'fileId',
+					files.map((f: { id: string }) => f.id),
+				);
+			favoritedSet = new Set(
+				(favs ?? []).map((f: { fileId: string }) => f.fileId),
+			);
+		}
+
+		return {
+			folders: foldersResult.data ?? [],
+			files: files.map((f: { id: string } & Record<string, unknown>) => ({
+				...f,
+				isFavorited: favoritedSet.has(f.id),
+			})),
+			total: filesResult.count ?? 0,
+		};
+	}
+
+	async stats(customerId: string | null) {
+		const [files, folders, favorites, downloads] = await Promise.all([
+			supabase
+				.from('pl_vector_library_file')
+				.select('id', { count: 'exact', head: true }),
+			supabase
+				.from('pl_vector_library_folder')
+				.select('id', { count: 'exact', head: true }),
+			customerId
+				? supabase
+						.from('pl_vector_library_favorite')
+						.select('fileId', { count: 'exact', head: true })
+						.eq('customerId', customerId)
+				: Promise.resolve({ count: 0 }),
+			supabase.from('pl_vector_library_file').select('downloadCount'),
+		]);
+
+		const totalDownloads = (
+			(downloads as { data: { downloadCount: number }[] | null }).data ?? []
+		).reduce((acc, r) => acc + (r.downloadCount ?? 0), 0);
+
+		return {
+			totalFiles: files.count ?? 0,
+			totalCollections: folders.count ?? 0,
+			totalFavorites: favorites.count ?? 0,
+			totalDownloads,
+		};
+	}
+
+	async listCategories() {
+		const { data, error } = await supabase
+			.from('pl_vector_library_file')
+			.select('category');
+		if (error) throw new Error(error.message);
+
+		const counts = new Map<string, number>();
+		for (const row of (data ?? []) as Array<{ category: string | null }>) {
+			if (!row.category) continue;
+			counts.set(row.category, (counts.get(row.category) ?? 0) + 1);
+		}
+		return [...counts.entries()].map(([name, count]) => ({
+			name,
+			icon: null,
+			count,
+		}));
+	}
+
+	async addFavorite(fileId: string, customerId: string) {
+		const { error } = await supabase
+			.from('pl_vector_library_favorite')
+			.upsert({ fileId, customerId });
+		if (error) throw new Error(error.message);
+	}
+
+	async removeFavorite(fileId: string, customerId: string) {
+		const { error } = await supabase
+			.from('pl_vector_library_favorite')
+			.delete()
+			.eq('fileId', fileId)
+			.eq('customerId', customerId);
+		if (error) throw new Error(error.message);
+	}
+
+	async listFavorites(customerId: string) {
+		const { data, error } = await supabase
+			.from('pl_vector_library_favorite')
+			.select('fileId, pl_vector_library_file!inner(*)')
+			.eq('customerId', customerId);
+		if (error) throw new Error(error.message);
+		return (data ?? []).map(
+			(row: { pl_vector_library_file: Record<string, unknown> }) => ({
+				...row.pl_vector_library_file,
+				isFavorited: true,
+			}),
+		);
+	}
+
+	async listFeatured() {
+		const { data, error } = await supabase
+			.from('pl_vector_library_file')
+			.select('*')
+			.eq('featured', true)
+			.order('downloadCount', { ascending: false })
+			.limit(20);
+		if (error) throw new Error(error.message);
+		return data ?? [];
+	}
+
+	async incrementDownload(fileId: string) {
+		const { data: file } = await supabase
+			.from('pl_vector_library_file')
+			.select('downloadCount')
+			.eq('id', fileId)
+			.maybeSingle();
+		const current =
+			(file as { downloadCount: number } | null)?.downloadCount ?? 0;
+		await supabase
+			.from('pl_vector_library_file')
+			.update({ downloadCount: current + 1 })
+			.eq('id', fileId);
+	}
+
 	async listContents(parentId: string | null) {
 		const folderQuery = supabase
 			.from('pl_vector_library_folder')

@@ -12,6 +12,7 @@ import {
 	createDefaultQuestionController,
 	deleteCategoryController,
 	deleteDefaultQuestionController,
+	doubtChatStatsController,
 	getChatController,
 	getTechnicianController,
 	listAdminChatsController,
@@ -32,6 +33,7 @@ import {
 	defaultQuestionSchema,
 	doubtCategorySchema,
 	doubtChatSchema,
+	doubtChatStatsSchema,
 	doubtChatSummarySchema,
 	reorderSchema,
 	technicianSchema,
@@ -272,6 +274,21 @@ export async function doubtChatRoute(server: FastifyInstance) {
 			},
 		},
 		createChatController,
+	);
+
+	server.get(
+		'/doubt-chats/stats',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Counts of doubt chats by status (pending, answered, total) for the current customer (or all if staff).',
+				response: { 200: doubtChatStatsSchema, 500: ErrorSchema },
+				tags: ['Doubt Chat'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		doubtChatStatsController,
 	);
 
 	server.get(

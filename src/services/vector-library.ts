@@ -11,6 +11,43 @@ export const vectorLibraryService = {
 		return withCapture(() => vectorLibraryRepository.listContents(parentId));
 	},
 
+	async getContentsFiltered(
+		filters: Parameters<typeof vectorLibraryRepository.listContentsFiltered>[0],
+		customerId: string | null,
+	) {
+		return withCapture(() =>
+			vectorLibraryRepository.listContentsFiltered(filters, customerId),
+		);
+	},
+
+	async getStats(customerId: string | null) {
+		return withCapture(() => vectorLibraryRepository.stats(customerId));
+	},
+
+	async listCategories() {
+		return withCapture(() => vectorLibraryRepository.listCategories());
+	},
+
+	async addFavorite(fileId: string, customerId: string) {
+		return withCapture(() =>
+			vectorLibraryRepository.addFavorite(fileId, customerId),
+		);
+	},
+
+	async removeFavorite(fileId: string, customerId: string) {
+		return withCapture(() =>
+			vectorLibraryRepository.removeFavorite(fileId, customerId),
+		);
+	},
+
+	async listFavorites(customerId: string) {
+		return withCapture(() => vectorLibraryRepository.listFavorites(customerId));
+	},
+
+	async listFeatured() {
+		return withCapture(() => vectorLibraryRepository.listFeatured());
+	},
+
 	async getBreadcrumbs(folderId: string | null) {
 		return withCapture(async () => {
 			const root = { id: null, name: 'Biblioteca' };

@@ -2,11 +2,17 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticateVectorizacao } from '@/middleware/auth.js';
 import {
+	addFavoriteController,
 	createFolderController,
 	deleteFileController,
 	deleteFolderController,
 	getBreadcrumbsController,
+	getCategoriesController,
 	getContentsController,
+	getStatsController,
+	listFavoritesController,
+	listFeaturedController,
+	removeFavoriteController,
 	updateFileController,
 	updateFolderController,
 	uploadFileController,
@@ -14,12 +20,15 @@ import {
 import { ErrorSchema } from '../types/error.js';
 import {
 	breadcrumbItemSchema,
-	contentsResponseSchema,
+	contentsPaginatedSchema,
 	createFolderSchema,
+	listContentsQuery,
 	updateFileSchema,
 	updateFolderSchema,
+	vectorLibraryCategorySchema,
 	vectorLibraryFileSchema,
 	vectorLibraryFolderSchema,
+	vectorLibraryStatsSchema,
 } from '../types/vector-library.js';
 
 export async function vectorLibraryRoute(server: FastifyInstance) {
@@ -29,10 +38,10 @@ export async function vectorLibraryRoute(server: FastifyInstance) {
 			preHandler: [authenticateVectorizacao],
 			schema: {
 				description:
-					'List folders and files at a given level of the vector library.',
-				querystring: z.object({ parentId: z.string().optional() }),
+					'List folders and files at a given level of the vector library, with filters.',
+				querystring: listContentsQuery,
 				response: {
-					200: contentsResponseSchema,
+					200: contentsPaginatedSchema,
 					500: ErrorSchema,
 				},
 				tags: ['Vector Library'],
@@ -40,6 +49,102 @@ export async function vectorLibraryRoute(server: FastifyInstance) {
 			},
 		},
 		getContentsController,
+	);
+
+	server.get(
+		'/community/vector-library/stats',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description:
+					'Stats: total files, collections, favorites (current user), downloads.',
+				response: { 200: vectorLibraryStatsSchema, 500: ErrorSchema },
+				tags: ['Vector Library'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getStatsController,
+	);
+
+	server.get(
+		'/community/vector-library/categories',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: 'List vector library categories with counts.',
+				response: {
+					200: z.array(vectorLibraryCategorySchema),
+					500: ErrorSchema,
+				},
+				tags: ['Vector Library'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getCategoriesController,
+	);
+
+	server.get(
+		'/community/vector-library/favorites',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: 'List vectors favorited by the current customer.',
+				response: {
+					200: z.array(vectorLibraryFileSchema),
+					500: ErrorSchema,
+				},
+				tags: ['Vector Library'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		listFavoritesController,
+	);
+
+	server.get(
+		'/community/vector-library/featured',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: 'Featured/curated vectors.',
+				response: {
+					200: z.array(vectorLibraryFileSchema),
+					500: ErrorSchema,
+				},
+				tags: ['Vector Library'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		listFeaturedController,
+	);
+
+	server.post(
+		'/community/vector-library/files/:id/favorite',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: 'Add a file to favorites.',
+				params: z.object({ id: z.string() }),
+				response: { 204: z.null(), 400: ErrorSchema },
+				tags: ['Vector Library'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		addFavoriteController,
+	);
+
+	server.delete(
+		'/community/vector-library/files/:id/favorite',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: 'Remove a file from favorites.',
+				params: z.object({ id: z.string() }),
+				response: { 204: z.null(), 400: ErrorSchema },
+				tags: ['Vector Library'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		removeFavoriteController,
 	);
 
 	server.get(

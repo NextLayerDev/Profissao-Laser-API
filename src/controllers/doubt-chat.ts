@@ -12,6 +12,22 @@ import {
 	updateDoubtCategorySchema,
 } from '../types/doubt-chat.js';
 
+export const doubtChatStatsController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	try {
+		const customerId = request.currentCustomer?.id;
+		const stats = customerId
+			? await doubtChatRepository.statsByCustomer(customerId)
+			: await doubtChatRepository.statsAll();
+		return reply.send(stats);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
 async function isStaff(userId: string): Promise<boolean> {
 	const { data } = await supabase
 		.from('Users')

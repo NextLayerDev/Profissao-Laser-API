@@ -40,17 +40,125 @@ async function requireAdmin(
 }
 
 export const getContentsController = async (
-	request: FastifyRequest<{ Querystring: { parentId?: string } }>,
+	request: FastifyRequest<{
+		Querystring: {
+			parentId?: string;
+			search?: string;
+			category?: string;
+			format?: string;
+			sort?: 'recent' | 'popular' | 'name';
+			page?: number;
+			limit?: number;
+		};
+	}>,
 	reply: FastifyReply,
 ) => {
-	const parentId = request.query.parentId ?? null;
-	const { data: contents, error } =
-		await vectorLibraryService.getContents(parentId);
+	const customerId = request.currentCustomer?.id ?? null;
+	const { data, error } = await vectorLibraryService.getContentsFiltered(
+		{
+			parentId: request.query.parentId ?? null,
+			search: request.query.search,
+			category: request.query.category,
+			format: request.query.format,
+			sort: request.query.sort,
+			page: request.query.page,
+			limit: request.query.limit,
+		},
+		customerId,
+	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
-	return reply.send(contents);
+	return reply.send(data);
+};
+
+export const getStatsController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id ?? null;
+	const { data, error } = await vectorLibraryService.getStats(customerId);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
+};
+
+export const getCategoriesController = async (
+	_request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const { data, error } = await vectorLibraryService.listCategories();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
+};
+
+export const addFavoriteController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId)
+		return reply.status(401).send({ message: 'Not authenticated' });
+	const { error } = await vectorLibraryService.addFavorite(
+		request.params.id,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.status(204).send();
+};
+
+export const removeFavoriteController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId)
+		return reply.status(401).send({ message: 'Not authenticated' });
+	const { error } = await vectorLibraryService.removeFavorite(
+		request.params.id,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.status(204).send();
+};
+
+export const listFavoritesController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId)
+		return reply.status(401).send({ message: 'Not authenticated' });
+	const { data, error } = await vectorLibraryService.listFavorites(customerId);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
+};
+
+export const listFeaturedController = async (
+	_request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const { data, error } = await vectorLibraryService.listFeatured();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
 };
 
 export const getBreadcrumbsController = async (
