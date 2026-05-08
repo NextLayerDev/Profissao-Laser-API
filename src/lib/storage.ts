@@ -104,6 +104,42 @@ export async function uploadVectorLibraryFile(
 	return upload('vector-library', buffer, path, mimetype);
 }
 
+export async function uploadPreviaImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('previas', buffer, path, mimetype);
+}
+
+export async function deletePreviaImageByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
+export async function uploadTemplateImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('templates', buffer, path, mimetype);
+}
+
+export async function deleteTemplateImageByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
+export async function uploadDesignThumbnail(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('designs', buffer, path, mimetype);
+}
+
+export async function deleteDesignThumbnailByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
 export async function deleteVectorLibraryFileByUrl(url: string): Promise<void> {
 	return deleteByUrl(url);
 }
