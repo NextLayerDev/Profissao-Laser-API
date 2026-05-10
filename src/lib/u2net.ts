@@ -1,17 +1,25 @@
 // ─────────────────────────────────────────────────────────────────────────
-// U2-Net background removal — self-hosted, Apache 2.0
+// U2-Net background removal — self-hosted via onnxruntime-web (WASM).
 // Modelo: https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx
-// Roda 100% local via onnxruntime-node + sharp. Sem rate limit, sem env var.
+//
+// Roda em WebAssembly puro (sem binary nativo glibc/musl), portanto
+// funciona em qualquer base do Node — Alpine, slim, full Debian.
+// Trade-off vs. onnxruntime-node: ~2-3x mais lento por usar WASM em vez
+// de bindings nativos. Para ~5 chamadas/dia/customer é mais que suficiente.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { createWriteStream, existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import * as ort from 'onnxruntime-node';
+import * as ort from 'onnxruntime-web';
 import sharp from 'sharp';
+
+// Single-threaded WASM (mais previsível em servidor; threading de WASM
+// requer SharedArrayBuffer + COOP/COEP que podem variar por host).
+ort.env.wasm.numThreads = 1;
 
 const MODEL_URL =
 	'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx';
@@ -56,8 +64,11 @@ async function getSession(): Promise<ort.InferenceSession> {
 			await downloadModel(modelPath);
 		}
 		console.log(`[u2net] Carregando modelo em ${modelPath}...`);
-		const s = await ort.InferenceSession.create(modelPath, {
-			executionProviders: ['cpu'],
+		// onnxruntime-web não aceita file path direto em Node — carrega bytes
+		// do disco e passa como Uint8Array.
+		const modelBytes = await readFile(modelPath);
+		const s = await ort.InferenceSession.create(modelBytes, {
+			executionProviders: ['wasm'],
 			graphOptimizationLevel: 'all',
 		});
 		session = s;
@@ -72,7 +83,7 @@ async function getSession(): Promise<ort.InferenceSession> {
 }
 
 /**
- * Remove o fundo de uma imagem usando U2-Net localmente.
+ * Remove o fundo de uma imagem usando U2-Net localmente (WASM).
  * Retorna um buffer PNG RGBA com o fundo transparente.
  */
 export async function removeBackgroundLocal(input: Buffer): Promise<Buffer> {
@@ -105,7 +116,7 @@ export async function removeBackgroundLocal(input: Buffer): Promise<Buffer> {
 		tensor[i + 2 * pixels] = (b - NORM_MEAN[2]) / NORM_STD[2]; // B channel
 	}
 
-	// 4. Inferência
+	// 4. Inferência via WASM
 	const inputName = ortSession.inputNames[0];
 	const outputName = ortSession.outputNames[0];
 	const feeds: Record<string, ort.Tensor> = {
