@@ -44,21 +44,21 @@ export async function editorAiRoute(server: FastifyInstance) {
 		editorAiController,
 	);
 
-	// ── /editor/remove-background — U2-Net self-hosted (Apache 2.0) ────────
+	// ── /editor/remove-background — Gemini via OpenRouter ─────────────────
 	server.post(
 		'/editor/remove-background',
 		{
 			preHandler: [authenticateCustomer],
 			schema: {
 				description:
-					'Remove o fundo da imagem usando U2-Net rodando localmente via onnxruntime-node. 100% gratuito, sem rate limit, sem env var. Modelo (~176MB) é baixado uma vez na primeira chamada e cacheado em disco. Configure U2NET_MODEL_PATH para usar volume persistente em produção.',
+					'Remove o fundo da imagem usando o mesmo modelo Gemini 3 Pro Image (Nano Banana 2) já configurado pra /previas/generate e /editor/ai. Reusa OPENROUTER_API_KEY, sem deps nativas. Retorna PNG com fundo transparente.',
 				body: removeBackgroundRequestSchema,
 				response: {
 					200: removeBackgroundResponseSchema,
 					400: ErrorSchema,
 					403: ErrorSchema,
+					429: ErrorSchema,
 					500: ErrorSchema,
-					503: ErrorSchema,
 				},
 				tags: ['Editor AI'],
 				security: [{ bearerAuth: [] }],

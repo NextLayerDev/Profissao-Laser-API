@@ -32,7 +32,6 @@
 		"fastify-type-provider-zod": "^6.1.0",
 		"husky": "^9.1.7",
 		"nodemailer": "^8.0.2",
-		"onnxruntime-web": "^1.26.0",
 		"openai": "^6.36.0",
 		"pg": "^8.20.0",
 		"pino-loki": "^3.0.0",

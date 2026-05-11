@@ -2,7 +2,36 @@
 // Cópia verbatim dos prompts do editor-ai de:
 //   system_porteira/src/app/api/editor-ai/route.ts (linhas 38–229)
 // Mantido idêntico para garantir comportamento exato.
+// Adicionado: createRemoveBackgroundPrompt (substitui U2-Net/remove.bg)
 // ─────────────────────────────────────────────────────────────────
+
+// Prompt otimizado para remoção de fundo via modelo de imagem (Gemini)
+export function createRemoveBackgroundPrompt(): string {
+	return `You are a professional image editor performing precise BACKGROUND REMOVAL.
+
+═══════════════════════════════════════════════════════════════
+TASK: Remove the background from the provided image.
+═══════════════════════════════════════════════════════════════
+
+OUTPUT REQUIREMENTS:
+✓ Return a PNG image with TRANSPARENT BACKGROUND (alpha channel)
+✓ Keep the main subject (product, logo, person, object) exactly as it is
+✓ Same dimensions, same resolution as the input image
+✓ Preserve original colors, lighting, shadows, and edges of the subject
+✓ Soft edges (hair, fur, glass, semi-transparent areas) must retain partial alpha
+✓ Hard edges (product surfaces, logos) must have clean alpha cut-out
+
+CRITICAL RULES:
+✗ DO NOT replace background with white, black, gray, or any solid color
+✗ DO NOT add any new elements, watermarks, or decorations
+✗ DO NOT modify, recolor, or resize the subject
+✗ DO NOT crop the image — keep original framing and dimensions
+✗ DO NOT add checkered "transparency" pattern — output must be truly transparent
+
+The output MUST be a PNG file with a real alpha channel where all background pixels have alpha = 0 (fully transparent) and subject pixels keep their full opacity.
+
+EXECUTE NOW: Remove the background, return the same image with only the subject visible on a fully transparent canvas.`;
+}
 
 // Prompt de edição otimizado para gravação a laser
 export function createEditPrompt(userRequest: string): string {
