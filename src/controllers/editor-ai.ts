@@ -9,10 +9,10 @@ import {
 function statusFor(message: string): number {
 	if (message.includes('Limite de requisições')) return 429;
 	if (message.includes('Chave da API não configurada')) return 500;
-	if (message.includes('Falha ao baixar modelo U2-Net')) return 503;
 	if (message.includes('Imagem inválida')) return 400;
 	if (message.includes('descreva o que você deseja')) return 400;
 	if (message.startsWith('IA não gerou imagem')) return 400;
+	if (message.startsWith('IA não retornou imagem')) return 400;
 	return 500;
 }
 
