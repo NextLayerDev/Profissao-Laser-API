@@ -9,7 +9,7 @@ import type {
 	UpdateChannel,
 	UpdateEvent,
 	UpdateProject,
-} from '../services/types/community.js';
+} from '../types/community.js';
 
 class CommunityRepository {
 	async listPosts(page: number, limit: number, currentUserId: string) {

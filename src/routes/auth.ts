@@ -2,11 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate } from '@/middleware/auth.js';
 import { authController } from '../controllers/auth.js';
-import {
-	registerCustomerSchema,
-	registerUserSchema,
-} from '../services/types/auth.js';
-import { ErrorSchema } from '../services/types/error.js';
+import { registerCustomerSchema, registerUserSchema } from '../types/auth.js';
+import { ErrorSchema } from '../types/error.js';
 
 export async function authRoute(server: FastifyInstance) {
 	server.post(

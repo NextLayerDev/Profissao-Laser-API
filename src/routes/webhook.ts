@@ -9,10 +9,7 @@ import { customerRepository } from '../repositories/customer.js';
 import { productRepository } from '../repositories/product.js';
 import { provisioningRepository } from '../repositories/provisioning.js';
 import { subscriptionRepository } from '../repositories/subscription.js';
-import type {
-	ProvisioningPlan,
-	Tenant,
-} from '../services/types/provisioning.js';
+import type { ProvisioningPlan, Tenant } from '../types/provisioning.js';
 import { normalizeCompanySlug } from '../utils/normalize.js';
 import { PLAN_ORDER, resolvePlanFromProduct } from '../utils/plan.js';
 import { runProvisionTenant } from '../workers/provision-tenant.js';

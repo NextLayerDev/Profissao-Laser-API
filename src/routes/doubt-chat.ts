@@ -39,8 +39,8 @@ import {
 	technicianSchema,
 	updateDefaultQuestionSchema,
 	updateDoubtCategorySchema,
-} from '../services/types/doubt-chat.js';
-import { ErrorSchema } from '../services/types/error.js';
+} from '../types/doubt-chat.js';
+import { ErrorSchema } from '../types/error.js';
 
 export async function doubtChatRoute(server: FastifyInstance) {
 	server.get(

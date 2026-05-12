@@ -3,14 +3,14 @@ import { withCapture } from '@/lib/sentry.js';
 import { stripe } from '../lib/stripe.js';
 import { productRepository } from '../repositories/product.js';
 import { promoLinkRepository } from '../repositories/promo-link.js';
-import { isValidCpf, normalizeDigits } from '../utils/cpf.js';
-import { resolveSuccessUrl } from '../utils/success-url.js';
-import { authService } from './auth.js';
 import type {
 	CreatePromoLink,
 	RedeemPromoLink,
 	UpdatePromoLinkStatus,
-} from './types/promo-link.js';
+} from '../types/promo-link.js';
+import { isValidCpf, normalizeDigits } from '../utils/cpf.js';
+import { resolveSuccessUrl } from '../utils/success-url.js';
+import { authService } from './auth.js';
 
 export const promoLinkService = {
 	async createLink(data: CreatePromoLink, createdByEmail: string) {

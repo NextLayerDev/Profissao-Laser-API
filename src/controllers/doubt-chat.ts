@@ -10,7 +10,7 @@ import {
 	reorderSchema,
 	updateDefaultQuestionSchema,
 	updateDoubtCategorySchema,
-} from '../services/types/doubt-chat.js';
+} from '../types/doubt-chat.js';
 
 export const doubtChatStatsController = async (
 	request: FastifyRequest,

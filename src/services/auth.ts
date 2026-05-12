@@ -4,7 +4,7 @@ import { sendPasswordResetEmail } from '../lib/mailer.js';
 import { supabase } from '../lib/supabase.js';
 import { customerRepository } from '../repositories/customer.js';
 import { usersRepository } from '../repositories/user.js';
-import type { CustomerRegister, Login, UserRegister } from './types/auth.js';
+import type { CustomerRegister, Login, UserRegister } from '../types/auth.js';
 
 export const authService = {
 	async registerUser(userData: UserRegister) {
