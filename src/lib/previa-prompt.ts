@@ -33,19 +33,20 @@ export async function imageUrlToBase64(url: string): Promise<string> {
 		const arrayBuffer = await response.arrayBuffer();
 		const buffer = Buffer.from(arrayBuffer);
 		return buffer.toString('base64');
-	} catch (error: any) {
-		if (error.name === 'AbortError') {
+	} catch (error) {
+		const err = error as { name?: string; message?: string };
+		if (err.name === 'AbortError') {
 			throw new Error('Timeout ao carregar imagem');
 		}
-		console.error('Erro ao converter imagem para base64:', error.message);
-		throw new Error(`Falha ao processar a imagem: ${error.message}`);
+		console.error('Erro ao converter imagem para base64:', err.message);
+		throw new Error(`Falha ao processar a imagem: ${err.message}`);
 	}
 }
 
 // Função para gerar o prompt baseado no produto e configurações
 export function generatePrompt(
 	productName: string,
-	laserSettings: any,
+	laserSettings: import('../types/previa.js').LaserSettings,
 	hasCustomName: boolean,
 	customName?: string,
 	instrucoesPersonalizadas?: string | null,

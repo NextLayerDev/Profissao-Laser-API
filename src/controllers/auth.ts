@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { authService } from '../services/auth.js';
+import { loginStreakService } from '../services/login-streak.js';
 import type { Login, UserRegister } from '../types/auth.js';
 import type { Customer } from '../types/customer.js';
 
@@ -45,7 +46,8 @@ class AuthController {
 			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(401).send({ message });
 		}
-		return reply.send(result);
+		if (result) loginStreakService.record(result.userId).catch(() => {});
+		return reply.send({ token: result?.token });
 	}
 
 	async forgotPassword(request: FastifyRequest, reply: FastifyReply) {

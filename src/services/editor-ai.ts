@@ -205,7 +205,6 @@ class EditorAiService {
 			const completion = await openrouter.chat.completions.create(
 				{
 					model: EDITOR_MODEL,
-					// biome-ignore lint/suspicious/noExplicitAny: OpenAI SDK message format aceita variantes que TypeScript não infere
 					messages: [
 						{
 							role: 'user',

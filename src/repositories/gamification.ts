@@ -199,6 +199,38 @@ class GamificationRepository {
 		if (error) throw new Error(error.message);
 		return data;
 	}
+
+	async upsertLoginStreak(
+		userId: string,
+		currentStreak: number,
+		bestStreak: number,
+	): Promise<void> {
+		const { data: existing } = await supabase
+			.from('pl_gamification_profile')
+			.select('userId')
+			.eq('userId', userId)
+			.maybeSingle();
+
+		if (existing) {
+			const { error } = await supabase
+				.from('pl_gamification_profile')
+				.update({ currentStreak, bestStreak })
+				.eq('userId', userId);
+			if (error) throw new Error(error.message);
+		} else {
+			const { error } = await supabase.from('pl_gamification_profile').insert({
+				userId,
+				level: 1,
+				currentXp: 0,
+				nextLevelXp: 500,
+				dailyXp: 0,
+				dailyXpGoal: DEFAULT_DAILY_XP_GOAL,
+				currentStreak,
+				bestStreak,
+			});
+			if (error) throw new Error(error.message);
+		}
+	}
 }
 
 export const gamificationRepository = new GamificationRepository();

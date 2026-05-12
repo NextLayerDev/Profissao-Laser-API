@@ -183,10 +183,11 @@ async function triggerRedeploy(
 		{ headers: { Authorization: `Bearer ${token}` } },
 	);
 	if (!list.ok) return null;
-	const data = await list.json();
+	const data = (await list.json()) as {
+		deployments: { uid: string; state: string }[];
+	};
 	const dep =
-		(data.deployments as any[]).find((d) => d.state === 'READY') ||
-		data.deployments?.[0];
+		data.deployments.find((d) => d.state === 'READY') || data.deployments?.[0];
 	if (!dep) return null;
 	const r = await fetch(
 		`https://api.vercel.com/v13/deployments?forceNew=1&teamId=${teamId}`,
@@ -230,32 +231,58 @@ async function listCandidates(args: Args) {
 		.eq('status', 'active');
 	if (error) throw new Error(error.message);
 
+	type Tenant = {
+		id: string;
+		customer_id: string;
+		slug: string;
+		status: string;
+		current_plan: string;
+		only_profissao: boolean;
+		vercel_project_id: string;
+		supabase_project_ref: string;
+	};
+	type Customer = {
+		id: string;
+		email: string;
+		name: string;
+		company_name: string;
+	};
+
 	const customerIds = [
-		...new Set((tenants ?? []).map((t: any) => t.customer_id)),
+		...new Set((tenants ?? []).map((t) => (t as Tenant).customer_id)),
 	];
 	const { data: customers } = await supabase
 		.from('pl_provisioning_customer')
 		.select('id, email, name, company_name')
 		.in('id', customerIds);
-	const custMap = new Map((customers ?? []).map((c: any) => [c.id, c]));
+	const custMap = new Map(
+		(customers ?? []).map((c) => [(c as Customer).id, c as Customer]),
+	);
 
 	let result = (tenants ?? [])
-		.map((t: any) => ({
-			tenant: t,
-			customer: custMap.get(t.customer_id),
+		.map((t) => ({
+			tenant: t as Tenant,
+			customer: custMap.get((t as Tenant).customer_id) as Customer | undefined,
 		}))
 		// só os que ainda têm Supabase a deletar (ou seja, ainda não migrados)
 		.filter((c) => !!c.tenant.supabase_project_ref);
 
 	if (args.onlyEmails && args.onlyEmails.length > 0) {
 		result = result.filter(
-			(c) => c.customer && args.onlyEmails!.includes((c.customer as any).email),
+			(c) => c.customer && args.onlyEmails?.includes(c.customer.email),
 		);
 	}
 	return result;
 }
 
-async function processOne(c: any, args: Args) {
+type Candidate = Awaited<ReturnType<typeof listCandidates>>[number];
+type ProcessResult = {
+	email: string | undefined;
+	actions: string[];
+	errors: string[];
+};
+
+async function processOne(c: Candidate, args: Args): Promise<ProcessResult> {
 	const { tenant, customer } = c;
 	console.log(
 		`\n→ ${customer?.email ?? '?'} (${customer?.name ?? ''}) — slug=${tenant.slug}`,
@@ -263,7 +290,11 @@ async function processOne(c: any, args: Args) {
 	console.log(`  vercel_project_id: ${tenant.vercel_project_id}`);
 	console.log(`  supabase_project_ref: ${tenant.supabase_project_ref}`);
 
-	const result: any = { email: customer?.email, actions: [], errors: [] };
+	const result: ProcessResult = {
+		email: customer?.email,
+		actions: [],
+		errors: [],
+	};
 
 	if (args.dryRun) {
 		console.log('  [dry-run] would update Vercel envs:');
@@ -398,13 +429,18 @@ async function main() {
 		return;
 	}
 
-	const results: any[] = [];
+	const results: ProcessResult[] = [];
 	for (const c of candidates) {
 		try {
 			results.push(await processOne(c, args));
-		} catch (e: any) {
-			console.error(`  ✗ FATAL: ${e.message}`);
-			results.push({ email: c.customer?.email, errors: [e.message] });
+		} catch (e) {
+			const err = e as { message?: string };
+			console.error(`  ✗ FATAL: ${err.message}`);
+			results.push({
+				email: c.customer?.email,
+				actions: [],
+				errors: [err.message ?? 'unknown'],
+			});
 		}
 	}
 

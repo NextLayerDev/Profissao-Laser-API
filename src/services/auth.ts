@@ -99,7 +99,7 @@ export const authService = {
 
 			if (error) throw new Error(error.message);
 
-			return { token: data.session.access_token };
+			return { token: data.session.access_token, userId: data.user.id };
 		});
 	},
 

@@ -150,17 +150,17 @@ export const exportVectorController = async (
 			return reply.status(status).send({ message });
 		}
 
-		if (result!.type === 'redirect') {
-			return reply.redirect(result!.url);
+		if (result?.type === 'redirect') {
+			return reply.redirect(result.url);
 		}
 
 		return reply
 			.header(
 				'Content-Disposition',
-				`attachment; filename="${result!.filename}"`,
+				`attachment; filename="${result?.filename}"`,
 			)
-			.header('Content-Type', result!.mimetype)
-			.send(result!.content);
+			.header('Content-Type', result?.mimetype)
+			.send(result?.content);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });

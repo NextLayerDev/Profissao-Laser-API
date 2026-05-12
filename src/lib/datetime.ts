@@ -15,3 +15,17 @@ export function startOfTodayBRT(): Date {
 export function startOfTomorrowBRT(): Date {
 	return new Date(startOfTodayBRT().getTime() + 24 * 60 * 60 * 1000);
 }
+
+/** Retorna a data de hoje no formato YYYY-MM-DD no horário de Brasília. */
+export function todayBRT(): string {
+	return new Intl.DateTimeFormat('en-CA', { timeZone: BRT_TZ }).format(
+		new Date(),
+	);
+}
+
+/** Retorna a data de ontem no formato YYYY-MM-DD no horário de Brasília. */
+export function yesterdayBRT(): string {
+	return new Intl.DateTimeFormat('en-CA', { timeZone: BRT_TZ }).format(
+		new Date(Date.now() - 24 * 60 * 60 * 1000),
+	);
+}
