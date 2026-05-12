@@ -148,6 +148,21 @@ export async function deleteSvgByUrl(url: string): Promise<void> {
 	return deleteByUrl(url);
 }
 
+export async function uploadVectorOriginalImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('vectors-original', buffer, path, mimetype);
+}
+
+export async function uploadVectorPng(
+	buffer: Buffer,
+	path: string,
+): Promise<string> {
+	return upload('vectors-preview', buffer, path, 'image/png');
+}
+
 export async function createBunnyStreamUpload(title: string): Promise<{
 	videoId: string;
 	tusEndpoint: string;

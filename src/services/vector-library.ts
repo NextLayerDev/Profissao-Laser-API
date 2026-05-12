@@ -4,7 +4,7 @@ import {
 	uploadVectorLibraryFile,
 } from '../lib/storage.js';
 import { vectorLibraryRepository } from '../repositories/vector-library.js';
-import type { CreateFolder } from '../types/vector-library.js';
+import type { CreateFolder } from './types/vector-library.js';
 
 export const vectorLibraryService = {
 	async getContents(parentId: string | null) {

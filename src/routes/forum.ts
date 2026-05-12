@@ -18,7 +18,7 @@ import {
 	upvoteForumReplyController,
 } from '../controllers/forum.js';
 import { authenticateCustomer } from '../middleware/auth.js';
-import { ErrorSchema } from '../types/error.js';
+import { ErrorSchema } from '../services/types/error.js';
 import {
 	createForumCategorySchema,
 	createForumPostSchema,
@@ -29,7 +29,7 @@ import {
 	updateForumCategorySchema,
 	updateForumPostSchema,
 	updateForumReplySchema,
-} from '../types/forum.js';
+} from '../services/types/forum.js';
 
 export async function forumRoute(server: FastifyInstance) {
 	server.get(

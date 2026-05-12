@@ -10,7 +10,7 @@ import type {
 	UpdateChannel,
 	UpdateEvent,
 	UpdateProject,
-} from '../types/community.js';
+} from './types/community.js';
 
 export const communityService = {
 	async listPosts(page: number, limit: number, currentUserId: string) {

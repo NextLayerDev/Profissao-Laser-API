@@ -42,7 +42,13 @@ class VectorRepository {
 
 	async create(
 		customerId: string,
-		fields: { original_name: string; svg_url: string },
+		fields: {
+			original_name: string;
+			svg_url: string;
+			original_url?: string;
+			params?: Record<string, unknown>;
+			png_url?: string;
+		},
 	) {
 		const { data, error } = await supabase
 			.from('customer_vectors')
@@ -51,6 +57,19 @@ class VectorRepository {
 			.single();
 
 		if (error) throw new Error(error.message);
+		return data;
+	}
+
+	async findByIdForExport(id: string, customerId: string | null) {
+		const { data, error } = await supabase
+			.from('customer_vectors')
+			.select('*')
+			.eq('id', id)
+			.single();
+
+		if (error || !data) throw new Error('Vector not found');
+		if (customerId && data.customer_id !== customerId)
+			throw new Error('Vector not found');
 		return data;
 	}
 

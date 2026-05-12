@@ -5,7 +5,7 @@ import type {
 	CreateForumReply,
 	UpdateForumCategory,
 	UpdateForumPost,
-} from '../types/forum.js';
+} from '../services/types/forum.js';
 
 // ─── Types for DB rows ────────────────────────────────────────────────────────
 

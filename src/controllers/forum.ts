@@ -8,7 +8,7 @@ import {
 	updateForumCategorySchema,
 	updateForumPostSchema,
 	updateForumReplySchema,
-} from '../types/forum.js';
+} from '../services/types/forum.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

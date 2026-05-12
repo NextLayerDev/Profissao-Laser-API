@@ -17,7 +17,7 @@ import {
 	updateFolderController,
 	uploadFileController,
 } from '../controllers/vector-library.js';
-import { ErrorSchema } from '../types/error.js';
+import { ErrorSchema } from '../services/types/error.js';
 import {
 	breadcrumbItemSchema,
 	contentsPaginatedSchema,
@@ -29,7 +29,7 @@ import {
 	vectorLibraryFileSchema,
 	vectorLibraryFolderSchema,
 	vectorLibraryStatsSchema,
-} from '../types/vector-library.js';
+} from '../services/types/vector-library.js';
 
 export async function vectorLibraryRoute(server: FastifyInstance) {
 	server.get(

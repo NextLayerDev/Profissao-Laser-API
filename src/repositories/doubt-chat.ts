@@ -6,7 +6,7 @@ import type {
 	SendChatMessage,
 	UpdateDefaultQuestion,
 	UpdateDoubtCategory,
-} from '../types/doubt-chat.js';
+} from '../services/types/doubt-chat.js';
 
 class DoubtChatRepository {
 	async listCategories() {

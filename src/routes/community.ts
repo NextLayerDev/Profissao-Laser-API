@@ -51,8 +51,8 @@ import {
 	updateChannelSchema,
 	updateEventSchema,
 	updateProjectSchema,
-} from '../types/community.js';
-import { ErrorSchema } from '../types/error.js';
+} from '../services/types/community.js';
+import { ErrorSchema } from '../services/types/error.js';
 
 export async function communityRoute(server: FastifyInstance) {
 	server.get(
