@@ -14,6 +14,7 @@ import type {
 	Previa,
 	UpdatePreviaInput,
 } from '../types/previa.js';
+import { laserProductService } from './laser-product.js';
 
 class PreviaService {
 	async generate(
@@ -21,11 +22,8 @@ class PreviaService {
 		body: GeneratePreviaInput,
 	): Promise<Previa> {
 		const {
-			imagebase_url,
-			imageproduct_url,
+			productVariantId,
 			imagelogo_url,
-			productName,
-			productColor,
 			laserSettings,
 			personalizationType,
 			customName,
@@ -47,13 +45,28 @@ class PreviaService {
 			);
 		}
 
-		// ── Validações (porteira:1476-1510) ─────────────────────────────────
-		const isTextOnly =
-			personalizationType === 'text' || laserSettings.apenasTexto === true;
+		// ── Resolver variant do catálogo (substitui imageproduct_url custom) ──
+		const { variant, product } =
+			await laserProductService.getActiveVariantForPreview(productVariantId);
+		const imageproductUrl = variant.imageUrl;
+		const productName = product.name;
+		const productColor = variant.colorName ?? variant.tipo ?? null;
 
-		if (!imagebase_url || !imageproduct_url) {
-			throw new Error('Imagens base e produto são obrigatórias');
-		}
+		// Material default do produto sobrescreve o laserSettings.material só se
+		// o customer não tiver passado nada útil (mantém preferência do customer).
+		const effectiveLaserSettings = {
+			...laserSettings,
+			material:
+				laserSettings.material && laserSettings.material.length > 0
+					? laserSettings.material
+					: (product.defaultMaterial ?? laserSettings.material),
+		};
+
+		// ── Validações de logo / texto (mantidas) ───────────────────────────
+		const isTextOnly =
+			personalizationType === 'text' ||
+			effectiveLaserSettings.apenasTexto === true;
+
 		if (!isTextOnly && !imagelogo_url) {
 			throw new Error('Imagem do logo é obrigatória');
 		}
@@ -67,22 +80,20 @@ class PreviaService {
 			throw new Error('Chave da API não configurada');
 		}
 
-		// ── Converter imagens em paralelo (porteira:1518-1531) ──────────────
+		// ── Converter imagens em paralelo (produto + logo opcional) ─────────
 		const imagePromises: Promise<string>[] = [
-			imageUrlToBase64(imagebase_url),
-			imageUrlToBase64(imageproduct_url),
+			imageUrlToBase64(imageproductUrl),
 		];
 		if (imagelogo_url && !isTextOnly) {
 			imagePromises.push(imageUrlToBase64(imagelogo_url));
 		}
-		const [imagebaseB64, imageproductB64, imagelogoB64] =
-			await Promise.all(imagePromises);
+		const [imageproductB64, imagelogoB64] = await Promise.all(imagePromises);
 
-		// ── Gerar prompt dinâmico (porteira:1534-1543) ──────────────────────
+		// ── Gerar prompt dinâmico (sem imagebase) ──────────────────────────
 		const prompt = generatePrompt(
 			productName,
-			{ ...laserSettings, apenasTexto: isTextOnly },
-			laserSettings.comNome === 'com' || isTextOnly,
+			{ ...effectiveLaserSettings, apenasTexto: isTextOnly },
+			effectiveLaserSettings.comNome === 'com' || isTextOnly,
 			customName ?? undefined,
 			instrucoesPersonalizadas ?? null,
 			modoLentes,
@@ -90,16 +101,12 @@ class PreviaService {
 			textoLenteEsquerda ?? undefined,
 		);
 
-		// ── Montar mensagem (porteira:1545-1573) ────────────────────────────
+		// ── Montar mensagem (produto + logo opcional, sem imagebase) ────────
 		const messageContent: Array<
 			| { type: 'text'; text: string }
 			| { type: 'image_url'; image_url: { url: string } }
 		> = [
 			{ type: 'text', text: prompt },
-			{
-				type: 'image_url',
-				image_url: { url: `data:image/png;base64,${imagebaseB64}` },
-			},
 			{
 				type: 'image_url',
 				image_url: { url: `data:image/png;base64,${imageproductB64}` },
@@ -112,7 +119,7 @@ class PreviaService {
 			});
 		}
 
-		// ── Chamar OpenRouter/Gemini (porteira:1576-1593) ───────────────────
+		// ── Chamar OpenRouter/Gemini ─────────────────────────────────────────
 		const completion = await openrouter.chat.completions.create(
 			{
 				model: PREVIA_MODEL,
@@ -128,7 +135,7 @@ class PreviaService {
 			},
 		);
 
-		// ── Extrair imagem do retorno (porteira:1595-1618) ──────────────────
+		// ── Extrair imagem do retorno ────────────────────────────────────────
 		const message = completion.choices[0]?.message as
 			| GeminiImageMessage
 			| undefined;
@@ -153,14 +160,16 @@ class PreviaService {
 		const previewUrl = await this.persistImage(result, customerId);
 
 		// ── Salvar registro ─────────────────────────────────────────────────
+		// imagebaseUrl fica vazio pra registros novos (drop total da feature).
+		// imageproductUrl recebe a URL da variant escolhida.
 		return previaRepository.create({
 			id: crypto.randomUUID(),
 			customerId,
 			name: name ?? productName,
 			productName,
-			productColor: productColor ?? null,
-			imagebaseUrl: imagebase_url,
-			imageproductUrl: imageproduct_url,
+			productColor,
+			imagebaseUrl: '',
+			imageproductUrl,
 			imagelogoUrl: imagelogo_url ?? null,
 			previewUrl,
 			personalizationType,
@@ -169,7 +178,7 @@ class PreviaService {
 			textoLenteDireita: textoLenteDireita ?? null,
 			textoLenteEsquerda: textoLenteEsquerda ?? null,
 			modoLentes: modoLentes ?? false,
-			laserSettings,
+			laserSettings: effectiveLaserSettings,
 			notes: notes ?? null,
 			prompt,
 			aiModel: PREVIA_MODEL,

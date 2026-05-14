@@ -15,6 +15,7 @@ import { forumRoute } from './routes/forum.js';
 import { globalPromoLinkRoute } from './routes/global-promo-link.js';
 import { mlSellerRoute } from './routes/internal/ml-seller.js';
 import { knowledgeBaseRoute } from './routes/knowledge-base.js';
+import { laserProductRoute } from './routes/laser-product.js';
 import { lessonRoute } from './routes/lesson.js';
 import { mercadoLivreOAuthRoute } from './routes/mercado-livre-oauth.js';
 import { moduleRoute } from './routes/module.js';
@@ -70,6 +71,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(forumRoute);
 	app.register(templateRoute);
 	app.register(designRoute);
+	app.register(laserProductRoute);
 	app.register(editorAiRoute);
 	app.register(provisioningRoute);
 	app.register(mercadoLivreOAuthRoute);

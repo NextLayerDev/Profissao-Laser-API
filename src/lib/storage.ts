@@ -140,6 +140,18 @@ export async function deleteDesignThumbnailByUrl(url: string): Promise<void> {
 	return deleteByUrl(url);
 }
 
+export async function uploadLaserProductImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('laser-products', buffer, path, mimetype);
+}
+
+export async function deleteLaserProductImageByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
 export async function deleteVectorLibraryFileByUrl(url: string): Promise<void> {
 	return deleteByUrl(url);
 }
