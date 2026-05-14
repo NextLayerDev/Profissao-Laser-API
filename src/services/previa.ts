@@ -9,6 +9,7 @@ import { generatePrompt, imageUrlToBase64 } from '../lib/previa-prompt.js';
 import { DAILY_PREVIA_LIMIT, DailyLimitError } from '../lib/previa-quota.js';
 import { deletePreviaImageByUrl, uploadPreviaImage } from '../lib/storage.js';
 import { previaRepository } from '../repositories/previa.js';
+import { customerWatermarkRepository } from '../repositories/watermark.js';
 import type {
 	GeneratePreviaInput,
 	Previa,
@@ -31,6 +32,7 @@ class PreviaService {
 			textoLenteDireita,
 			textoLenteEsquerda,
 			modoLentes,
+			useWatermark,
 			name,
 			notes,
 		} = body;
@@ -51,6 +53,17 @@ class PreviaService {
 		const imageproductUrl = variant.imageUrl;
 		const productName = product.name;
 		const productColor = variant.colorName ?? variant.tipo ?? null;
+
+		// ── Resolver marca d'água (se solicitada) ────────────────────────────
+		let watermarkUrl: string | null = null;
+		if (useWatermark === true) {
+			const watermark =
+				await customerWatermarkRepository.findByCustomerId(customerId);
+			if (!watermark) {
+				throw new Error("Marca d'água não cadastrada");
+			}
+			watermarkUrl = watermark.imageUrl;
+		}
 
 		// Material default do produto sobrescreve o laserSettings.material só se
 		// o customer não tiver passado nada útil (mantém preferência do customer).
@@ -80,16 +93,25 @@ class PreviaService {
 			throw new Error('Chave da API não configurada');
 		}
 
-		// ── Converter imagens em paralelo (produto + logo opcional) ─────────
+		// ── Converter imagens em paralelo (produto + logo + watermark opcionais) ──
+		const willSendLogo = !!(imagelogo_url && !isTextOnly);
+		const willSendWatermark = !!watermarkUrl;
+
 		const imagePromises: Promise<string>[] = [
 			imageUrlToBase64(imageproductUrl),
 		];
-		if (imagelogo_url && !isTextOnly) {
-			imagePromises.push(imageUrlToBase64(imagelogo_url));
-		}
-		const [imageproductB64, imagelogoB64] = await Promise.all(imagePromises);
+		if (willSendLogo) imagePromises.push(imageUrlToBase64(imagelogo_url!));
+		if (willSendWatermark)
+			imagePromises.push(imageUrlToBase64(watermarkUrl as string));
 
-		// ── Gerar prompt dinâmico (sem imagebase) ──────────────────────────
+		const base64s = await Promise.all(imagePromises);
+		const imageproductB64 = base64s[0];
+		const imagelogoB64 = willSendLogo ? base64s[1] : null;
+		const watermarkB64 = willSendWatermark
+			? base64s[willSendLogo ? 2 : 1]
+			: null;
+
+		// ── Gerar prompt dinâmico (sem imagebase, com flag de watermark) ────
 		const prompt = generatePrompt(
 			productName,
 			{ ...effectiveLaserSettings, apenasTexto: isTextOnly },
@@ -99,9 +121,10 @@ class PreviaService {
 			modoLentes,
 			textoLenteDireita ?? undefined,
 			textoLenteEsquerda ?? undefined,
+			willSendWatermark,
 		);
 
-		// ── Montar mensagem (produto + logo opcional, sem imagebase) ────────
+		// ── Montar mensagem (produto + logo opcional + watermark opcional) ──
 		const messageContent: Array<
 			| { type: 'text'; text: string }
 			| { type: 'image_url'; image_url: { url: string } }
@@ -112,10 +135,16 @@ class PreviaService {
 				image_url: { url: `data:image/png;base64,${imageproductB64}` },
 			},
 		];
-		if (imagelogoB64 && !isTextOnly) {
+		if (imagelogoB64) {
 			messageContent.push({
 				type: 'image_url',
 				image_url: { url: `data:image/png;base64,${imagelogoB64}` },
+			});
+		}
+		if (watermarkB64) {
+			messageContent.push({
+				type: 'image_url',
+				image_url: { url: `data:image/png;base64,${watermarkB64}` },
 			});
 		}
 

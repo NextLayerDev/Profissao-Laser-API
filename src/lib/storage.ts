@@ -152,6 +152,18 @@ export async function deleteLaserProductImageByUrl(url: string): Promise<void> {
 	return deleteByUrl(url);
 }
 
+export async function uploadWatermarkImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('watermarks', buffer, path, mimetype);
+}
+
+export async function deleteWatermarkImageByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
 export async function deleteVectorLibraryFileByUrl(url: string): Promise<void> {
 	return deleteByUrl(url);
 }
