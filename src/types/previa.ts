@@ -37,15 +37,18 @@ export const laserSettingsSchema = z.object({
 export type LaserSettings = z.infer<typeof laserSettingsSchema>;
 
 // ─── Generate (request body) ──────────────────────────────────────────────
-// Mesmo shape do body em system_porteira/src/app/api/gerar-previa-ia/route.ts:1460
-// (mantém snake_case nos campos *_url para identidade total com o porteira).
+// Body simplificado: customer só seleciona productVariantId (catálogo
+// gerenciado por admin em /laser-products) e envia opcionalmente a própria
+// logo. Não aceita mais imagebase_url nem imageproduct_url no payload.
 
 export const generatePreviaSchema = z.object({
-	imagebase_url: z.string(),
-	imageproduct_url: z.string(),
+	// OBRIGATÓRIO — referencia o variant do catálogo (pl_laser_product_variant)
+	productVariantId: z.uuid(),
+
+	// Logo do customer (URL ou data:image/...;base64,...).
+	// Obrigatória quando personalizationType !== 'text'.
 	imagelogo_url: z.string().nullable().optional(),
-	productName: z.string(),
-	productColor: z.string().optional(),
+
 	laserSettings: laserSettingsSchema,
 	personalizationType: z.enum(['logo', 'text', 'both']),
 	customName: z.string().nullable().optional(),
