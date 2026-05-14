@@ -41,6 +41,15 @@ export const createProductSchema = z.object({
 
 export type ProductCreate = z.infer<typeof createProductSchema>;
 
+export const createAddonSchema = z.object({
+	name: z.string(),
+	description: z.string().optional(),
+	price: z.number().positive(),
+	interval: z.enum(['month', 'year', 'one_time']).default('month'),
+});
+
+export type AddonCreate = z.infer<typeof createAddonSchema>;
+
 export const updateProductSchema = z.object({
 	name: z.string().optional(),
 	description: z.string().optional(),

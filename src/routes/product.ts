@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticateAdmin } from '@/middleware/auth.js';
 import {
+	createAddonController,
 	createProductController,
 	deleteProductController,
 	getProductsController,
@@ -12,6 +13,7 @@ import {
 } from '../controllers/product.js';
 import { ErrorSchema } from '../types/error.js';
 import {
+	createAddonSchema,
 	createdProductResponseSchema,
 	createProductSchema,
 	productSchema,
@@ -54,6 +56,25 @@ export async function productRoute(server: FastifyInstance) {
 			},
 		},
 		createProductController,
+	);
+
+	server.post(
+		'/addon',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description:
+					'Create a new addon product in Stripe and save it in the database with isAddon=true. Addons can be attached to existing subscriptions via /subscription/addon.',
+				body: createAddonSchema,
+				response: {
+					201: createdProductResponseSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Products'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		createAddonController,
 	);
 
 	server.patch(

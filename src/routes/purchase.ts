@@ -6,6 +6,7 @@ import {
 	authenticateCustomer,
 } from '@/middleware/auth.js';
 import {
+	addAddonController,
 	adminChangePlanController,
 	createPurchaseController,
 	createRefundController,
@@ -15,6 +16,8 @@ import {
 	getPaymentAttemptsController,
 	getRecurringSubscriptionsController,
 	getRefundsController,
+	listAddonsController,
+	removeAddonController,
 	upgradeSubscriptionController,
 } from '../controllers/purchase.js';
 import { ErrorSchema } from '../types/error.js';
@@ -127,6 +130,70 @@ export async function purchaseRoute(server: FastifyInstance) {
 			},
 		},
 		downgradeSubscriptionController,
+	);
+
+	const addonSchema = z.object({
+		itemId: z.string(),
+		productId: z.string(),
+		productName: z.string(),
+		stripePriceId: z.string(),
+		quantity: z.number().optional(),
+	});
+
+	server.post(
+		'/subscription/addon',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description: 'Add an addon (extra item) to the current subscription.',
+				body: z.object({ productId: z.uuid() }),
+				response: {
+					201: addonSchema.extend({ subscriptionId: z.string() }),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		addAddonController,
+	);
+
+	server.delete(
+		'/subscription/addon/:itemId',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description: 'Remove an addon item from the current subscription.',
+				params: z.object({ itemId: z.string() }),
+				response: {
+					200: z.object({ removed: z.boolean(), itemId: z.string() }),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		removeAddonController,
+	);
+
+	server.get(
+		'/subscription/addons',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description: 'List addon items attached to the current subscription.',
+				response: {
+					200: z.array(addonSchema),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Purchases'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		listAddonsController,
 	);
 
 	server.patch(

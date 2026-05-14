@@ -8,6 +8,29 @@ import type { ProvisioningPlan } from '../types/provisioning.js';
 import { PLAN_ORDER, resolvePlanFromProduct } from '../utils/plan.js';
 import { resolveSuccessUrl } from '../utils/success-url.js';
 
+async function findActiveStripeSubscription(email: string) {
+	const customers = await stripe.customers.list({ email, limit: 1 });
+	if (!customers.data.length) throw new Error('No Stripe customer found');
+	const customerId = customers.data[0].id;
+
+	const [activeSubs, trialingSubs] = await Promise.all([
+		stripe.subscriptions.list({
+			customer: customerId,
+			status: 'active',
+			limit: 1,
+		}),
+		stripe.subscriptions.list({
+			customer: customerId,
+			status: 'trialing',
+			limit: 1,
+		}),
+	]);
+	const subscription = activeSubs.data[0] ?? trialingSubs.data[0];
+	if (!subscription)
+		throw new Error('No active or trialing Stripe subscription found');
+	return subscription;
+}
+
 export const purchaseService = {
 	async listPurchases(email: string) {
 		return withCapture(async () => {
@@ -771,6 +794,79 @@ export const purchaseService = {
 					cancelAtPeriodEnd: sub.cancel_at_period_end,
 				};
 			});
+		});
+	},
+
+	async addAddon(email: string, productId: string) {
+		return withCapture(async () => {
+			const product = await productRepository.findAddonById(productId);
+			const subscription = await findActiveStripeSubscription(email);
+
+			const already = subscription.items.data.find(
+				(i) => i.price.id === product.stripePriceId,
+			);
+			if (already) throw new Error('Addon already attached to subscription');
+
+			const updated = await stripe.subscriptions.update(subscription.id, {
+				items: [{ price: product.stripePriceId, quantity: 1 }],
+				proration_behavior: 'create_prorations',
+				billing_cycle_anchor: 'unchanged',
+			});
+
+			const newItem = updated.items.data.find(
+				(i) => i.price.id === product.stripePriceId,
+			);
+			if (!newItem) throw new Error('Failed to attach addon to subscription');
+
+			return {
+				subscriptionId: updated.id,
+				itemId: newItem.id,
+				productId: product.id,
+				productName: product.name,
+				stripePriceId: product.stripePriceId,
+			};
+		});
+	},
+
+	async removeAddon(email: string, itemId: string) {
+		return withCapture(async () => {
+			const subscription = await findActiveStripeSubscription(email);
+			const item = subscription.items.data.find((i) => i.id === itemId);
+			if (!item) throw new Error('Subscription item not found');
+
+			const product = await productRepository.findByStripePriceId(
+				item.price.id,
+			);
+			if (!product.isAddon) throw new Error('Cannot remove the main plan item');
+
+			await stripe.subscriptionItems.del(item.id, {
+				proration_behavior: 'create_prorations',
+			});
+			return { removed: true, itemId };
+		});
+	},
+
+	async listAddons(email: string) {
+		return withCapture(async () => {
+			const subscription = await findActiveStripeSubscription(email);
+			const items = subscription.items.data;
+
+			const enriched = await Promise.all(
+				items.map(async (i) => {
+					const p = await productRepository
+						.findByStripePriceId(i.price.id)
+						.catch(() => null);
+					if (!p?.isAddon) return null;
+					return {
+						itemId: i.id,
+						productId: p.id,
+						productName: p.name,
+						stripePriceId: i.price.id,
+						quantity: i.quantity ?? 1,
+					};
+				}),
+			);
+			return enriched.filter((x): x is NonNullable<typeof x> => x !== null);
 		});
 	},
 };
