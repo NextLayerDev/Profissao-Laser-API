@@ -56,6 +56,10 @@ export const generatePreviaSchema = z.object({
 	textoLenteDireita: z.string().nullable().optional(),
 	textoLenteEsquerda: z.string().nullable().optional(),
 	modoLentes: z.boolean().optional(),
+	// Marca d'água: se true, aplica a logo salva em /watermark nos cantos
+	// inferior-esquerdo e superior-direito da imagem final. Erro 400 se
+	// `true` e o customer não tem watermark cadastrada.
+	useWatermark: z.boolean().optional(),
 	name: z.string().optional(),
 	notes: z.string().optional(),
 });

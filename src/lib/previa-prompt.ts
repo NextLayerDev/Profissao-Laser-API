@@ -53,6 +53,7 @@ export function generatePrompt(
 	modoLentes?: boolean,
 	textoLenteDireita?: string,
 	textoLenteEsquerda?: string,
+	hasWatermark: boolean = false,
 ): string {
 	const sizeMap: Record<string, string> = {
 		pequeno:
@@ -386,6 +387,11 @@ export function generatePrompt(
 		lines.push('┌─────────────────────────────────────────────────────────┐');
 		lines.push('│ [1] imageproduct  = Main product photo                  │');
 		lines.push('│                     (PRESERVE all colors/lighting)      │');
+		if (hasWatermark) {
+			lines.push('│                                                         │');
+			lines.push('│ [2] watermark     = Company branding overlay            │');
+			lines.push('│                     (place in 2 corners as overlay)     │');
+		}
 		lines.push('│                                                         │');
 		lines.push('│ 🚨 NO LOGO IMAGE - ENGRAVE TEXT ONLY                    │');
 		lines.push('└─────────────────────────────────────────────────────────┘');
@@ -406,6 +412,11 @@ export function generatePrompt(
 		lines.push('│                                                         │');
 		lines.push('│ [2] imagelogo     = Logo to engrave                     │');
 		lines.push('│                     (convert to metallic effect)        │');
+		if (hasWatermark) {
+			lines.push('│                                                         │');
+			lines.push('│ [3] watermark     = Company branding overlay            │');
+			lines.push('│                     (place in 2 corners as overlay)     │');
+		}
 		lines.push('└─────────────────────────────────────────────────────────┘');
 	}
 	lines.push('');
@@ -1311,6 +1322,39 @@ export function generatePrompt(
 		'If output contains colors, it does NOT represent real laser engraving technology.',
 	);
 	lines.push('');
+
+	// ── Watermark instructions (apenas quando solicitada) ───────────────────
+	if (hasWatermark) {
+		const watermarkIdx = isTextOnly ? '[2]' : '[3]';
+		lines.push('🏷️ WATERMARK INSTRUCTIONS (MANDATORY):');
+		lines.push('┌─────────────────────────────────────────────────────────┐');
+		lines.push(
+			`│ The ${watermarkIdx} watermark image is COMPANY BRANDING.            │`,
+		);
+		lines.push('│ Place it as a SEPARATE OVERLAY in TWO corners of the    │');
+		lines.push('│ final output image (NOT engraved on the product):       │');
+		lines.push('│                                                         │');
+		lines.push('│   1. BOTTOM-LEFT corner                                 │');
+		lines.push('│   2. TOP-RIGHT corner                                   │');
+		lines.push('│                                                         │');
+		lines.push('│ ✓ Size: ~12% of the output image width                  │');
+		lines.push('│ ✓ Opacity: 100% (fully opaque, sharp)                   │');
+		lines.push('│ ✓ Margin from edge: ~3% of image width                  │');
+		lines.push('│ ✓ Same logo in both corners, SAME orientation           │');
+		lines.push('│ ✓ Preserve the watermark colors exactly as provided     │');
+		lines.push('│                                                         │');
+		lines.push('│ ❌ DO NOT engrave the watermark on the product          │');
+		lines.push('│ ❌ DO NOT modify, recolor, or stylize the watermark     │');
+		lines.push('│ ❌ DO NOT place the watermark on the engraving area     │');
+		lines.push('│ ❌ DO NOT convert the watermark to metallic — it is a   │');
+		lines.push('│    flat branding overlay, NOT an engraving              │');
+		lines.push('│                                                         │');
+		lines.push('│ The watermark is a final-image overlay (like a digital  │');
+		lines.push('│ stamp). The product and engraving stay UNTOUCHED.       │');
+		lines.push('└─────────────────────────────────────────────────────────┘');
+		lines.push('');
+	}
+
 	lines.push('🎬 GENERATE OUTPUT NOW WITH ALL REQUIREMENTS SATISFIED');
 
 	return lines.join('\n');
