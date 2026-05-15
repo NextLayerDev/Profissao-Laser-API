@@ -1,4 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import {
+	FONT_OPTIONS,
+	LASER_OPTIONS,
+	LASER_RANGES,
+} from '../lib/previa-options.js';
 import { DailyLimitError } from '../lib/previa-quota.js';
 import { previaService } from '../services/previa.js';
 import { generatePreviaSchema, updatePreviaSchema } from '../types/previa.js';
@@ -60,6 +65,36 @@ export const getPreviaQuotaController = async (
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
+};
+
+// Catálogo estático de opções pro frontend montar os seletores —
+// sem acesso a DB, não depende do customer.
+export const getPreviaOptionsController = async (
+	_request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	return reply.send({
+		tamanho: LASER_OPTIONS.tamanho,
+		posicao: LASER_OPTIONS.posicao,
+		intensidade: LASER_OPTIONS.intensidade,
+		profundidade: LASER_OPTIONS.profundidade,
+		tamanhoNome: LASER_OPTIONS.tamanhoNome,
+		material: LASER_OPTIONS.material,
+		estiloGravacao: LASER_OPTIONS.estiloGravacao,
+		acabamentoSuperficie: LASER_OPTIONS.acabamentoSuperficie,
+		moldura: LASER_OPTIONS.moldura,
+		posicaoTextoRelLogo: LASER_OPTIONS.posicaoTextoRelLogo,
+		espacamentoLogoTexto: LASER_OPTIONS.espacamentoLogoTexto,
+		tipoVisualizacao: LASER_OPTIONS.tipoVisualizacao,
+		anguloCamera: LASER_OPTIONS.anguloCamera,
+		iluminacao: LASER_OPTIONS.iluminacao,
+		fundoCena: LASER_OPTIONS.fundoCena,
+		orientacaoLogo: LASER_OPTIONS.orientacaoLogo,
+		orientacaoNome: LASER_OPTIONS.orientacaoNome,
+		comNome: LASER_OPTIONS.comNome,
+		fontes: FONT_OPTIONS,
+		ranges: LASER_RANGES,
+	});
 };
 
 export const getPreviaHistoryController = async (
