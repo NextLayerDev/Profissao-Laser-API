@@ -35,6 +35,7 @@ import { userRoute } from './routes/user.js';
 import { vectorRoute } from './routes/vector.js';
 import { vectorLibraryRoute } from './routes/vector-library.js';
 import { vectorSupportRoute } from './routes/vector-support.js';
+import { vectorizeHelpRoute } from './routes/vectorize-help.js';
 import { watermarkRoute } from './routes/watermark.js';
 import { webhookRoute } from './routes/webhook.js';
 import { mercadoLivreWebhookRoute } from './routes/webhooks/mercado-livre.js';
@@ -74,6 +75,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(designRoute);
 	app.register(laserProductRoute);
 	app.register(watermarkRoute);
+	app.register(vectorizeHelpRoute);
 	app.register(editorAiRoute);
 	app.register(provisioningRoute);
 	app.register(mercadoLivreOAuthRoute);
