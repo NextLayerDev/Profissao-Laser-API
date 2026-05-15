@@ -1,33 +1,55 @@
 import { z } from 'zod';
+import {
+	FONT_VALUES,
+	LASER_OPTIONS,
+	LASER_RANGES,
+	optionValues,
+} from '../lib/previa-options.js';
 
-// ─── LaserSettings ────────────────────────────────────────────────────────
-// Espelha exatamente o LaserSettings de
-// system_porteira/src/components/ia-previsoes.tsx (linhas 109–140).
+// ─── LaserSettings (INPUT — validação estrita) ────────────────────────────
+// Campos discretos viram z.enum() — valor fora da lista → 400.
+// As listas de valores vêm de src/lib/previa-options.ts (fonte única).
 
 export const laserSettingsSchema = z.object({
-	tamanho: z.string(),
-	posicao: z.string(),
-	rotacao: z.number(),
-	intensidade: z.string(),
-	profundidade: z.string(),
-	comNome: z.string(),
+	tamanho: z.enum(optionValues(LASER_OPTIONS.tamanho)),
+	posicao: z.enum(optionValues(LASER_OPTIONS.posicao)),
+	rotacao: z
+		.number()
+		.int()
+		.min(LASER_RANGES.rotacao.min)
+		.max(LASER_RANGES.rotacao.max),
+	intensidade: z.enum(optionValues(LASER_OPTIONS.intensidade)),
+	profundidade: z.enum(optionValues(LASER_OPTIONS.profundidade)),
+	comNome: z.enum(optionValues(LASER_OPTIONS.comNome)),
 	nomePersonalizado: z.string(),
-	fonteFamilia: z.string(),
-	tamanhoNome: z.string(),
-	orientacaoLogo: z.string(),
-	orientacaoNome: z.string(),
-	material: z.string(),
-	estiloGravacao: z.string(),
-	acabamentoSuperficie: z.string(),
-	contraste: z.number(),
-	efeitoSombra: z.number(),
-	moldura: z.string(),
-	posicaoTextoRelLogo: z.string(),
-	espacamentoLogoTexto: z.string(),
-	tipoVisualizacao: z.string(),
-	anguloCamera: z.string(),
-	iluminacao: z.string(),
-	fundoCena: z.string(),
+	fonteFamilia: z.enum(FONT_VALUES),
+	tamanhoNome: z.enum(optionValues(LASER_OPTIONS.tamanhoNome)),
+	orientacaoLogo: z.enum(optionValues(LASER_OPTIONS.orientacaoLogo)),
+	orientacaoNome: z.enum(optionValues(LASER_OPTIONS.orientacaoNome)),
+	material: z.enum(optionValues(LASER_OPTIONS.material)),
+	estiloGravacao: z.enum(optionValues(LASER_OPTIONS.estiloGravacao)),
+	acabamentoSuperficie: z.enum(
+		optionValues(LASER_OPTIONS.acabamentoSuperficie),
+	),
+	contraste: z
+		.number()
+		.int()
+		.min(LASER_RANGES.contraste.min)
+		.max(LASER_RANGES.contraste.max),
+	efeitoSombra: z
+		.number()
+		.int()
+		.min(LASER_RANGES.efeitoSombra.min)
+		.max(LASER_RANGES.efeitoSombra.max),
+	moldura: z.enum(optionValues(LASER_OPTIONS.moldura)),
+	posicaoTextoRelLogo: z.enum(optionValues(LASER_OPTIONS.posicaoTextoRelLogo)),
+	espacamentoLogoTexto: z.enum(
+		optionValues(LASER_OPTIONS.espacamentoLogoTexto),
+	),
+	tipoVisualizacao: z.enum(optionValues(LASER_OPTIONS.tipoVisualizacao)),
+	anguloCamera: z.enum(optionValues(LASER_OPTIONS.anguloCamera)),
+	iluminacao: z.enum(optionValues(LASER_OPTIONS.iluminacao)),
+	fundoCena: z.enum(optionValues(LASER_OPTIONS.fundoCena)),
 	apenasTexto: z.boolean(),
 	modoLentes: z.boolean(),
 	textoLenteDireita: z.string(),
@@ -35,6 +57,11 @@ export const laserSettingsSchema = z.object({
 });
 
 export type LaserSettings = z.infer<typeof laserSettingsSchema>;
+
+// ─── LaserSettings (RESPONSE — loose passthrough do JSONB) ────────────────
+// Registros antigos em pl_previa.laserSettings podem ter valores fora dos
+// enums novos; a resposta usa passthrough pra nunca quebrar serialização.
+export const storedLaserSettingsSchema = z.record(z.string(), z.unknown());
 
 // ─── Generate (request body) ──────────────────────────────────────────────
 // Body simplificado: customer só seleciona productVariantId (catálogo
@@ -84,7 +111,7 @@ export const previaSchema = z.object({
 	textoLenteDireita: z.string().nullable(),
 	textoLenteEsquerda: z.string().nullable(),
 	modoLentes: z.boolean(),
-	laserSettings: laserSettingsSchema,
+	laserSettings: storedLaserSettingsSchema,
 	notes: z.string().nullable(),
 	prompt: z.string().nullable(),
 	aiModel: z.string(),
@@ -133,4 +160,50 @@ export const previaQuotaErrorSchema = z.object({
 	used: z.number(),
 	remaining: z.number(),
 	resetsAt: z.string(),
+});
+
+// ─── Options (GET /previas/options) ───────────────────────────────────────
+
+const previaOptionItemSchema = z.object({
+	value: z.string(),
+	label: z.string(),
+});
+
+const previaFontOptionSchema = z.object({
+	value: z.string(),
+	label: z.string(),
+	family: z.string(),
+	category: z.string(),
+});
+
+const previaRangeSchema = z.object({
+	min: z.number(),
+	max: z.number(),
+});
+
+export const previaOptionsResponseSchema = z.object({
+	tamanho: z.array(previaOptionItemSchema),
+	posicao: z.array(previaOptionItemSchema),
+	intensidade: z.array(previaOptionItemSchema),
+	profundidade: z.array(previaOptionItemSchema),
+	tamanhoNome: z.array(previaOptionItemSchema),
+	material: z.array(previaOptionItemSchema),
+	estiloGravacao: z.array(previaOptionItemSchema),
+	acabamentoSuperficie: z.array(previaOptionItemSchema),
+	moldura: z.array(previaOptionItemSchema),
+	posicaoTextoRelLogo: z.array(previaOptionItemSchema),
+	espacamentoLogoTexto: z.array(previaOptionItemSchema),
+	tipoVisualizacao: z.array(previaOptionItemSchema),
+	anguloCamera: z.array(previaOptionItemSchema),
+	iluminacao: z.array(previaOptionItemSchema),
+	fundoCena: z.array(previaOptionItemSchema),
+	orientacaoLogo: z.array(previaOptionItemSchema),
+	orientacaoNome: z.array(previaOptionItemSchema),
+	comNome: z.array(previaOptionItemSchema),
+	fontes: z.array(previaFontOptionSchema),
+	ranges: z.object({
+		rotacao: previaRangeSchema,
+		contraste: previaRangeSchema,
+		efeitoSombra: previaRangeSchema,
+	}),
 });

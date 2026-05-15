@@ -4,6 +4,7 @@ import {
 	deletePreviaController,
 	generatePreviaController,
 	getPreviaHistoryController,
+	getPreviaOptionsController,
 	getPreviaQuotaController,
 	updatePreviaController,
 } from '../controllers/previa.js';
@@ -13,6 +14,7 @@ import {
 	generatePreviaSchema,
 	previaHistoryQuerySchema,
 	previaHistoryResponseSchema,
+	previaOptionsResponseSchema,
 	previaQuotaErrorSchema,
 	previaQuotaSchema,
 	previaSchema,
@@ -59,6 +61,24 @@ export async function previaRoute(server: FastifyInstance) {
 			},
 		},
 		getPreviaQuotaController,
+	);
+
+	server.get(
+		'/previas/options',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Catálogo completo das opções de laserSettings: 15 campos discretos (tamanho, posicao, intensidade, tipoVisualizacao com 360/render-3d/fotogravacao, anguloCamera, iluminacao, fundoCena, etc.) + 80 fontes (com família CSS e categoria) + ranges dos sliders. Cada opção traz value + label PT-BR. Use para montar os seletores do frontend sem hard-code.',
+				response: {
+					200: previaOptionsResponseSchema,
+					403: ErrorSchema,
+				},
+				tags: ['Previas'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getPreviaOptionsController,
 	);
 
 	server.get(

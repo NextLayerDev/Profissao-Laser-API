@@ -1337,7 +1337,7 @@ export function generatePrompt(
 		lines.push('│   1. BOTTOM-LEFT corner                                 │');
 		lines.push('│   2. TOP-RIGHT corner                                   │');
 		lines.push('│                                                         │');
-		lines.push('│ ✓ Size: ~12% of the output image width                  │');
+		lines.push('│ ✓ Size: ~8% of the output image width                   │');
 		lines.push('│ ✓ Opacity: 100% (fully opaque, sharp)                   │');
 		lines.push('│ ✓ Margin from edge: ~3% of image width                  │');
 		lines.push('│ ✓ Same logo in both corners, SAME orientation           │');
