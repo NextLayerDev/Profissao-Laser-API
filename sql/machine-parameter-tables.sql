@@ -46,7 +46,8 @@ CREATE TABLE pl_product_parameter (
     "softwareOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
     "axisOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
     "operationOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
-    "lessonId" UUID REFERENCES pl_lesson(id) ON DELETE SET NULL,
+    -- pl_lesson.id é TEXT (não UUID) — FK precisa ser TEXT pra casar
+    "lessonId" TEXT REFERENCES pl_lesson(id) ON DELETE SET NULL,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
