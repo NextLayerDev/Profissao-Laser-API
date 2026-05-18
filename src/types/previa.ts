@@ -89,6 +89,7 @@ export const generatePreviaSchema = z.object({
 	useWatermark: z.boolean().optional(),
 	name: z.string().optional(),
 	notes: z.string().optional(),
+	useCredits: z.boolean().optional().default(false),
 });
 
 export type GeneratePreviaInput = z.infer<typeof generatePreviaSchema>;

@@ -8,7 +8,9 @@
 		"lint": "biome check --write .",
 		"build": "babel src --extensions \".js,.ts\" --out-dir dist --copy-files --no-copy-ignored",
 		"start": "node dist/server.js",
-		"prepare": "husky"
+		"prepare": "husky",
+		"test": "vitest run",
+		"test:watch": "vitest"
 	},
 	"author": "tobias.bp2004@gmail.com",
 	"license": "ISC",
@@ -51,7 +53,8 @@
 		"@types/nodemailer": "^7.0.11",
 		"@types/pg": "^8.18.0",
 		"babel-plugin-module-resolver": "^5.0.2",
-		"nodemon": "^3.1.11"
+		"nodemon": "^3.1.11",
+		"vitest": "^2.1.9"
 	},
 	"lint-staged": {
 		"*.{js,ts,jsx,tsx}": [

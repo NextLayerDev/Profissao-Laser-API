@@ -1,7 +1,10 @@
+import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { parseFormBoolean } from '../lib/vectorize.js';
+import { creditService } from '../services/credit.js';
 import { vectorizeService } from '../services/vectorize.js';
 import type { VectorizeParams } from '../types/vector.js';
+import { mapCreditError } from './credit.js';
 
 function extractParams(fields: Record<string, string>): VectorizeParams {
 	return {
@@ -45,18 +48,40 @@ export const vectorizeController = async (
 			return reply.status(400).send({ message: 'File is required' });
 		}
 
-		const params = extractParams(fields);
-		const { data: result, error } = await vectorizeService.vectorize(
-			customerId,
-			{ buffer: fileBuffer, filename, mimetype, params },
-		);
-
-		if (error) {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			return reply.status(500).send({ message });
+		// useCredits arrives as a multipart form field string
+		const confirmed = fields.useCredits === 'true';
+		let creditHandle: { refund: () => Promise<void> } | null = null;
+		try {
+			creditHandle = await creditService.charge({
+				customerId,
+				feature: 'vectorize',
+				idempotencyKey: `vectorize:${customerId}:${crypto.randomUUID()}`,
+				confirmed,
+			});
+		} catch (err) {
+			return mapCreditError(err, reply);
 		}
 
-		return reply.status(201).send(result);
+		try {
+			const params = extractParams(fields);
+			const { data: result, error } = await vectorizeService.vectorize(
+				customerId,
+				{ buffer: fileBuffer, filename, mimetype, params },
+			);
+
+			if (error) {
+				await creditHandle.refund();
+				const message =
+					error instanceof Error ? error.message : 'Unknown error';
+				return reply.status(500).send({ message });
+			}
+
+			return reply.status(201).send(result);
+		} catch (err) {
+			await creditHandle.refund();
+			const message = err instanceof Error ? err.message : 'Unknown error';
+			return reply.status(500).send({ message });
+		}
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
@@ -99,20 +124,42 @@ export const vectorizeBatchController = async (
 				.send({ message: 'At least one file is required' });
 		}
 
-		const params = extractParams(fields);
-		const inputs = fileParts.map((f) => ({ ...f, params }));
-
-		const { data: result, error } = await vectorizeService.vectorizeBatch(
-			customerId,
-			inputs,
-		);
-
-		if (error) {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			return reply.status(500).send({ message });
+		// useCredits arrives as a multipart form field string
+		const confirmed = fields.useCredits === 'true';
+		let creditHandle: { refund: () => Promise<void> } | null = null;
+		try {
+			creditHandle = await creditService.charge({
+				customerId,
+				feature: 'vectorize',
+				idempotencyKey: `vectorize:${customerId}:${crypto.randomUUID()}`,
+				confirmed,
+			});
+		} catch (err) {
+			return mapCreditError(err, reply);
 		}
 
-		return reply.status(201).send(result);
+		try {
+			const params = extractParams(fields);
+			const inputs = fileParts.map((f) => ({ ...f, params }));
+
+			const { data: result, error } = await vectorizeService.vectorizeBatch(
+				customerId,
+				inputs,
+			);
+
+			if (error) {
+				await creditHandle.refund();
+				const message =
+					error instanceof Error ? error.message : 'Unknown error';
+				return reply.status(500).send({ message });
+			}
+
+			return reply.status(201).send(result);
+		} catch (err) {
+			await creditHandle.refund();
+			const message = err instanceof Error ? err.message : 'Unknown error';
+			return reply.status(500).send({ message });
+		}
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
