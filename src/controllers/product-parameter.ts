@@ -11,6 +11,7 @@ function statusFor(message: string): number {
 	if (message === 'Lesson not found') return 404;
 	if (message === 'Parameter not found') return 404;
 	if (message === 'Machine not found') return 404;
+	if (message === 'Variant not found') return 404;
 	if (message === 'Parâmetro não encontrado') return 404;
 	if (message === 'Máquina não informada') return 400;
 	if (message.startsWith('Opção inválida')) return 400;
@@ -100,6 +101,7 @@ export const parameterLookupController = async (
 			softwareOptionId?: string;
 			axisOptionId?: string;
 			operationOptionId?: string;
+			variantId?: string;
 		};
 	}>,
 	reply: FastifyReply,

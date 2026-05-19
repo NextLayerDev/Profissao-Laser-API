@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { customerMachineRepository } from '../repositories/customer-machine.js';
+import { laserProductRepository } from '../repositories/laser-product.js';
 import { lessonRepository } from '../repositories/lesson.js';
 import { parameterRepository } from '../repositories/parameter.js';
 import { productParameterRepository } from '../repositories/product-parameter.js';
@@ -45,6 +46,17 @@ class ProductParameterService {
 		return { association: assoc, parameter, lesson };
 	}
 
+	/** Valida que a variação existe e pertence ao produto da rota. */
+	private async assertVariant(
+		productId: string,
+		variantId: string,
+	): Promise<void> {
+		const { variant } = await laserProductRepository.findVariantById(variantId);
+		if (variant.productId !== productId) {
+			throw new Error('Variant not found');
+		}
+	}
+
 	async listByProduct(productId: string) {
 		const assocs = await productParameterRepository.listByProduct(productId);
 		const enriched = await Promise.all(assocs.map((a) => this.enrich(a)));
@@ -68,6 +80,11 @@ class ProductParameterService {
 			axis: data.axisOptionId,
 			operation: data.operationOptionId,
 		});
+
+		// 1b. Valida variação (se fornecida) — tem que ser do produto da rota
+		if (data.variantId) {
+			await this.assertVariant(productId, data.variantId);
+		}
 
 		// 2. Resolve parâmetro: existente ou criar novo inline
 		let parameterId = data.parameterId ?? null;
@@ -102,6 +119,7 @@ class ProductParameterService {
 			softwareOptionId: data.softwareOptionId ?? null,
 			axisOptionId: data.axisOptionId ?? null,
 			operationOptionId: data.operationOptionId ?? null,
+			variantId: data.variantId ?? null,
 			lessonId: data.lessonId ?? null,
 		});
 	}
@@ -141,6 +159,7 @@ class ProductParameterService {
 		});
 		if (data.lessonId) await lessonRepository.findById(data.lessonId);
 		if (data.parameterId) await parameterRepository.findById(data.parameterId);
+		if (data.variantId) await this.assertVariant(productId, data.variantId);
 		return productParameterRepository.update(id, productId, data);
 	}
 
@@ -159,13 +178,14 @@ class ProductParameterService {
 		query: ParameterLookupQuery,
 	) {
 		// Resolve config: query > máquina salva
-		let config: Record<OptionCol | 'machineId', string | null> = {
+		let config: Record<OptionCol | 'machineId' | 'variantId', string | null> = {
 			machineId: query.machineId ?? null,
 			powerOptionId: query.powerOptionId ?? null,
 			lensOptionId: query.lensOptionId ?? null,
 			softwareOptionId: query.softwareOptionId ?? null,
 			axisOptionId: query.axisOptionId ?? null,
 			operationOptionId: query.operationOptionId ?? null,
+			variantId: query.variantId ?? null,
 		};
 		if (!config.machineId) {
 			const saved =
@@ -178,6 +198,8 @@ class ProductParameterService {
 				softwareOptionId: saved.softwareOptionId,
 				axisOptionId: saved.axisOptionId,
 				operationOptionId: saved.operationOptionId,
+				// a máquina salva não tem variação — preserva o que veio na query
+				variantId: query.variantId ?? null,
 			};
 		}
 
@@ -186,16 +208,26 @@ class ProductParameterService {
 			config.machineId as string,
 		);
 
-		// Filtra: cada coluna de opção não-nula da associação tem que bater
-		const matches = assocs.filter((a) =>
-			OPTION_COLS.every((col) => a[col] === null || a[col] === config[col]),
-		);
+		// Filtra: associação variant-level só casa com a variação do cliente;
+		// cada coluna de opção não-nula da associação tem que bater.
+		const matches = assocs.filter((a) => {
+			if (a.variantId !== null && a.variantId !== config.variantId) {
+				return false;
+			}
+			return OPTION_COLS.every(
+				(col) => a[col] === null || a[col] === config[col],
+			);
+		});
 		if (matches.length === 0) {
 			throw new Error('Parâmetro não encontrado');
 		}
 
-		// Mais específico = mais colunas de opção preenchidas; empate → recente
+		// Mais específico: variant-level > product-level; depois mais colunas
+		// de opção preenchidas; empate → mais recente.
 		matches.sort((a, b) => {
+			const va = a.variantId !== null ? 1 : 0;
+			const vb = b.variantId !== null ? 1 : 0;
+			if (vb !== va) return vb - va;
 			const sa = OPTION_COLS.filter((c) => a[c] !== null).length;
 			const sb = OPTION_COLS.filter((c) => b[c] !== null).length;
 			if (sb !== sa) return sb - sa;
