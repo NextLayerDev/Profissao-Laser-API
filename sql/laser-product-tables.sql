@@ -11,6 +11,7 @@ CREATE TABLE pl_laser_product (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     description TEXT,
+    "imageUrl" TEXT,                              -- foto do produto (Bunny CDN, opcional)
     category TEXT NOT NULL,                       -- 'caneca', 'tabua', 'abridor', 'caneta', etc.
     "defaultMaterial" TEXT,                       -- hint pro prompt: 'aco-inox', 'madeira', etc.
     tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],

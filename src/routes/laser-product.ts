@@ -10,6 +10,7 @@ import {
 	listVariantsController,
 	updateLaserProductController,
 	updateVariantController,
+	uploadProductImageController,
 	uploadVariantImageController,
 } from '../controllers/laser-product.js';
 import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
@@ -131,6 +132,35 @@ export async function laserProductRoute(server: FastifyInstance) {
 			},
 		},
 		deleteLaserProductController,
+	);
+
+	// ── Upload product image (admin, multipart) ──────────────────────────
+	server.post(
+		'/laser-products/:id/image',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description: [
+					'Upload da foto do **produto** via **multipart/form-data**. Substitui a imagem antiga. As variants têm foto própria em `/variants/:variantId/image`.',
+					'',
+					'| Field | Type | Required | Description |',
+					'|-------|------|:--------:|-------------|',
+					'| `file` | **binary** | ✓ | Imagem PNG/JPG |',
+				].join('\n'),
+				params: z.object({ id: z.string() }),
+				consumes: ['multipart/form-data'],
+				response: {
+					200: laserProductSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Laser Products'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		uploadProductImageController,
 	);
 
 	// ── List variants ─────────────────────────────────────────────────────

@@ -68,6 +68,7 @@ export const laserProductSchema = z.object({
 	id: z.uuid(),
 	name: z.string(),
 	description: z.string().nullable(),
+	imageUrl: z.string().nullable(),
 	category: z.string(),
 	defaultMaterial: z.string().nullable(),
 	tags: z.array(z.string()),
@@ -91,6 +92,7 @@ export type LaserProductWithVariants = z.infer<
 export const createLaserProductSchema = z.object({
 	name: z.string().min(1).max(120),
 	description: z.string().max(2000).optional(),
+	imageUrl: z.string().optional(),
 	category: z.string().min(1).max(60),
 	defaultMaterial: z.string().max(60).optional(),
 	tags: z.array(z.string()).default([]),
@@ -102,6 +104,7 @@ export type CreateLaserProductInput = z.infer<typeof createLaserProductSchema>;
 export const updateLaserProductSchema = z.object({
 	name: z.string().min(1).max(120).optional(),
 	description: z.string().max(2000).nullable().optional(),
+	imageUrl: z.string().nullable().optional(),
 	category: z.string().min(1).max(60).optional(),
 	defaultMaterial: z.string().max(60).nullable().optional(),
 	tags: z.array(z.string()).optional(),
