@@ -27,7 +27,7 @@ export async function productParameterRoute(server: FastifyInstance) {
 			preHandler: [authenticateCustomer],
 			schema: {
 				description:
-					'Retorna o parâmetro de gravação mais específico que casa com o produto + a máquina do cliente, junto da vídeo-aula. Query params (todos opcionais): machineId, powerOptionId, lensOptionId, softwareOptionId, axisOptionId, operationOptionId. Se machineId não vier, usa a máquina salva do customer (/me/machine).',
+					'Retorna o parâmetro de gravação mais específico que casa com o produto + a máquina do cliente, junto da vídeo-aula. Query params (todos opcionais): machineId, powerOptionId, lensOptionId, softwareOptionId, axisOptionId, operationOptionId, variantId. Se machineId não vier, usa a máquina salva do customer (/me/machine). Com variantId, uma associação variant-level (parâmetro + vídeo-aula específicos da variação) vence a product-level.',
 				params: z.object({ id: z.string() }),
 				querystring: parameterLookupQuerySchema,
 				response: {
@@ -72,7 +72,7 @@ export async function productParameterRoute(server: FastifyInstance) {
 			preHandler: [authenticateAdmin],
 			schema: {
 				description:
-					'Associa um parâmetro ao produto para uma máquina. Informe `parameterId` (parâmetro existente) OU `parameter` (cria um novo pl_parameter inline). Config opcional (potência/lente/eixo/operação) e `lessonId` (vídeo-aula) opcional.',
+					'Associa um parâmetro ao produto para uma máquina. Informe `parameterId` (parâmetro existente) OU `parameter` (cria um novo pl_parameter inline). Config opcional (potência/lente/eixo/operação), `variantId` opcional (associação variant-level — o parâmetro + a vídeo-aula valem só pra aquela variação do produto; sem ele a associação é product-level) e `lessonId` (vídeo-aula) opcional.',
 				params: z.object({ id: z.string() }),
 				body: createProductParameterSchema,
 				response: {

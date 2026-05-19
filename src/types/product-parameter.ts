@@ -14,6 +14,7 @@ export const productParameterSchema = z.object({
 	softwareOptionId: z.uuid().nullable(),
 	axisOptionId: z.uuid().nullable(),
 	operationOptionId: z.uuid().nullable(),
+	variantId: z.uuid().nullable(),
 	lessonId: z.string().nullable(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
@@ -43,6 +44,8 @@ export const createProductParameterSchema = z
 		softwareOptionId: z.uuid().nullable().optional(),
 		axisOptionId: z.uuid().nullable().optional(),
 		operationOptionId: z.uuid().nullable().optional(),
+		// variação opcional: associação variant-level vale só pra ela
+		variantId: z.uuid().nullable().optional(),
 		lessonId: z.string().nullable().optional(),
 	})
 	.refine((d) => (d.parameterId ? 1 : 0) + (d.parameter ? 1 : 0) === 1, {
@@ -63,6 +66,8 @@ export const updateProductParameterSchema = z.object({
 	softwareOptionId: z.uuid().nullable().optional(),
 	axisOptionId: z.uuid().nullable().optional(),
 	operationOptionId: z.uuid().nullable().optional(),
+	// variantId: null limpa (volta pra product-level), uuid mira a variação
+	variantId: z.uuid().nullable().optional(),
 	lessonId: z.string().nullable().optional(),
 });
 
@@ -79,6 +84,7 @@ export const parameterLookupQuerySchema = z.object({
 	softwareOptionId: z.uuid().optional(),
 	axisOptionId: z.uuid().optional(),
 	operationOptionId: z.uuid().optional(),
+	variantId: z.uuid().optional(),
 });
 
 export type ParameterLookupQuery = z.infer<typeof parameterLookupQuerySchema>;

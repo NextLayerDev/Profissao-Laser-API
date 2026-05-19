@@ -46,6 +46,9 @@ CREATE TABLE pl_product_parameter (
     "softwareOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
     "axisOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
     "operationOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
+    -- variacao opcional do produto: NULL = associacao product-level (vale
+    -- pra qualquer variacao); preenchido = associacao variant-level
+    "variantId" UUID REFERENCES pl_laser_product_variant(id) ON DELETE CASCADE,
     -- pl_lesson.id é TEXT (não UUID) — FK precisa ser TEXT pra casar
     "lessonId" TEXT REFERENCES pl_lesson(id) ON DELETE SET NULL,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -54,6 +57,7 @@ CREATE TABLE pl_product_parameter (
 
 CREATE INDEX idx_product_parameter_lookup ON pl_product_parameter("productId", "machineId");
 CREATE INDEX idx_product_parameter_parameter ON pl_product_parameter("parameterId");
+CREATE INDEX idx_product_parameter_variant ON pl_product_parameter("variantId");
 
 -- 4. Maquina salva do cliente (singleton: 1 por customer)
 CREATE TABLE pl_customer_machine (

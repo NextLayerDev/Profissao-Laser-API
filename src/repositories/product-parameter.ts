@@ -14,6 +14,7 @@ interface CreateRow {
 	softwareOptionId: string | null;
 	axisOptionId: string | null;
 	operationOptionId: string | null;
+	variantId: string | null;
 	lessonId: string | null;
 }
 
