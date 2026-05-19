@@ -9,6 +9,7 @@ import { customerRepository } from '../repositories/customer.js';
 import { productRepository } from '../repositories/product.js';
 import { provisioningRepository } from '../repositories/provisioning.js';
 import { subscriptionRepository } from '../repositories/subscription.js';
+import { creditService } from '../services/credit.js';
 import type { ProvisioningPlan, Tenant } from '../types/provisioning.js';
 import { normalizeCompanySlug } from '../utils/normalize.js';
 import { PLAN_ORDER, resolvePlanFromProduct } from '../utils/plan.js';
@@ -137,6 +138,25 @@ async function handleCheckoutCompleted(
 	session: Stripe.Checkout.Session,
 	server: FastifyInstance,
 ) {
+	if (session.metadata?.type === 'credit_purchase') {
+		try {
+			await creditService.fulfillPurchase({
+				id: session.id,
+				metadata: session.metadata as Record<string, string>,
+			});
+			server.log.info(
+				{ sessionId: session.id, customerId: session.metadata.customer_id },
+				'Credit purchase fulfilled',
+			);
+		} catch (err) {
+			server.log.error(
+				{ err, sessionId: session.id },
+				'Failed to fulfill credit purchase',
+			);
+		}
+		return;
+	}
+
 	const email = session.customer_details?.email;
 	if (!email) return;
 

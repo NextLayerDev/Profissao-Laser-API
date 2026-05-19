@@ -16,6 +16,7 @@ export const editorAiRequestSchema = z.object({
 	image: z.string().optional(), // data URL ou base64 puro
 	mask: z.string().optional(), // data URL ou base64 puro (white=editar, black=manter)
 	regionInfo: editorAiRegionSchema.optional(),
+	useCredits: z.boolean().optional().default(false),
 });
 
 export type EditorAiRequest = z.infer<typeof editorAiRequestSchema>;
@@ -28,6 +29,7 @@ export const editorAiResponseSchema = z.object({
 
 export const removeBackgroundRequestSchema = z.object({
 	image: z.string().min(1), // data URL ou base64
+	useCredits: z.boolean().optional().default(false),
 });
 
 export type RemoveBackgroundRequest = z.infer<

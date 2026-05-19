@@ -1,10 +1,13 @@
+import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { creditService } from '../services/credit.js';
 import { editorAiService } from '../services/editor-ai.js';
 import {
 	applyColorRequestSchema,
 	editorAiRequestSchema,
 	removeBackgroundRequestSchema,
 } from '../types/editor-ai.js';
+import { mapCreditError } from './credit.js';
 
 function statusFor(message: string): number {
 	if (message.includes('Limite de requisições')) return 429;
@@ -20,11 +23,29 @@ export const editorAiController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId) {
+		return reply.status(403).send({ message: 'Customer not found' });
+	}
+	const confirmed =
+		(request.body as { useCredits?: boolean } | undefined)?.useCredits === true;
+	let creditHandle: { refund: () => Promise<void> } | null = null;
+	try {
+		creditHandle = await creditService.charge({
+			customerId,
+			feature: 'editor-ai',
+			idempotencyKey: `editor-ai:${customerId}:${crypto.randomUUID()}`,
+			confirmed,
+		});
+	} catch (err) {
+		return mapCreditError(err, reply);
+	}
 	try {
 		const body = editorAiRequestSchema.parse(request.body);
 		const result = await editorAiService.generateOrEdit(body);
 		return reply.send(result);
 	} catch (err) {
+		await creditHandle.refund();
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(statusFor(message)).send({ message });
 	}
@@ -34,11 +55,29 @@ export const editorRemoveBackgroundController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId) {
+		return reply.status(403).send({ message: 'Customer not found' });
+	}
+	const confirmed =
+		(request.body as { useCredits?: boolean } | undefined)?.useCredits === true;
+	let creditHandle: { refund: () => Promise<void> } | null = null;
+	try {
+		creditHandle = await creditService.charge({
+			customerId,
+			feature: 'editor-ai',
+			idempotencyKey: `editor-ai:${customerId}:${crypto.randomUUID()}`,
+			confirmed,
+		});
+	} catch (err) {
+		return mapCreditError(err, reply);
+	}
 	try {
 		const body = removeBackgroundRequestSchema.parse(request.body);
 		const result = await editorAiService.removeBackground(body);
 		return reply.send(result);
 	} catch (err) {
+		await creditHandle.refund();
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(statusFor(message)).send({ message });
 	}

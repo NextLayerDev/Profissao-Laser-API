@@ -1,10 +1,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { InsufficientCreditsError } from '../lib/credit-errors.js';
 import {
 	FONT_OPTIONS,
 	LASER_OPTIONS,
 	LASER_RANGES,
 } from '../lib/previa-options.js';
 import { DailyLimitError } from '../lib/previa-quota.js';
+import { creditService } from '../services/credit.js';
 import { previaService } from '../services/previa.js';
 import { generatePreviaSchema, updatePreviaSchema } from '../types/previa.js';
 
@@ -36,13 +38,45 @@ export const generatePreviaController = async (
 	} catch (err) {
 		// Limite diário atingido → 429 com payload estruturado para o front
 		if (err instanceof DailyLimitError) {
+			const customerId = request.currentCustomer?.id;
+			let creditOption: {
+				cost: number;
+				balance: number;
+				canUseCredits: boolean;
+			} | null = null;
+			if (customerId) {
+				try {
+					const [{ balance }, costs] = await Promise.all([
+						creditService.getBalance(customerId),
+						creditService.listCosts(),
+					]);
+					const cost = costs.find((c) => c.feature === 'previa')?.cost ?? 1;
+					creditOption = {
+						cost,
+						balance,
+						canUseCredits: balance >= cost,
+					};
+				} catch {
+					creditOption = null;
+				}
+			}
 			return reply.status(429).send({
-				message: `Você atingiu o limite diário de ${err.limit} prévias. Faça upgrade do seu plano para gerar mais.`,
+				message: `Você atingiu o limite diário de ${err.limit} prévias. Use créditos para gerar mais.`,
 				code: 'DAILY_LIMIT_REACHED',
 				limit: err.limit,
 				used: err.used,
 				remaining: 0,
 				resetsAt: err.resetsAt,
+				creditOption,
+			});
+		}
+		if (err instanceof InsufficientCreditsError) {
+			return reply.status(402).send({
+				message: err.message,
+				reason: 'insufficient_balance',
+				feature: err.feature,
+				cost: err.cost,
+				balance: err.balance,
 			});
 		}
 		const message = err instanceof Error ? err.message : 'Unknown error';
