@@ -53,8 +53,12 @@ export function generatePrompt(
 	modoLentes?: boolean,
 	textoLenteDireita?: string,
 	textoLenteEsquerda?: string,
-	hasWatermark: boolean = false,
+	watermarkMode: 'none' | 'corners' | 'tiled' = 'none',
 ): string {
+	// hasWatermark = qualquer modo ativo (corners ou tiled).
+	// Usado pelos blocos de INPUT IMAGES; o bloco de instruções da watermark
+	// no fim do prompt ramifica em corners vs tiled.
+	const hasWatermark = watermarkMode !== 'none';
 	const sizeMap: Record<string, string> = {
 		pequeno:
 			'Small (~15-20% of engravable surface area) - discreet and minimal',
@@ -1324,35 +1328,67 @@ export function generatePrompt(
 	lines.push('');
 
 	// ── Watermark instructions (apenas quando solicitada) ───────────────────
-	if (hasWatermark) {
+	if (watermarkMode !== 'none') {
 		const watermarkIdx = isTextOnly ? '[2]' : '[3]';
-		lines.push('🏷️ WATERMARK INSTRUCTIONS (MANDATORY):');
-		lines.push('┌─────────────────────────────────────────────────────────┐');
-		lines.push(
-			`│ The ${watermarkIdx} watermark image is COMPANY BRANDING.            │`,
-		);
-		lines.push('│ Place it as a SEPARATE OVERLAY in TWO corners of the    │');
-		lines.push('│ final output image (NOT engraved on the product):       │');
-		lines.push('│                                                         │');
-		lines.push('│   1. BOTTOM-LEFT corner                                 │');
-		lines.push('│   2. TOP-RIGHT corner                                   │');
-		lines.push('│                                                         │');
-		lines.push('│ ✓ Size: ~8% of the output image width                   │');
-		lines.push('│ ✓ Opacity: 100% (fully opaque, sharp)                   │');
-		lines.push('│ ✓ Margin from edge: ~3% of image width                  │');
-		lines.push('│ ✓ Same logo in both corners, SAME orientation           │');
-		lines.push('│ ✓ Preserve the watermark colors exactly as provided     │');
-		lines.push('│                                                         │');
-		lines.push('│ ❌ DO NOT engrave the watermark on the product          │');
-		lines.push('│ ❌ DO NOT modify, recolor, or stylize the watermark     │');
-		lines.push('│ ❌ DO NOT place the watermark on the engraving area     │');
-		lines.push('│ ❌ DO NOT convert the watermark to metallic — it is a   │');
-		lines.push('│    flat branding overlay, NOT an engraving              │');
-		lines.push('│                                                         │');
-		lines.push('│ The watermark is a final-image overlay (like a digital  │');
-		lines.push('│ stamp). The product and engraving stay UNTOUCHED.       │');
-		lines.push('└─────────────────────────────────────────────────────────┘');
-		lines.push('');
+		if (watermarkMode === 'corners') {
+			lines.push('🏷️ WATERMARK INSTRUCTIONS (MANDATORY):');
+			lines.push('┌─────────────────────────────────────────────────────────┐');
+			lines.push(
+				`│ The ${watermarkIdx} watermark image is COMPANY BRANDING.            │`,
+			);
+			lines.push('│ Place it as a SEPARATE OVERLAY in TWO corners of the    │');
+			lines.push('│ final output image (NOT engraved on the product):       │');
+			lines.push('│                                                         │');
+			lines.push('│   1. BOTTOM-LEFT corner                                 │');
+			lines.push('│   2. TOP-RIGHT corner                                   │');
+			lines.push('│                                                         │');
+			lines.push('│ ✓ Size: ~8% of the output image width                   │');
+			lines.push('│ ✓ Opacity: 100% (fully opaque, sharp)                   │');
+			lines.push('│ ✓ Margin from edge: ~3% of image width                  │');
+			lines.push('│ ✓ Same logo in both corners, SAME orientation           │');
+			lines.push('│ ✓ Preserve the watermark colors exactly as provided     │');
+			lines.push('│                                                         │');
+			lines.push('│ ❌ DO NOT engrave the watermark on the product          │');
+			lines.push('│ ❌ DO NOT modify, recolor, or stylize the watermark     │');
+			lines.push('│ ❌ DO NOT place the watermark on the engraving area     │');
+			lines.push('│ ❌ DO NOT convert the watermark to metallic — it is a   │');
+			lines.push('│    flat branding overlay, NOT an engraving              │');
+			lines.push('│                                                         │');
+			lines.push('│ The watermark is a final-image overlay (like a digital  │');
+			lines.push('│ stamp). The product and engraving stay UNTOUCHED.       │');
+			lines.push('└─────────────────────────────────────────────────────────┘');
+			lines.push('');
+		} else {
+			// watermarkMode === 'tiled'
+			lines.push('🛡️ WATERMARK INSTRUCTIONS (TILED — STRONG PROTECTION):');
+			lines.push('┌─────────────────────────────────────────────────────────┐');
+			lines.push(
+				`│ The ${watermarkIdx} watermark image is COMPANY BRANDING.            │`,
+			);
+			lines.push('│ Apply it as a REPEATED PATTERN across the ENTIRE final  │');
+			lines.push('│ output image (NOT engraved on the product):             │');
+			lines.push('│                                                         │');
+			lines.push('│ ✓ Size: each logo ~6% of the image width                │');
+			lines.push('│ ✓ Opacity: 15–20% (subtle but clearly visible)          │');
+			lines.push('│ ✓ Repetition: tile in a regular grid covering the whole │');
+			lines.push('│   image (~6 columns × ~5 rows)                          │');
+			lines.push('│ ✓ Rotation: slight diagonal (15–25°) for a protection-  │');
+			lines.push('│   stamp feel                                            │');
+			lines.push('│ ✓ Spacing: even, balanced, edge-to-edge coverage        │');
+			lines.push('│ ✓ Same logo, same rotation, same opacity everywhere     │');
+			lines.push('│ ✓ Preserve the watermark colors exactly as provided     │');
+			lines.push('│                                                         │');
+			lines.push('│ ❌ DO NOT engrave the watermark on the product          │');
+			lines.push('│ ❌ DO NOT modify, recolor, or stylize the watermark     │');
+			lines.push('│ ❌ DO NOT make the watermark fully opaque               │');
+			lines.push('│ ❌ DO NOT skip the engraving area — cover EVERYTHING    │');
+			lines.push('│                                                         │');
+			lines.push('│ This is a "protection" overlay. The product and the     │');
+			lines.push('│ engraving must still be clearly visible BENEATH the     │');
+			lines.push('│ repeated logo pattern.                                  │');
+			lines.push('└─────────────────────────────────────────────────────────┘');
+			lines.push('');
+		}
 	}
 
 	lines.push('🎬 GENERATE OUTPUT NOW WITH ALL REQUIREMENTS SATISFIED');

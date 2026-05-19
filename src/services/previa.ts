@@ -35,6 +35,7 @@ class PreviaService {
 			textoLenteEsquerda,
 			modoLentes,
 			useWatermark,
+			watermarkMode,
 			name,
 			notes,
 		} = body;
@@ -71,8 +72,12 @@ class PreviaService {
 			const productColor = variant.colorName ?? variant.tipo ?? null;
 
 			// ── Resolver marca d'água (se solicitada) ────────────────────────────
+			// Resolve modo: watermarkMode > useWatermark (deprecated alias).
+			const resolvedWatermarkMode: 'none' | 'corners' | 'tiled' =
+				watermarkMode ?? (useWatermark === true ? 'corners' : 'none');
+
 			let watermarkUrl: string | null = null;
-			if (useWatermark === true) {
+			if (resolvedWatermarkMode !== 'none') {
 				const watermark =
 					await customerWatermarkRepository.findByCustomerId(customerId);
 				if (!watermark) {
@@ -137,7 +142,7 @@ class PreviaService {
 				modoLentes,
 				textoLenteDireita ?? undefined,
 				textoLenteEsquerda ?? undefined,
-				willSendWatermark,
+				resolvedWatermarkMode,
 			);
 
 			// ── Montar mensagem (produto + logo opcional + watermark opcional) ──

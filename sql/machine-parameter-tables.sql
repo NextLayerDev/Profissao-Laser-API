@@ -59,18 +59,25 @@ CREATE INDEX idx_product_parameter_lookup ON pl_product_parameter("productId", "
 CREATE INDEX idx_product_parameter_parameter ON pl_product_parameter("parameterId");
 CREATE INDEX idx_product_parameter_variant ON pl_product_parameter("variantId");
 
--- 4. Maquina salva do cliente (singleton: 1 por customer)
+-- 4. Maquinas salvas do cliente (multi-row, 1 padrao por customer)
 CREATE TABLE pl_customer_machine (
-    "customerId" TEXT PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "customerId" TEXT NOT NULL,
+    name TEXT,                                     -- rotulo do customer (opcional)
     "machineId" UUID NOT NULL REFERENCES pl_machine(id) ON DELETE CASCADE,
     "powerOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
     "lensOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
     "softwareOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
     "axisOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
     "operationOptionId" UUID REFERENCES pl_machine_option(id) ON DELETE SET NULL,
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_customer_machine_customer ON pl_customer_machine("customerId");
+CREATE UNIQUE INDEX idx_customer_machine_default
+    ON pl_customer_machine("customerId") WHERE "isDefault";
 
 -- ============================================================
 -- SEED — 4 maquinas + opcoes (select pronto "quando a comunidade subir")
