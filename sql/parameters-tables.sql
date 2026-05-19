@@ -5,17 +5,26 @@
 
 CREATE TABLE pl_parameter (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    material TEXT NOT NULL,
-    "materialType" TEXT NOT NULL,
-    thickness TEXT NOT NULL,
-    power INT NOT NULL,
-    speed INT NOT NULL,
-    frequency INT NOT NULL,
-    passes INT NOT NULL DEFAULT 1,
-    mode TEXT NOT NULL,
-    gas TEXT,
-    machine TEXT,
-    notes TEXT,
+    material TEXT NOT NULL,                      -- Produto/Material
+    "materialType" TEXT,                         -- legado (opcional)
+    thickness TEXT,                              -- legado (opcional)
+    power INT NOT NULL,                          -- Potencia (%)
+    speed INT NOT NULL,                          -- Velocidade (mm/s)
+    frequency INT NOT NULL,                      -- Frequencia (Hz)
+    passes INT NOT NULL DEFAULT 1,               -- Passadas (Contorno)
+    mode TEXT NOT NULL,                          -- Tipo do Trabalho
+    gas BOOLEAN NOT NULL DEFAULT false,          -- usa gas/ar comprimido
+    machine TEXT,                                -- Maquina
+    notes TEXT,                                  -- Notas
+    -- Campos do formulario "Novo parametro"
+    "powerWatts" INT,                            -- Potencia (W)
+    lens TEXT,                                   -- Lente (mm)
+    software TEXT,                               -- Software
+    line NUMERIC,                                -- Linha (mm)
+    "crossHatch" INT,                            -- Preenchimento Cruzado (%)
+    angle INT,                                   -- Angulo (graus)
+    "passesFill" INT,                            -- Passadas (Preenchimento)
+    defocus INT,                                 -- Desfoque (mm, 0-20)
     "createdBy" TEXT NOT NULL,
     "createdByName" TEXT,
     "isPublic" BOOLEAN NOT NULL DEFAULT false,

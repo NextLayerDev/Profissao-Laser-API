@@ -97,8 +97,13 @@ class LaserProductRepository {
 		return record as LaserProduct;
 	}
 
-	async delete(id: string): Promise<{ variantImageUrls: string[] }> {
-		// Pegar URLs das variants pra cleanup no CDN
+	async delete(id: string): Promise<{ imageUrls: string[] }> {
+		// Pegar URLs do produto + variants pra cleanup no CDN
+		const { data: product } = await supabase
+			.from('pl_laser_product')
+			.select('imageUrl')
+			.eq('id', id)
+			.maybeSingle();
 		const { data: variants } = await supabase
 			.from('pl_laser_product_variant')
 			.select('imageUrl')
@@ -110,11 +115,13 @@ class LaserProductRepository {
 			.eq('id', id);
 		if (error) throw new Error(error.message);
 
-		return {
-			variantImageUrls: ((variants ?? []) as Array<{ imageUrl: string }>).map(
-				(v) => v.imageUrl,
-			),
-		};
+		const imageUrls = ((variants ?? []) as Array<{ imageUrl: string }>)
+			.map((v) => v.imageUrl)
+			.filter(Boolean);
+		const productImageUrl = (product as { imageUrl: string | null } | null)
+			?.imageUrl;
+		if (productImageUrl) imageUrls.push(productImageUrl);
+		return { imageUrls };
 	}
 
 	// ── Variants ─────────────────────────────────────────────────────────────

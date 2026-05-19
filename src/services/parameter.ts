@@ -131,21 +131,30 @@ export const parameterService = {
 				limit: 1000,
 			});
 			const header =
-				'material,materialType,thickness,power,speed,frequency,passes,mode,gas,machine\n';
+				'machine,powerWatts,lens,software,material,mode,speed,power,frequency,line,crossHatch,angle,passes,passesFill,defocus,gas,notes,materialType,thickness\n';
 			const rows = data
 				.map((p) => {
 					const row = p as Record<string, unknown>;
 					return [
-						row.material,
-						row.materialType,
-						row.thickness,
-						row.power,
-						row.speed,
-						row.frequency,
-						row.passes,
-						row.mode,
-						row.gas ?? '',
 						row.machine ?? '',
+						row.powerWatts ?? '',
+						row.lens ?? '',
+						row.software ?? '',
+						row.material,
+						row.mode,
+						row.speed,
+						row.power,
+						row.frequency,
+						row.line ?? '',
+						row.crossHatch ?? '',
+						row.angle ?? '',
+						row.passes,
+						row.passesFill ?? '',
+						row.defocus ?? '',
+						row.gas ?? '',
+						row.notes ?? '',
+						row.materialType ?? '',
+						row.thickness ?? '',
 					]
 						.map((v) => `"${String(v).replace(/"/g, '""')}"`)
 						.join(',');

@@ -125,6 +125,29 @@ export const deleteLaserProductController = async (
 	}
 };
 
+export const uploadProductImageController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const file = await request.file();
+		if (!file) {
+			return reply.status(400).send({ message: 'File is required' });
+		}
+		const buffer = await file.toBuffer();
+		const product = await laserProductService.uploadProductImage(
+			request.params.id,
+			buffer,
+			file.mimetype,
+			file.filename ?? 'product.png',
+		);
+		return reply.send(product);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(statusFor(message)).send({ message });
+	}
+};
+
 // ── Variants ────────────────────────────────────────────────────────────────
 
 export const listVariantsController = async (

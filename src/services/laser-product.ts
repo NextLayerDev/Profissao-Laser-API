@@ -57,15 +57,43 @@ class LaserProductService {
 	}
 
 	async delete(id: string): Promise<void> {
-		const { variantImageUrls } = await laserProductRepository.delete(id);
-		// Best-effort cleanup das imagens das variants no CDN
-		for (const url of variantImageUrls) {
+		const { imageUrls } = await laserProductRepository.delete(id);
+		// Best-effort cleanup das imagens (produto + variants) no CDN
+		for (const url of imageUrls) {
 			try {
 				await deleteLaserProductImageByUrl(url);
 			} catch (err) {
-				console.warn('Falha ao remover imagem de variant:', err);
+				console.warn('Falha ao remover imagem no CDN:', err);
 			}
 		}
+	}
+
+	async uploadProductImage(
+		productId: string,
+		buffer: Buffer,
+		mimetype: string,
+		filename: string,
+	): Promise<LaserProduct> {
+		const product = await laserProductRepository.findById(productId);
+
+		const ext = filename.split('.').pop()?.toLowerCase() || 'png';
+		const path = `${productId}/product/${crypto.randomUUID()}.${ext}`;
+		const newUrl = await uploadLaserProductImage(buffer, path, mimetype);
+
+		const updated = await laserProductRepository.update(productId, {
+			imageUrl: newUrl,
+		});
+
+		// Cleanup da imagem antiga
+		if (product.imageUrl && product.imageUrl !== newUrl) {
+			try {
+				await deleteLaserProductImageByUrl(product.imageUrl);
+			} catch (err) {
+				console.warn('Falha ao remover imagem antiga do produto:', err);
+			}
+		}
+
+		return updated;
 	}
 
 	// ── Variants ─────────────────────────────────────────────────────────────

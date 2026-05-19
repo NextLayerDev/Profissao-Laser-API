@@ -2,17 +2,44 @@ import { z } from 'zod';
 
 export const parameterSchema = z.object({
 	id: z.string(),
-	material: z.string(),
-	materialType: z.string(),
-	thickness: z.string(),
-	power: z.number(),
-	speed: z.number(),
-	frequency: z.number(),
-	passes: z.number(),
-	mode: z.string(),
-	gas: z.string().nullable().optional(),
+	// 1. Máquina
 	machine: z.string().nullable().optional(),
+	// 2. Potência (W)
+	powerWatts: z.number().nullable().optional(),
+	// 3. Lente (mm)
+	lens: z.string().nullable().optional(),
+	// 4. Software
+	software: z.string().nullable().optional(),
+	// 5. Produto/Material
+	material: z.string(),
+	// 6. Tipo do Trabalho
+	mode: z.string(),
+	// 7. Velocidade (mm/s)
+	speed: z.number(),
+	// 8. Potência (%)
+	power: z.number(),
+	// 9. Frequência (Hz)
+	frequency: z.number(),
+	// 10. Linha (mm)
+	line: z.number().nullable().optional(),
+	// 11. Preenchimento Cruzado (%)
+	crossHatch: z.number().nullable().optional(),
+	// 12. Ângulo (°)
+	angle: z.number().nullable().optional(),
+	// 13. Passadas (Contorno)
+	passes: z.number(),
+	// 14. Passadas (Preenchimento)
+	passesFill: z.number().nullable().optional(),
+	// Desfoque (mm, 0-20)
+	defocus: z.number().nullable().optional(),
+	// Gás — caixa liga/desliga
+	gas: z.boolean(),
+	// 15. Notas
 	notes: z.string().nullable().optional(),
+	// Legado — fora do formulário novo, mantidos opcionais
+	materialType: z.string().nullable().optional(),
+	thickness: z.string().nullable().optional(),
+	// Meta + social
 	createdBy: z.string(),
 	createdByName: z.string().nullable().optional(),
 	isPublic: z.boolean(),
@@ -27,17 +54,44 @@ export const parameterSchema = z.object({
 });
 
 export const createParameterSchema = z.object({
+	// 1. Máquina *
+	machine: z.string().min(1),
+	// 2. Potência (W) *
+	powerWatts: z.number().int().min(0),
+	// 3. Lente (mm) *
+	lens: z.string().min(1),
+	// 4. Software *
+	software: z.string().min(1),
+	// 5. Produto/Material *
 	material: z.string().min(1),
-	materialType: z.string().min(1),
-	thickness: z.string().min(1),
-	power: z.number().int().min(0).max(100),
-	speed: z.number().int().min(0),
-	frequency: z.number().int().min(0),
-	passes: z.number().int().min(1).default(1),
+	// 6. Tipo do Trabalho *
 	mode: z.string().min(1),
-	gas: z.string().nullable().optional(),
-	machine: z.string().nullable().optional(),
+	// 7. Velocidade (mm/s) *
+	speed: z.number().int().min(0),
+	// 8. Potência (%) *
+	power: z.number().int().min(0).max(100),
+	// 9. Frequência (Hz) *
+	frequency: z.number().int().min(0),
+	// 10. Linha (mm) *
+	line: z.number().min(0),
+	// 11. Preenchimento Cruzado (%) *
+	crossHatch: z.number().int().min(0).max(100),
+	// 12. Ângulo (°) *
+	angle: z.number().int().min(0).max(360),
+	// 13. Passadas (Contorno) *
+	passes: z.number().int().min(1).default(1),
+	// 14. Passadas (Preenchimento) *
+	passesFill: z.number().int().min(1).default(1),
+	// 15. Notas
 	notes: z.string().nullable().optional(),
+	// Desfoque (mm, 0-20) — opcional
+	defocus: z.number().int().min(0).max(20).nullable().optional(),
+	// Gás — caixa liga/desliga
+	gas: z.boolean().default(false),
+	// Legado — fora do formulário novo, agora opcionais
+	materialType: z.string().nullable().optional(),
+	thickness: z.string().nullable().optional(),
+	// Público (visível para alunos)
 	isPublic: z.boolean().default(false),
 });
 
