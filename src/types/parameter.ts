@@ -22,15 +22,15 @@ export const parameterSchema = z.object({
 	frequency: z.number(),
 	// 10. Linha (mm)
 	line: z.number().nullable().optional(),
-	// 11. Preenchimento Cruzado (%)
-	crossHatch: z.number().nullable().optional(),
+	// 11. Preenchimento Cruzado — liga/desliga
+	crossHatch: z.boolean(),
 	// 12. Ângulo (°)
 	angle: z.number().nullable().optional(),
 	// 13. Passadas (Contorno)
 	passes: z.number(),
 	// 14. Passadas (Preenchimento)
 	passesFill: z.number().nullable().optional(),
-	// Desfoque (mm, 0-20)
+	// Desfoque (mm, -20 a +20 — negativo = pra baixo, positivo = pra cima)
 	defocus: z.number().nullable().optional(),
 	// Gás — caixa liga/desliga
 	gas: z.boolean(),
@@ -74,8 +74,8 @@ export const createParameterSchema = z.object({
 	frequency: z.number().int().min(0),
 	// 10. Linha (mm) *
 	line: z.number().min(0),
-	// 11. Preenchimento Cruzado (%) *
-	crossHatch: z.number().int().min(0).max(100),
+	// 11. Preenchimento Cruzado — caixa liga/desliga
+	crossHatch: z.boolean().default(false),
 	// 12. Ângulo (°) *
 	angle: z.number().int().min(0).max(360),
 	// 13. Passadas (Contorno) *
@@ -84,8 +84,8 @@ export const createParameterSchema = z.object({
 	passesFill: z.number().int().min(1).default(1),
 	// 15. Notas
 	notes: z.string().nullable().optional(),
-	// Desfoque (mm, 0-20) — opcional
-	defocus: z.number().int().min(0).max(20).nullable().optional(),
+	// Desfoque (mm, -20 a +20: negativo = pra baixo, positivo = pra cima) — opcional
+	defocus: z.number().int().min(-20).max(20).nullable().optional(),
 	// Gás — caixa liga/desliga
 	gas: z.boolean().default(false),
 	// Legado — fora do formulário novo, agora opcionais
