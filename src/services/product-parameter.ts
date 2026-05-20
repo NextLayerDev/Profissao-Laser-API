@@ -189,7 +189,7 @@ class ProductParameterService {
 		};
 		if (!config.machineId) {
 			const saved =
-				await customerMachineRepository.findByCustomerId(customerId);
+				await customerMachineRepository.findDefaultByCustomer(customerId);
 			if (!saved) throw new Error('Máquina não informada');
 			config = {
 				machineId: saved.machineId,

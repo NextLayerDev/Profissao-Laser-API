@@ -83,9 +83,16 @@ export const generatePreviaSchema = z.object({
 	textoLenteDireita: z.string().nullable().optional(),
 	textoLenteEsquerda: z.string().nullable().optional(),
 	modoLentes: z.boolean().optional(),
-	// Marca d'água: se true, aplica a logo salva em /watermark nos cantos
-	// inferior-esquerdo e superior-direito da imagem final. Erro 400 se
-	// `true` e o customer não tem watermark cadastrada.
+	// Marca d'água: modo de aplicação no output.
+	//   'none'    → não aplica (default).
+	//   'corners' → 2 logos opacos nos cantos (BL + TR), comportamento atual.
+	//   'tiled'   → grade de logozinhas low-opacity cobrindo a imagem inteira
+	//               (proteção forte).
+	// Erro 400 se !== 'none' e o customer não tem watermark cadastrada em
+	// /watermark.
+	watermarkMode: z.enum(['none', 'corners', 'tiled']).optional(),
+	// DEPRECATED — usar `watermarkMode`. `useWatermark:true` é alias de
+	// `watermarkMode:'corners'` pra compat com front antigo.
 	useWatermark: z.boolean().optional(),
 	name: z.string().optional(),
 	notes: z.string().optional(),

@@ -19,6 +19,7 @@ const VALIDATION_MESSAGES = new Set([
 
 function statusFor(message: string): number {
 	if (message === 'Previa not found') return 404;
+	if (message === "Marca d'água não cadastrada") return 400;
 	if (VALIDATION_MESSAGES.has(message)) return 400;
 	return 500;
 }
