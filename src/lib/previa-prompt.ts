@@ -1360,32 +1360,45 @@ export function generatePrompt(
 			lines.push('');
 		} else {
 			// watermarkMode === 'tiled'
-			lines.push('🛡️ WATERMARK INSTRUCTIONS (TILED — STRONG PROTECTION):');
+			lines.push(
+				'🛡️ WATERMARK INSTRUCTIONS (TILED — DISCREET PROTECTION OVERLAY):',
+			);
 			lines.push('┌─────────────────────────────────────────────────────────┐');
 			lines.push(
-				`│ The ${watermarkIdx} watermark image is COMPANY BRANDING.            │`,
+				`│ The ${watermarkIdx} watermark image is a SUBTLE protection mark.    │`,
 			);
-			lines.push('│ Apply it as a REPEATED PATTERN across the ENTIRE final  │');
-			lines.push('│ output image (NOT engraved on the product):             │');
+			lines.push('│ Apply it as a DENSE, BARELY-VISIBLE pattern across the  │');
+			lines.push('│ ENTIRE output image (NOT engraved on the product):      │');
 			lines.push('│                                                         │');
-			lines.push('│ ✓ Size: each logo ~6% of the image width                │');
-			lines.push('│ ✓ Opacity: 15–20% (subtle but clearly visible)          │');
-			lines.push('│ ✓ Repetition: tile in a regular grid covering the whole │');
-			lines.push('│   image (~6 columns × ~5 rows)                          │');
-			lines.push('│ ✓ Rotation: slight diagonal (15–25°) for a protection-  │');
-			lines.push('│   stamp feel                                            │');
-			lines.push('│ ✓ Spacing: even, balanced, edge-to-edge coverage        │');
-			lines.push('│ ✓ Same logo, same rotation, same opacity everywhere     │');
-			lines.push('│ ✓ Preserve the watermark colors exactly as provided     │');
+			lines.push('│ ✓ Size: VERY SMALL — each logo ~2–3% of image width.    │');
+			lines.push('│   Think security watermark on a document, NOT a brand   │');
+			lines.push('│   stamp.                                                │');
+			lines.push('│ ✓ Color: render the logo in WHITE / very light gray.    │');
+			lines.push('│   IGNORE the original colors — treat the logo as a      │');
+			lines.push('│   monochrome silhouette/outline, NOT the brand asset.   │');
+			lines.push('│ ✓ Opacity: ~8–12% (ALMOST TRANSPARENT). The logo must   │');
+			lines.push('│   look like a faint ghosted overlay — visible only on   │');
+			lines.push('│   close inspection, never solid.                        │');
+			lines.push('│ ✓ Repetition: DENSE grid covering the whole image,      │');
+			lines.push('│   ~10 columns × ~8 rows, evenly spaced edge-to-edge.    │');
+			lines.push('│ ✓ Rotation: slight diagonal (15–25°) for a security-    │');
+			lines.push('│   stamp feel.                                           │');
+			lines.push('│ ✓ Same logo, same rotation, same opacity everywhere.    │');
 			lines.push('│                                                         │');
-			lines.push('│ ❌ DO NOT engrave the watermark on the product          │');
-			lines.push('│ ❌ DO NOT modify, recolor, or stylize the watermark     │');
-			lines.push('│ ❌ DO NOT make the watermark fully opaque               │');
-			lines.push('│ ❌ DO NOT skip the engraving area — cover EVERYTHING    │');
+			lines.push('│ ❌ DO NOT preserve the original watermark colors —      │');
+			lines.push('│    re-render in white/light monochrome.                 │');
+			lines.push('│ ❌ DO NOT make the watermark large or solid/opaque.     │');
+			lines.push('│ ❌ DO NOT let it obstruct or compete with the product.  │');
+			lines.push('│ ❌ DO NOT engrave the watermark on the product.         │');
+			lines.push('│ ❌ DO NOT skip the engraving area — cover EVERYTHING.   │');
 			lines.push('│                                                         │');
-			lines.push('│ This is a "protection" overlay. The product and the     │');
-			lines.push('│ engraving must still be clearly visible BENEATH the     │');
-			lines.push('│ repeated logo pattern.                                  │');
+			lines.push('│ This is a DISCREET protection overlay (think bank-note  │');
+			lines.push('│ or PDF security watermark). The product, engraving,     │');
+			lines.push('│ colors and lighting underneath MUST remain CLEARLY      │');
+			lines.push('│ VISIBLE and dominant. The repeated logo should be       │');
+			lines.push('│ barely noticeable but present everywhere — a faint      │');
+			lines.push('│ ghost pattern, never strong enough to obscure what is   │');
+			lines.push('│ behind it.                                              │');
 			lines.push('└─────────────────────────────────────────────────────────┘');
 			lines.push('');
 		}
