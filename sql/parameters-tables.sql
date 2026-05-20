@@ -21,10 +21,10 @@ CREATE TABLE pl_parameter (
     lens TEXT,                                   -- Lente (mm)
     software TEXT,                               -- Software
     line NUMERIC,                                -- Linha (mm)
-    "crossHatch" INT,                            -- Preenchimento Cruzado (%)
+    "crossHatch" BOOLEAN NOT NULL DEFAULT false, -- Preenchimento Cruzado (liga/desliga)
     angle INT,                                   -- Angulo (graus)
     "passesFill" INT,                            -- Passadas (Preenchimento)
-    defocus INT,                                 -- Desfoque (mm, 0-20)
+    defocus INT,                                 -- Desfoque (mm, -20..20)
     "createdBy" TEXT NOT NULL,
     "createdByName" TEXT,
     "isPublic" BOOLEAN NOT NULL DEFAULT false,

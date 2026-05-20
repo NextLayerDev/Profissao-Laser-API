@@ -95,7 +95,7 @@ class ParameterRepository {
 				power: data.power,
 				frequency: data.frequency,
 				line: data.line,
-				crossHatch: data.crossHatch,
+				crossHatch: data.crossHatch ?? false,
 				angle: data.angle,
 				passes: data.passes ?? 1,
 				passesFill: data.passesFill ?? 1,
