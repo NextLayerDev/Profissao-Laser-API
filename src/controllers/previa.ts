@@ -191,3 +191,36 @@ export const deletePreviaController = async (
 		return reply.status(statusFor(message)).send({ message });
 	}
 };
+
+/* ─── Admin: usage stats + users ──────────────────────────────────────── */
+
+export const getPreviaUsageStatsController = async (
+	_request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	try {
+		const stats = await previaService.getUsageStats();
+		return reply.send(stats);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
+export const getPreviaUsageUsersController = async (
+	request: FastifyRequest<{
+		Querystring: { page?: number; limit?: number; search?: string };
+	}>,
+	reply: FastifyReply,
+) => {
+	try {
+		const page = request.query.page ?? 1;
+		const limit = request.query.limit ?? 20;
+		const search = request.query.search;
+		const result = await previaService.listUsageUsers({ page, limit, search });
+		return reply.send(result);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};

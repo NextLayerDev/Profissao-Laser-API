@@ -305,6 +305,21 @@ class PreviaService {
 		return previaRepository.update(id, customerId, data);
 	}
 
+	/** Admin — stats globais de uso da feature. */
+	async getUsageStats() {
+		return previaRepository.getUsageStats();
+	}
+
+	/** Admin — lista paginada de customers que geraram prévias, com stats. */
+	async listUsageUsers(params: {
+		page: number;
+		limit: number;
+		search?: string;
+	}) {
+		const { data, total } = await previaRepository.listUsageUsers(params);
+		return { data, total, page: params.page, limit: params.limit };
+	}
+
 	async delete(customerId: string, id: string): Promise<void> {
 		const { previewUrl } = await previaRepository.delete(id, customerId);
 		try {
