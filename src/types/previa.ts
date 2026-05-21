@@ -215,3 +215,33 @@ export const previaOptionsResponseSchema = z.object({
 		efeitoSombra: previaRangeSchema,
 	}),
 });
+
+// ─── Admin: Usage stats (GET /previas/usage/*) ────────────────────────────
+
+export const previaUsageStatsSchema = z.object({
+	generatedToday: z.number(),
+	activeUsersToday: z.number(),
+	totalUsers: z.number(),
+});
+
+export const previaUsageUserSchema = z.object({
+	customerId: z.string(),
+	name: z.string().nullable(),
+	email: z.string().nullable(),
+	totalPrevias: z.number(),
+	todayPrevias: z.number(),
+	lastGeneratedAt: z.string(),
+});
+
+export const previaUsageUsersQuerySchema = z.object({
+	page: z.coerce.number().int().positive().default(1),
+	limit: z.coerce.number().int().positive().max(100).default(20),
+	search: z.string().optional(),
+});
+
+export const previaUsageUsersResponseSchema = z.object({
+	data: z.array(previaUsageUserSchema),
+	total: z.number(),
+	page: z.number(),
+	limit: z.number(),
+});

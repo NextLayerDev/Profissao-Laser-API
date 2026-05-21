@@ -6,9 +6,11 @@ import {
 	getPreviaHistoryController,
 	getPreviaOptionsController,
 	getPreviaQuotaController,
+	getPreviaUsageStatsController,
+	getPreviaUsageUsersController,
 	updatePreviaController,
 } from '../controllers/previa.js';
-import { authenticateCustomer } from '../middleware/auth.js';
+import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import {
 	generatePreviaSchema,
@@ -18,6 +20,9 @@ import {
 	previaQuotaErrorSchema,
 	previaQuotaSchema,
 	previaSchema,
+	previaUsageStatsSchema,
+	previaUsageUsersQuerySchema,
+	previaUsageUsersResponseSchema,
 	updatePreviaSchema,
 } from '../types/previa.js';
 
@@ -120,6 +125,46 @@ export async function previaRoute(server: FastifyInstance) {
 			},
 		},
 		updatePreviaController,
+	);
+
+	// ── Admin: usage stats + users (staff only) ──────────────────────────
+	server.get(
+		'/previas/usage/stats',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description:
+					'Stats globais de uso da feature de prévias IA (admin). Retorna: prévias geradas hoje (BRT), customers ativos hoje, total de customers que já usaram.',
+				response: {
+					200: previaUsageStatsSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Previas'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getPreviaUsageStatsController,
+	);
+
+	server.get(
+		'/previas/usage/users',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description:
+					'Lista paginada de customers que geraram prévias, com totalPrevias, todayPrevias e lastGeneratedAt. Suporta busca por nome, email ou customerId. Apenas staff.',
+				querystring: previaUsageUsersQuerySchema,
+				response: {
+					200: previaUsageUsersResponseSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Previas'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getPreviaUsageUsersController,
 	);
 
 	server.delete(
