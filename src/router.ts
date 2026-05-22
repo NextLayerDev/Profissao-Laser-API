@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { appointmentRoute } from './routes/appointment.js';
+import { appointmentConfigRoute } from './routes/appointment-config.js';
 import { authRoute } from './routes/auth.js';
 import { classRoute } from './routes/class.js';
 import { communityRoute } from './routes/community.js';
@@ -48,6 +49,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(webhookRoute);
 	app.register(authRoute);
 	app.register(appointmentRoute);
+	app.register(appointmentConfigRoute);
 	app.register(classRoute);
 	app.register(systemClassRoute);
 	app.register(communityRoute);
