@@ -104,6 +104,13 @@ class ParameterRepository {
 				notes: data.notes ?? null,
 				materialType: data.materialType ?? null,
 				thickness: data.thickness ?? null,
+				// Campos software-specific
+				tamanhoLinha: data.tamanhoLinha ?? null,
+				tamanhoDivisao: data.tamanhoDivisao ?? null,
+				sobreposicao: data.sobreposicao ?? null,
+				forcarSeparacao: data.forcarSeparacao ?? null,
+				axisRotative: data.axisRotative ?? null,
+				lineTypeId: data.lineTypeId ?? null,
 				isPublic: data.isPublic ?? false,
 				createdBy,
 				createdByName,

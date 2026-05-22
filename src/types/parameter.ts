@@ -18,7 +18,7 @@ export const parameterSchema = z.object({
 	speed: z.number(),
 	// 8. Potência (%)
 	power: z.number(),
-	// 9. Frequência (Hz)
+	// 9. Frequência (kHz)
 	frequency: z.number(),
 	// 10. Linha (mm)
 	line: z.number().nullable().optional(),
@@ -34,6 +34,13 @@ export const parameterSchema = z.object({
 	defocus: z.number().nullable().optional(),
 	// Gás — caixa liga/desliga
 	gas: z.boolean(),
+	// Software-specific (Ezcad: tamanhoDivisao + sobreposicao; Lightburn: tamanhoLinha + forcarSeparacao)
+	tamanhoLinha: z.number().nullable().optional(),
+	tamanhoDivisao: z.number().nullable().optional(),
+	sobreposicao: z.number().nullable().optional(),
+	forcarSeparacao: z.boolean().nullable().optional(),
+	axisRotative: z.boolean().nullable().optional(),
+	lineTypeId: z.string().nullable().optional(),
 	// 15. Notas
 	notes: z.string().nullable().optional(),
 	// Legado — fora do formulário novo, mantidos opcionais
@@ -70,7 +77,7 @@ export const createParameterSchema = z.object({
 	speed: z.number().int().min(0),
 	// 8. Potência (%) *
 	power: z.number().int().min(0).max(100),
-	// 9. Frequência (Hz) *
+	// 9. Frequência (kHz) *
 	frequency: z.number().int().min(0),
 	// 10. Linha (mm) *
 	line: z.number().min(0),
@@ -88,6 +95,13 @@ export const createParameterSchema = z.object({
 	defocus: z.number().int().min(-20).max(20).nullable().optional(),
 	// Gás — caixa liga/desliga
 	gas: z.boolean().default(false),
+	// Software-specific opcionais
+	tamanhoLinha: z.number().nullable().optional(), // Lightburn
+	tamanhoDivisao: z.number().nullable().optional(), // Ezcad
+	sobreposicao: z.number().nullable().optional(), // Ezcad
+	forcarSeparacao: z.boolean().nullable().optional(), // Lightburn
+	axisRotative: z.boolean().nullable().optional(),
+	lineTypeId: z.string().uuid().nullable().optional(),
 	// Legado — fora do formulário novo, agora opcionais
 	materialType: z.string().nullable().optional(),
 	thickness: z.string().nullable().optional(),
