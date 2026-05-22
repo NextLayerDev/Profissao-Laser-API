@@ -558,7 +558,9 @@ class CommunityRepository {
 	async listEvents(from?: string, to?: string) {
 		let query = supabase
 			.from('pl_community_event')
-			.select('*')
+			.select(
+				'id, title, date, time, type, description, "streamUrl", "streamProvider", "waitingRoomOpensMinutesBefore", "hostId"',
+			)
 			.order('date', { ascending: true });
 
 		if (from) query = query.gte('date', from);
@@ -566,24 +568,20 @@ class CommunityRepository {
 
 		const { data, error } = await query;
 		if (error) throw new Error(error.message);
+		return data ?? [];
+	}
 
-		return (data ?? []).map(
-			(e: {
-				id: string;
-				title: string;
-				date: string;
-				time: string | null;
-				type: 'workshop' | 'live' | 'qa';
-				description: string | null;
-			}) => ({
-				id: e.id,
-				title: e.title,
-				date: e.date,
-				time: e.time,
-				type: e.type,
-				description: e.description,
-			}),
-		);
+	async findEventById(id: string) {
+		const { data, error } = await supabase
+			.from('pl_community_event')
+			.select(
+				'id, title, date, time, type, description, "streamUrl", "streamProvider", "waitingRoomOpensMinutesBefore", "hostId"',
+			)
+			.eq('id', id)
+			.maybeSingle();
+		if (error) throw new Error(error.message);
+		if (!data) throw new Error('Event not found');
+		return data;
 	}
 
 	async createEvent(data: CreateEvent) {
@@ -599,7 +597,7 @@ class CommunityRepository {
 	async updateEvent(id: string, data: UpdateEvent) {
 		const { data: event, error } = await supabase
 			.from('pl_community_event')
-			.update(data)
+			.update({ ...data, updatedAt: new Date().toISOString() })
 			.eq('id', id)
 			.select()
 			.single();
@@ -613,6 +611,77 @@ class CommunityRepository {
 			.delete()
 			.eq('id', id);
 		if (error) throw new Error(error.message);
+	}
+
+	// ── Sala de espera (attendance) ───────────────────────────────────────────
+
+	async joinEventWaitingRoom(eventId: string, customerId: string) {
+		// Se já existe presença ativa (leftAt NULL), reusar (idempotente).
+		const { data: existing } = await supabase
+			.from('pl_event_attendance')
+			.select('id')
+			.eq('eventId', eventId)
+			.eq('customerId', customerId)
+			.is('leftAt', null)
+			.maybeSingle();
+		if (existing) return existing as { id: string };
+
+		const { data, error } = await supabase
+			.from('pl_event_attendance')
+			.insert({ eventId, customerId })
+			.select('id')
+			.single();
+		if (error) throw new Error(error.message);
+		return data as { id: string };
+	}
+
+	async leaveEventWaitingRoom(eventId: string, customerId: string) {
+		const { error } = await supabase
+			.from('pl_event_attendance')
+			.update({ leftAt: new Date().toISOString() })
+			.eq('eventId', eventId)
+			.eq('customerId', customerId)
+			.is('leftAt', null);
+		if (error) throw new Error(error.message);
+	}
+
+	async listEventAttendees(eventId: string) {
+		// Pega presenças ativas + faz JOIN com Customers e pl_community_profile.image
+		const { data, error } = await supabase
+			.from('pl_event_attendance')
+			.select(
+				'customerId, joinedAt, Customers!inner(id, name, pl_community_profile(image))',
+			)
+			.eq('eventId', eventId)
+			.is('leftAt', null)
+			.order('joinedAt', { ascending: true });
+		if (error) throw new Error(error.message);
+
+		return (data ?? []).map((row) => {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
+			const r = row as any;
+			const customer = r.Customers;
+			const profileList = customer?.pl_community_profile;
+			const profile = Array.isArray(profileList) ? profileList[0] : profileList;
+			return {
+				customerId: r.customerId as string,
+				customerName: (customer?.name as string | null) ?? null,
+				customerImage: (profile?.image as string | null) ?? null,
+				joinedAt: r.joinedAt as string,
+			};
+		});
+	}
+
+	async isCustomerInWaitingRoom(eventId: string, customerId: string) {
+		const { data, error } = await supabase
+			.from('pl_event_attendance')
+			.select('id')
+			.eq('eventId', eventId)
+			.eq('customerId', customerId)
+			.is('leftAt', null)
+			.maybeSingle();
+		if (error) throw new Error(error.message);
+		return !!data;
 	}
 
 	async listPostComments(postId: string, page: number, limit: number) {

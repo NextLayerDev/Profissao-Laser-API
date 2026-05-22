@@ -24,6 +24,9 @@ import {
 	getProjectsController,
 	getRankingController,
 	getStatsController,
+	getWaitingRoomController,
+	joinWaitingRoomController,
+	leaveWaitingRoomController,
 	sendMessageController,
 	togglePostLikeController,
 	updateChannelController,
@@ -51,6 +54,7 @@ import {
 	updateChannelSchema,
 	updateEventSchema,
 	updateProjectSchema,
+	waitingRoomStateSchema,
 } from '../types/community.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -525,6 +529,69 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		deleteEventController,
+	);
+
+	// ── Sala de espera ─────────────────────────────────────────────────────
+
+	server.get(
+		'/community/events/:eventId/waiting-room',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Estado da sala de espera de um evento online: timestamps de abertura/início, lista de presentes (realtime), live status, embed url. Front faz polling + assina realtime em pl_event_attendance.',
+				params: z.object({ eventId: z.string() }),
+				response: {
+					200: waitingRoomStateSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getWaitingRoomController,
+	);
+
+	server.post(
+		'/community/events/:eventId/waiting-room/join',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Entra na sala de espera (insert em pl_event_attendance). Idempotente — não duplica se já estiver dentro.',
+				params: z.object({ eventId: z.string() }),
+				response: {
+					204: z.null(),
+					400: ErrorSchema,
+					403: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		joinWaitingRoomController,
+	);
+
+	server.post(
+		'/community/events/:eventId/waiting-room/leave',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Sai da sala de espera (marca leftAt na presença ativa). Idempotente.',
+				params: z.object({ eventId: z.string() }),
+				response: {
+					204: z.null(),
+					400: ErrorSchema,
+					403: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		leaveWaitingRoomController,
 	);
 
 	server.get(
