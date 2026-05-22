@@ -3,6 +3,7 @@ import {
 	CreditConfirmationRequiredError,
 	InsufficientCreditsError,
 } from '../lib/credit-errors.js';
+import { FreeTierQuotaError } from '../lib/free-tier-quota.js';
 import { creditService } from '../services/credit.js';
 import {
 	adjustCreditsSchema,
@@ -14,6 +15,19 @@ import {
 } from '../types/credit.js';
 
 export function mapCreditError(err: unknown, reply: FastifyReply) {
+	if (err instanceof FreeTierQuotaError) {
+		return reply.status(429).send({
+			message: `Limite gratuito de ${err.limit} usos atingido. Compre voxes para continuar.`,
+			code: 'FREE_TIER_LIMIT_REACHED',
+			feature: err.feature,
+			limit: err.limit,
+			used: err.used,
+			remaining: 0,
+			period: err.period,
+			resetsAt: err.resetsAt,
+			balance: err.balance,
+		});
+	}
 	if (err instanceof CreditConfirmationRequiredError) {
 		return reply.status(402).send({
 			message: err.message,
@@ -46,6 +60,20 @@ export const getBalanceController = async (
 		return reply.status(403).send({ message: 'Customer not found' });
 	try {
 		return reply.send(await creditService.getBalance(customerId));
+	} catch (err) {
+		return mapCreditError(err, reply);
+	}
+};
+
+export const getQuotasController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId)
+		return reply.status(403).send({ message: 'Customer not found' });
+	try {
+		return reply.send(await creditService.getQuotas(customerId));
 	} catch (err) {
 		return mapCreditError(err, reply);
 	}

@@ -69,6 +69,24 @@ export const creditHistoryResponseSchema = z.object({
 	limit: z.number().int(),
 });
 
+export const featureQuotaSchema = z.object({
+	feature: z.enum(CREDIT_FEATURES),
+	isFree: z.boolean(),
+	limit: z.number().int(),
+	used: z.number().int(),
+	remaining: z.number().int(),
+	period: z.enum(['daily', 'weekly']),
+	resetsAt: z.string(),
+});
+
+export const quotaResponseSchema = z.object({
+	balance: z.number().int(),
+	quotas: z.array(featureQuotaSchema),
+});
+
+export type FeatureQuota = z.infer<typeof featureQuotaSchema>;
+export type QuotaResponse = z.infer<typeof quotaResponseSchema>;
+
 export type CreateCheckoutInput = z.infer<typeof createCheckoutSchema>;
 export type CreatePackageInput = z.infer<typeof createPackageSchema>;
 export type UpdatePackageInput = z.infer<typeof updatePackageSchema>;

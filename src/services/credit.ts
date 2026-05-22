@@ -2,9 +2,17 @@ import {
 	CreditConfirmationRequiredError,
 	InsufficientCreditsError,
 } from '../lib/credit-errors.js';
+import { startOfNextWeekBRT, startOfTomorrowBRT } from '../lib/datetime.js';
+import { FREE_TIER_LIMITS } from '../lib/free-tier-quota.js';
 import { stripe } from '../lib/stripe.js';
 import { creditRepository } from '../repositories/credit.js';
-import type { CreditFeature } from '../types/credit.js';
+import { freeToolUsageRepository } from '../repositories/free-tool-usage.js';
+import {
+	CREDIT_FEATURES,
+	type CreditFeature,
+	type FeatureQuota,
+	type QuotaResponse,
+} from '../types/credit.js';
 
 interface ChargeHandle {
 	cost: number;
@@ -19,6 +27,71 @@ class CreditService {
 
 	async listCosts() {
 		return creditRepository.listFeatureCosts();
+	}
+
+	/**
+	 * Retorna o saldo + quotas grátis (free-tier) por feature.
+	 * Para usuários com saldo > 0 a lista de quotas vem vazia (não há
+	 * limite além do custo em voxes). Para usuários com saldo 0,
+	 * cada feature reporta {limit, used, remaining, period, resetsAt}.
+	 */
+	async getQuotas(customerId: string): Promise<QuotaResponse> {
+		const balance = await creditRepository.getBalance(customerId);
+
+		if (balance > 0) {
+			return { balance, quotas: [] };
+		}
+
+		const quotas: FeatureQuota[] = [];
+		for (const feature of CREDIT_FEATURES) {
+			const { limit, period } = FREE_TIER_LIMITS[feature];
+			const used =
+				period === 'daily'
+					? await freeToolUsageRepository.countToday(customerId, feature)
+					: await freeToolUsageRepository.countThisWeek(customerId, feature);
+			const resetsAt =
+				period === 'daily'
+					? startOfTomorrowBRT().toISOString()
+					: startOfNextWeekBRT().toISOString();
+			quotas.push({
+				feature,
+				isFree: true,
+				limit,
+				used,
+				remaining: Math.max(0, limit - used),
+				period,
+				resetsAt,
+			});
+		}
+		return { balance, quotas };
+	}
+
+	/** Quota de uma única feature (usado por endpoints legados). */
+	async getFeatureQuota(
+		customerId: string,
+		feature: CreditFeature,
+	): Promise<FeatureQuota> {
+		const balance = await creditRepository.getBalance(customerId);
+		const { limit, period } = FREE_TIER_LIMITS[feature];
+		const used =
+			balance > 0
+				? 0
+				: period === 'daily'
+					? await freeToolUsageRepository.countToday(customerId, feature)
+					: await freeToolUsageRepository.countThisWeek(customerId, feature);
+		const resetsAt =
+			period === 'daily'
+				? startOfTomorrowBRT().toISOString()
+				: startOfNextWeekBRT().toISOString();
+		return {
+			feature,
+			isFree: balance === 0,
+			limit: balance === 0 ? limit : 0,
+			used,
+			remaining: balance === 0 ? Math.max(0, limit - used) : 0,
+			period,
+			resetsAt,
+		};
 	}
 
 	async charge(params: {

@@ -1,7 +1,6 @@
-import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { reserveToolUsage } from '../lib/tool-usage-guard.js';
 import { parseFormBoolean } from '../lib/vectorize.js';
-import { creditService } from '../services/credit.js';
 import { vectorizeService } from '../services/vectorize.js';
 import type { VectorizeParams } from '../types/vector.js';
 import { mapCreditError } from './credit.js';
@@ -50,12 +49,11 @@ export const vectorizeController = async (
 
 		// useCredits arrives as a multipart form field string
 		const confirmed = fields.useCredits === 'true';
-		let creditHandle: { refund: () => Promise<void> } | null = null;
+		let usage: Awaited<ReturnType<typeof reserveToolUsage>>;
 		try {
-			creditHandle = await creditService.charge({
+			usage = await reserveToolUsage({
 				customerId,
 				feature: 'vectorize',
-				idempotencyKey: `vectorize:${customerId}:${crypto.randomUUID()}`,
 				confirmed,
 			});
 		} catch (err) {
@@ -70,15 +68,16 @@ export const vectorizeController = async (
 			);
 
 			if (error) {
-				await creditHandle.refund();
+				await usage.rollback();
 				const message =
 					error instanceof Error ? error.message : 'Unknown error';
 				return reply.status(500).send({ message });
 			}
 
+			await usage.commit();
 			return reply.status(201).send(result);
 		} catch (err) {
-			await creditHandle.refund();
+			await usage.rollback();
 			const message = err instanceof Error ? err.message : 'Unknown error';
 			return reply.status(500).send({ message });
 		}
@@ -126,12 +125,11 @@ export const vectorizeBatchController = async (
 
 		// useCredits arrives as a multipart form field string
 		const confirmed = fields.useCredits === 'true';
-		let creditHandle: { refund: () => Promise<void> } | null = null;
+		let usage: Awaited<ReturnType<typeof reserveToolUsage>>;
 		try {
-			creditHandle = await creditService.charge({
+			usage = await reserveToolUsage({
 				customerId,
 				feature: 'vectorize',
-				idempotencyKey: `vectorize:${customerId}:${crypto.randomUUID()}`,
 				confirmed,
 			});
 		} catch (err) {
@@ -148,15 +146,16 @@ export const vectorizeBatchController = async (
 			);
 
 			if (error) {
-				await creditHandle.refund();
+				await usage.rollback();
 				const message =
 					error instanceof Error ? error.message : 'Unknown error';
 				return reply.status(500).send({ message });
 			}
 
+			await usage.commit();
 			return reply.status(201).send(result);
 		} catch (err) {
-			await creditHandle.refund();
+			await usage.rollback();
 			const message = err instanceof Error ? err.message : 'Unknown error';
 			return reply.status(500).send({ message });
 		}

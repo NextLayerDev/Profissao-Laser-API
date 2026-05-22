@@ -5,6 +5,7 @@ import {
 	createCheckoutController,
 	createPackageController,
 	getBalanceController,
+	getQuotasController,
 	historyController,
 	listAllPackagesController,
 	listCostsController,
@@ -25,6 +26,7 @@ import {
 	creditHistoryResponseSchema,
 	creditPackageListSchema,
 	creditPackageSchema,
+	quotaResponseSchema,
 	updateCostSchema,
 	updatePackageSchema,
 	updatePackageStatusSchema,
@@ -44,6 +46,21 @@ export async function creditRoute(server: FastifyInstance) {
 			},
 		},
 		getBalanceController,
+	);
+
+	server.get(
+		'/credits/quota',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Saldo + quotas grátis por feature. Usuários sem voxes (balance 0) recebem limite/usado/restante para previa (2/semana), vetorize (5/dia) e editor-ai (2/semana). Usuários com saldo retornam balance + quotas vazias.',
+				response: { 200: quotaResponseSchema, 403: ErrorSchema },
+				tags: ['Credits'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getQuotasController,
 	);
 
 	server.get(

@@ -1,6 +1,5 @@
-import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { creditService } from '../services/credit.js';
+import { reserveToolUsage } from '../lib/tool-usage-guard.js';
 import { editorAiService } from '../services/editor-ai.js';
 import {
 	applyColorRequestSchema,
@@ -29,12 +28,11 @@ export const editorAiController = async (
 	}
 	const confirmed =
 		(request.body as { useCredits?: boolean } | undefined)?.useCredits === true;
-	let creditHandle: { refund: () => Promise<void> } | null = null;
+	let usage: Awaited<ReturnType<typeof reserveToolUsage>>;
 	try {
-		creditHandle = await creditService.charge({
+		usage = await reserveToolUsage({
 			customerId,
 			feature: 'editor-ai',
-			idempotencyKey: `editor-ai:${customerId}:${crypto.randomUUID()}`,
 			confirmed,
 		});
 	} catch (err) {
@@ -43,9 +41,10 @@ export const editorAiController = async (
 	try {
 		const body = editorAiRequestSchema.parse(request.body);
 		const result = await editorAiService.generateOrEdit(body);
+		await usage.commit();
 		return reply.send(result);
 	} catch (err) {
-		await creditHandle.refund();
+		await usage.rollback();
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(statusFor(message)).send({ message });
 	}
@@ -61,12 +60,11 @@ export const editorRemoveBackgroundController = async (
 	}
 	const confirmed =
 		(request.body as { useCredits?: boolean } | undefined)?.useCredits === true;
-	let creditHandle: { refund: () => Promise<void> } | null = null;
+	let usage: Awaited<ReturnType<typeof reserveToolUsage>>;
 	try {
-		creditHandle = await creditService.charge({
+		usage = await reserveToolUsage({
 			customerId,
 			feature: 'editor-ai',
-			idempotencyKey: `editor-ai:${customerId}:${crypto.randomUUID()}`,
 			confirmed,
 		});
 	} catch (err) {
@@ -75,9 +73,10 @@ export const editorRemoveBackgroundController = async (
 	try {
 		const body = removeBackgroundRequestSchema.parse(request.body);
 		const result = await editorAiService.removeBackground(body);
+		await usage.commit();
 		return reply.send(result);
 	} catch (err) {
-		await creditHandle.refund();
+		await usage.rollback();
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(statusFor(message)).send({ message });
 	}
