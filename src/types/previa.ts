@@ -152,22 +152,28 @@ export const previaHistoryResponseSchema = z.object({
 	limit: z.number(),
 });
 
-// ─── Quota (limite diário) ────────────────────────────────────────────────
+// ─── Quota (limite grátis para usuários sem voxes) ─────────────────────────
 
 export const previaQuotaSchema = z.object({
+	feature: z.literal('previa'),
+	isFree: z.boolean(),
 	limit: z.number(),
 	used: z.number(),
 	remaining: z.number(),
+	period: z.enum(['daily', 'weekly']),
 	resetsAt: z.string(),
 });
 
 export const previaQuotaErrorSchema = z.object({
 	message: z.string(),
-	code: z.literal('DAILY_LIMIT_REACHED'),
+	code: z.literal('FREE_TIER_LIMIT_REACHED'),
+	feature: z.literal('previa'),
 	limit: z.number(),
 	used: z.number(),
 	remaining: z.number(),
+	period: z.enum(['daily', 'weekly']),
 	resetsAt: z.string(),
+	balance: z.number(),
 });
 
 // ─── Options (GET /previas/options) ───────────────────────────────────────

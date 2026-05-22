@@ -1,16 +1,15 @@
 import crypto from 'node:crypto';
-import { CreditConfirmationRequiredError } from '../lib/credit-errors.js';
-import { startOfTomorrowBRT } from '../lib/datetime.js';
 import {
 	type GeminiImageMessage,
 	openrouter,
 	PREVIA_MODEL,
 } from '../lib/openrouter.js';
 import { generatePrompt, imageUrlToBase64 } from '../lib/previa-prompt.js';
-import { DAILY_PREVIA_LIMIT, DailyLimitError } from '../lib/previa-quota.js';
 import { deletePreviaImageByUrl, uploadPreviaImage } from '../lib/storage.js';
+import { reserveToolUsage } from '../lib/tool-usage-guard.js';
 import { previaRepository } from '../repositories/previa.js';
 import { customerWatermarkRepository } from '../repositories/watermark.js';
+import type { FeatureQuota } from '../types/credit.js';
 import type {
 	GeneratePreviaInput,
 	Previa,
@@ -40,28 +39,12 @@ class PreviaService {
 			notes,
 		} = body;
 
-		// ── Quota diário (5 grátis/dia). Esgotou → crédito (confirmação). ───
-		const used = await previaRepository.countTodayByCustomer(customerId);
-		let creditHandle: { refund: () => Promise<void> } | null = null;
-		if (used >= DAILY_PREVIA_LIMIT) {
-			try {
-				creditHandle = await creditService.charge({
-					customerId,
-					feature: 'previa',
-					idempotencyKey: `previa:${customerId}:${crypto.randomUUID()}`,
-					confirmed: body.useCredits === true,
-				});
-			} catch (err) {
-				if (err instanceof CreditConfirmationRequiredError) {
-					throw new DailyLimitError(
-						DAILY_PREVIA_LIMIT,
-						used,
-						startOfTomorrowBRT().toISOString(),
-					);
-				}
-				throw err;
-			}
-		}
+		// ── Reserva uso (free-tier 2/semana se balance 0, senão cobra voxes). ───
+		const usage = await reserveToolUsage({
+			customerId,
+			feature: 'previa',
+			confirmed: body.useCredits === true,
+		});
 
 		try {
 			// ── Resolver variant do catálogo (substitui imageproduct_url custom) ──
@@ -212,7 +195,7 @@ class PreviaService {
 			// ── Salvar registro ─────────────────────────────────────────────────
 			// imagebaseUrl fica vazio pra registros novos (drop total da feature).
 			// imageproductUrl recebe a URL da variant escolhida.
-			return previaRepository.create({
+			const previa = await previaRepository.create({
 				id: crypto.randomUUID(),
 				customerId,
 				name: name ?? productName,
@@ -233,8 +216,10 @@ class PreviaService {
 				prompt,
 				aiModel: PREVIA_MODEL,
 			});
+			await usage.commit();
+			return previa;
 		} catch (err) {
-			if (creditHandle) await creditHandle.refund();
+			await usage.rollback();
 			throw err;
 		}
 	}
@@ -282,19 +267,8 @@ class PreviaService {
 		return { data, total, page, limit };
 	}
 
-	async getQuota(customerId: string): Promise<{
-		limit: number;
-		used: number;
-		remaining: number;
-		resetsAt: string;
-	}> {
-		const used = await previaRepository.countTodayByCustomer(customerId);
-		return {
-			limit: DAILY_PREVIA_LIMIT,
-			used,
-			remaining: Math.max(0, DAILY_PREVIA_LIMIT - used),
-			resetsAt: startOfTomorrowBRT().toISOString(),
-		};
+	async getQuota(customerId: string): Promise<FeatureQuota> {
+		return creditService.getFeatureQuota(customerId, 'previa');
 	}
 
 	async update(

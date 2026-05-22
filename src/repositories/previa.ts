@@ -55,19 +55,6 @@ class PreviaRepository {
 		return data as Previa;
 	}
 
-	/** Conta prévias geradas hoje (00:00 BRT em diante) por um customer. */
-	async countTodayByCustomer(customerId: string): Promise<number> {
-		const startOfDay = startOfTodayBRT();
-		const { count, error } = await supabase
-			.from('pl_previa')
-			.select('*', { count: 'exact', head: true })
-			.eq('customerId', customerId)
-			.gte('createdAt', startOfDay.toISOString());
-
-		if (error) throw new Error(error.message);
-		return count ?? 0;
-	}
-
 	async listByCustomer(params: {
 		customerId: string;
 		page: number;
