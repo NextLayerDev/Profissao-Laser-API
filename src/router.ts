@@ -18,6 +18,7 @@ import { forumRoute } from './routes/forum.js';
 import { globalPromoLinkRoute } from './routes/global-promo-link.js';
 import { mlSellerRoute } from './routes/internal/ml-seller.js';
 import { knowledgeBaseRoute } from './routes/knowledge-base.js';
+import { laserLineTypeRoute } from './routes/laser-line-type.js';
 import { laserProductRoute } from './routes/laser-product.js';
 import { lessonRoute } from './routes/lesson.js';
 import { machineRoute } from './routes/machine.js';
@@ -64,6 +65,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(moduleRoute);
 	app.register(productRoute);
 	app.register(parameterRoute);
+	app.register(laserLineTypeRoute);
 	app.register(paymentLinkRoute);
 	app.register(previaRoute);
 	app.register(promoLinkRoute);
