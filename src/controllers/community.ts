@@ -541,6 +541,67 @@ export const deleteEventController = async (
 	return reply.status(204).send();
 };
 
+export const joinWaitingRoomController = async (
+	request: FastifyRequest<{ Params: { eventId: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId) {
+		return reply.status(403).send({ message: 'Customer not found' });
+	}
+	const { eventId } = request.params;
+	const { error } = await communityService.joinEventWaitingRoom(
+		eventId,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.status(204).send();
+};
+
+export const leaveWaitingRoomController = async (
+	request: FastifyRequest<{ Params: { eventId: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId) {
+		return reply.status(403).send({ message: 'Customer not found' });
+	}
+	const { eventId } = request.params;
+	const { error } = await communityService.leaveEventWaitingRoom(
+		eventId,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.status(204).send();
+};
+
+export const getWaitingRoomController = async (
+	request: FastifyRequest<{ Params: { eventId: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId) {
+		return reply.status(403).send({ message: 'Customer not found' });
+	}
+	const { eventId } = request.params;
+	const { data, error } = await communityService.getWaitingRoomState(
+		eventId,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		const status = message === 'Event not found' ? 404 : 500;
+		return reply.status(status).send({ message });
+	}
+	return reply.send(data);
+};
+
 export const getRankingController = async (
 	request: FastifyRequest<{ Querystring: { period?: string } }>,
 	reply: FastifyReply,

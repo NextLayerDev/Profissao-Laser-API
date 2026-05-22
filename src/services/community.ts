@@ -201,6 +201,59 @@ export const communityService = {
 		return withCapture(() => communityRepository.deleteEvent(id));
 	},
 
+	// ── Sala de espera ────────────────────────────────────────────────────
+
+	async joinEventWaitingRoom(eventId: string, customerId: string) {
+		return withCapture(() =>
+			communityRepository.joinEventWaitingRoom(eventId, customerId),
+		);
+	},
+
+	async leaveEventWaitingRoom(eventId: string, customerId: string) {
+		return withCapture(() =>
+			communityRepository.leaveEventWaitingRoom(eventId, customerId),
+		);
+	},
+
+	async getWaitingRoomState(eventId: string, customerId: string) {
+		return withCapture(async () => {
+			const event = await communityRepository.findEventById(eventId);
+
+			// Combina date (YYYY-MM-DD) + time (HH:MM, opcional) em ISO BRT (UTC-3).
+			const time = event.time && event.time.length > 0 ? event.time : '00:00';
+			const startsAt = new Date(`${event.date}T${time}:00-03:00`);
+			const opensMinBefore = event.waitingRoomOpensMinutesBefore ?? 15;
+			const waitingRoomOpensAt = new Date(
+				startsAt.getTime() - opensMinBefore * 60_000,
+			);
+			// Heurística: evento considerado encerrado 4h após o início.
+			const endsAt = new Date(startsAt.getTime() + 4 * 60 * 60_000);
+
+			const now = new Date();
+			const isWaitingRoomOpen = now >= waitingRoomOpensAt;
+			const isLive = now >= startsAt && now < endsAt;
+			const hasEnded = now >= endsAt;
+
+			const [attendees, hasJoined] = await Promise.all([
+				isWaitingRoomOpen
+					? communityRepository.listEventAttendees(eventId)
+					: Promise.resolve([]),
+				communityRepository.isCustomerInWaitingRoom(eventId, customerId),
+			]);
+
+			return {
+				event,
+				isWaitingRoomOpen,
+				isLive,
+				hasEnded,
+				startsAt: startsAt.toISOString(),
+				waitingRoomOpensAt: waitingRoomOpensAt.toISOString(),
+				attendees,
+				hasJoined,
+			};
+		});
+	},
+
 	async getRanking(period?: string) {
 		return withCapture(async () => {
 			const ranked = await communityRepository.getRanking(period);
