@@ -18,6 +18,7 @@ import {
 	updateAppointmentStatusSchema,
 	updateAppointmentTechnicianSchema,
 } from '../types/appointment.js';
+import { availableSlotsResponseSchema } from '../types/appointment-config.js';
 import { ErrorSchema } from '../types/error.js';
 
 export async function appointmentRoute(server: FastifyInstance) {
@@ -104,13 +105,14 @@ export async function appointmentRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticate],
 			schema: {
-				description: 'List available time slots for a given date.',
+				description:
+					'Slots disponíveis para a data (respeita feriados, folgas, working days, horário de almoço, config global e overrides por técnico). Retorna {slots, blocked, reason}.',
 				querystring: z.object({
 					date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 					technicianId: z.string().uuid().optional(),
 				}),
 				response: {
-					200: z.array(z.string()),
+					200: availableSlotsResponseSchema,
 					500: ErrorSchema,
 				},
 				tags: ['Appointments'],
