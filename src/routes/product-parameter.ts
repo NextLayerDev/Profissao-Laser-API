@@ -7,7 +7,7 @@ import {
 	parameterLookupController,
 	updateProductParameterController,
 } from '../controllers/product-parameter.js';
-import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
+import { authenticateCustomer, requireModule } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import {
 	createProductParameterSchema,
@@ -48,7 +48,7 @@ export async function productParameterRoute(server: FastifyInstance) {
 	server.get(
 		'/laser-products/:id/parameters',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description:
 					'Lista as associações produto↔máquina↔parâmetro do produto, com o parâmetro e a vídeo-aula embedded.',
@@ -69,7 +69,7 @@ export async function productParameterRoute(server: FastifyInstance) {
 	server.post(
 		'/laser-products/:id/parameters',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description:
 					'Associa um parâmetro ao produto para uma máquina. Informe `parameterId` (parâmetro existente) OU `parameter` (cria um novo pl_parameter inline). Config opcional (potência/lente/eixo/operação), `variantId` opcional (associação variant-level — o parâmetro + a vídeo-aula valem só pra aquela variação do produto; sem ele a associação é product-level) e `lessonId` (vídeo-aula) opcional.',
@@ -93,7 +93,7 @@ export async function productParameterRoute(server: FastifyInstance) {
 	server.patch(
 		'/laser-products/:id/parameters/:assocId',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description: 'Atualiza uma associação de parâmetro.',
 				params: z.object({ id: z.string(), assocId: z.string() }),
@@ -116,7 +116,7 @@ export async function productParameterRoute(server: FastifyInstance) {
 	server.delete(
 		'/laser-products/:id/parameters/:assocId',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description: 'Remove uma associação de parâmetro do produto.',
 				params: z.object({ id: z.string(), assocId: z.string() }),

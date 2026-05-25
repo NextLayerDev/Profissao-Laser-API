@@ -4,5 +4,8 @@ declare module 'fastify' {
 	interface FastifyRequest {
 		currentUser: User | null;
 		currentCustomer: { id: string; name: string; image: string | null } | null;
+		/** Permissões efetivas do staff (preenchidas por authenticateAdmin). */
+		effectivePermissions?: string[];
+		isSuperAdminUser?: boolean;
 	}
 }

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticateAdmin } from '@/middleware/auth.js';
+import { requireModule } from '@/middleware/auth.js';
 import { roleController } from '../controllers/role.js';
 import { ErrorSchema } from '../types/error.js';
 import {
@@ -17,7 +17,7 @@ export async function roleRoute(server: FastifyInstance) {
 	server.get(
 		'/me/permissions',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Effective permissions for the current staff user.',
 				response: { 200: effectivePermissionsSchema, 500: ErrorSchema },
@@ -31,7 +31,7 @@ export async function roleRoute(server: FastifyInstance) {
 	server.get(
 		'/permissions/catalog',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'List of permission modules and actions (catalog).',
 				response: { 200: z.array(permissionModuleSchema), 500: ErrorSchema },
@@ -45,7 +45,7 @@ export async function roleRoute(server: FastifyInstance) {
 	server.get(
 		'/roles',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'List all roles with their grants.',
 				response: { 200: z.array(roleSchema), 500: ErrorSchema },
@@ -59,7 +59,7 @@ export async function roleRoute(server: FastifyInstance) {
 	server.get(
 		'/role/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Get a role by ID.',
 				params: idParam,
@@ -74,7 +74,7 @@ export async function roleRoute(server: FastifyInstance) {
 	server.post(
 		'/roles',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Create a role.',
 				body: roleCreateSchema,
@@ -89,7 +89,7 @@ export async function roleRoute(server: FastifyInstance) {
 	server.patch(
 		'/role/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Update a role.',
 				params: idParam,
@@ -105,7 +105,7 @@ export async function roleRoute(server: FastifyInstance) {
 	server.delete(
 		'/role/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description:
 					'Delete a role (blocked if users reference it or it is super-admin).',

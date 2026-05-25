@@ -10,7 +10,7 @@ import {
 	updateMachineController,
 	updateMachineOptionController,
 } from '../controllers/machine.js';
-import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
+import { authenticateCustomer, requireModule } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import {
 	createMachineOptionSchema,
@@ -69,7 +69,7 @@ export async function machineRoute(server: FastifyInstance) {
 	server.post(
 		'/machines',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description: 'Cria uma máquina no catálogo (apenas staff).',
 				body: createMachineSchema,
@@ -89,7 +89,7 @@ export async function machineRoute(server: FastifyInstance) {
 	server.patch(
 		'/machines/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description: 'Atualiza uma máquina (apenas staff).',
 				params: z.object({ id: z.string() }),
@@ -112,7 +112,7 @@ export async function machineRoute(server: FastifyInstance) {
 	server.delete(
 		'/machines/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description: 'Remove uma máquina e todas as suas opções (cascade).',
 				params: z.object({ id: z.string() }),
@@ -133,7 +133,7 @@ export async function machineRoute(server: FastifyInstance) {
 	server.post(
 		'/machines/:id/options',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description:
 					'Adiciona uma opção à máquina. `category`: power|lens|software|axis|operation.',
@@ -156,7 +156,7 @@ export async function machineRoute(server: FastifyInstance) {
 	server.patch(
 		'/machines/:id/options/:optionId',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description: 'Atualiza uma opção da máquina.',
 				params: z.object({ id: z.string(), optionId: z.string() }),
@@ -179,7 +179,7 @@ export async function machineRoute(server: FastifyInstance) {
 	server.delete(
 		'/machines/:id/options/:optionId',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description: 'Remove uma opção da máquina.',
 				params: z.object({ id: z.string(), optionId: z.string() }),

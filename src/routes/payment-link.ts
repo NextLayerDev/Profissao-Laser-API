@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticateAdmin } from '@/middleware/auth.js';
+import { requireModule } from '@/middleware/auth.js';
 import {
 	createPaymentLinkController,
 	getPaymentLinkInfoController,
@@ -22,7 +22,7 @@ export async function paymentLinkRoute(server: FastifyInstance) {
 	server.get(
 		'/payment-links',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('links')],
 			schema: {
 				description:
 					'List all payment links with product names, status, and customer info.',
@@ -41,7 +41,7 @@ export async function paymentLinkRoute(server: FastifyInstance) {
 	server.post(
 		'/payment-link',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('links')],
 			schema: {
 				description:
 					'Create a single-use payment link with 99% discount for a product without system class.',

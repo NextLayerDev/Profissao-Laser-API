@@ -9,7 +9,7 @@ import {
 	reorderVectorizeHelpController,
 	updateVectorizeHelpController,
 } from '../controllers/vectorize-help.js';
-import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
+import { authenticateCustomer, requireModule } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import {
 	createVectorizeHelpSchema,
@@ -45,7 +45,7 @@ export async function vectorizeHelpRoute(server: FastifyInstance) {
 	server.post(
 		'/vectorize-help/reorder',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('vetorizacao')],
 			schema: {
 				description:
 					'Reordena os itens. O índice de cada id no array `ids` vira o novo `order`. Retorna a lista completa já reordenada.',
@@ -66,7 +66,7 @@ export async function vectorizeHelpRoute(server: FastifyInstance) {
 	server.get(
 		'/vectorize-help',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('vetorizacao')],
 			schema: {
 				description:
 					'Lista TODOS os itens de ajuda (incluindo inativos), ordenados por `order`. Apenas staff.',
@@ -86,7 +86,7 @@ export async function vectorizeHelpRoute(server: FastifyInstance) {
 	server.post(
 		'/vectorize-help',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('vetorizacao')],
 			schema: {
 				description:
 					'Cria um novo item de ajuda. Se `order` não for informado, vai pro fim da lista (auto-increment).',
@@ -107,7 +107,7 @@ export async function vectorizeHelpRoute(server: FastifyInstance) {
 	server.get(
 		'/vectorize-help/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('vetorizacao')],
 			schema: {
 				description: 'Detalhe de um item de ajuda por ID.',
 				params: z.object({ id: z.string() }),
@@ -128,7 +128,7 @@ export async function vectorizeHelpRoute(server: FastifyInstance) {
 	server.patch(
 		'/vectorize-help/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('vetorizacao')],
 			schema: {
 				description: 'Atualiza um item de ajuda. Todos os campos opcionais.',
 				params: z.object({ id: z.string() }),
@@ -151,7 +151,7 @@ export async function vectorizeHelpRoute(server: FastifyInstance) {
 	server.delete(
 		'/vectorize-help/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('vetorizacao')],
 			schema: {
 				description: 'Remove um item de ajuda.',
 				params: z.object({ id: z.string() }),

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticateAdmin } from '@/middleware/auth.js';
+import { requireModule } from '@/middleware/auth.js';
 import {
 	createAddonController,
 	createProductController,
@@ -42,7 +42,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.post(
 		'/product',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('produtos')],
 			schema: {
 				description:
 					'Create a new product in Stripe and save its IDs in the database.',
@@ -61,7 +61,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.post(
 		'/addon',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('produtos')],
 			schema: {
 				description:
 					'Create a new addon product in Stripe and save it in the database with isAddon=true. Addons can be attached to existing subscriptions via /subscription/addon.',
@@ -80,7 +80,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.patch(
 		'/product/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('produtos')],
 			schema: {
 				description:
 					'Update a product (name, description, category, price, refundDays). Name and price are synced with Stripe.',
@@ -101,7 +101,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.patch(
 		'/product/:id/status',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('produtos')],
 			schema: {
 				description:
 					'Activate or deactivate a product (also syncs with Stripe).',
@@ -122,7 +122,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.patch(
 		'/product/:id/form',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('produtos')],
 			schema: {
 				description: [
 					'Update a product via **multipart/form-data**. All fields are optional.',
@@ -154,7 +154,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.post(
 		'/product/:id/image',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('produtos')],
 			schema: {
 				description: [
 					'Upload a cover image for a product via **multipart/form-data**.',
@@ -181,7 +181,7 @@ export async function productRoute(server: FastifyInstance) {
 	server.delete(
 		'/product/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('produtos')],
 			schema: {
 				description:
 					'Archive a product in Stripe (deactivates all prices) and delete it from the database.',

@@ -1,4 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import {
+	getEffectivePermissions,
+	type RolePermissionRow,
+	type UserOverrides,
+} from '../lib/permissions.js';
 import { stripe } from '../lib/stripe.js';
 import { supabase } from '../lib/supabase.js';
 
@@ -49,7 +54,7 @@ export const authenticateAdmin = async (
 	const user = request.currentUser;
 	const { data: platformUser } = await supabase
 		.from('Users')
-		.select('id')
+		.select('id, overrides, Permissions(grants, isSuperAdmin)')
 		.or(`id.eq.${user.id},email.eq.${user.email}`)
 		.maybeSingle();
 
@@ -60,7 +65,66 @@ export const authenticateAdmin = async (
 			message: 'Admin access required',
 		});
 	}
+
+	// Resolve permissões efetivas (cargo + overrides) uma vez por request.
+	const pu = platformUser as {
+		overrides?: UserOverrides | null;
+		Permissions?: RolePermissionRow | RolePermissionRow[] | null;
+	};
+	const role = Array.isArray(pu.Permissions)
+		? (pu.Permissions[0] ?? null)
+		: (pu.Permissions ?? null);
+	request.effectivePermissions = getEffectivePermissions(role, pu.overrides);
+	request.isSuperAdminUser = role?.isSuperAdmin ?? false;
 };
+
+/**
+ * Exige uma permissão específica (`"<module>.<action>"`). Compõe
+ * authenticateAdmin (que já resolve as permissões efetivas) e bloqueia com
+ * 403 quem não tiver a chave. Super admin passa sempre.
+ */
+export function requirePermission(key: string) {
+	return async (request: FastifyRequest, reply: FastifyReply) => {
+		await authenticateAdmin(request, reply);
+		if (reply.sent || !request.currentUser) return;
+		if (request.isSuperAdminUser) return;
+		if (!(request.effectivePermissions ?? []).includes(key)) {
+			return reply.status(403).send({
+				statusCode: 403,
+				error: 'Forbidden',
+				message: `Missing permission: ${key}`,
+			});
+		}
+	};
+}
+
+/**
+ * Exige permissão de um módulo derivando a ação do método HTTP:
+ * GET/HEAD → `.view`, DELETE → `.delete`, demais → `.edit`. Super admin passa.
+ * Substitui `authenticateAdmin` em rotas admin de um mesmo módulo.
+ */
+export function requireModule(module: string) {
+	return async (request: FastifyRequest, reply: FastifyReply) => {
+		await authenticateAdmin(request, reply);
+		if (reply.sent || !request.currentUser) return;
+		if (request.isSuperAdminUser) return;
+		const method = request.method.toUpperCase();
+		const action =
+			method === 'GET' || method === 'HEAD'
+				? 'view'
+				: method === 'DELETE'
+					? 'delete'
+					: 'edit';
+		const key = `${module}.${action}`;
+		if (!(request.effectivePermissions ?? []).includes(key)) {
+			return reply.status(403).send({
+				statusCode: 403,
+				error: 'Forbidden',
+				message: `Missing permission: ${key}`,
+			});
+		}
+	};
+}
 
 export const authenticateCustomer = async (
 	request: FastifyRequest,

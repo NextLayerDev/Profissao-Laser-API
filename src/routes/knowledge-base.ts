@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate, authenticateAdmin } from '@/middleware/auth.js';
+import { authenticate, requireModule } from '@/middleware/auth.js';
 import {
 	createKnowledgeBaseController,
 	deleteKnowledgeBaseController,
@@ -57,7 +57,7 @@ export async function knowledgeBaseRoute(server: FastifyInstance) {
 	server.post(
 		'/knowledge-base',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Create a knowledge base article (staff only).',
 				body: createKnowledgeBaseSchema,
@@ -76,7 +76,7 @@ export async function knowledgeBaseRoute(server: FastifyInstance) {
 	server.patch(
 		'/knowledge-base/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Update a knowledge base article (staff only).',
 				params: z.object({ id: z.string() }),
@@ -96,7 +96,7 @@ export async function knowledgeBaseRoute(server: FastifyInstance) {
 	server.delete(
 		'/knowledge-base/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Delete a knowledge base article (staff only).',
 				params: z.object({ id: z.string() }),
