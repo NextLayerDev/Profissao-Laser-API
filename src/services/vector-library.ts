@@ -127,4 +127,39 @@ export const vectorLibraryService = {
 			await deleteVectorLibraryFileByUrl(fileUrl);
 		});
 	},
+
+	async bulkUpdateFiles(input: {
+		fileIds?: string[];
+		folderIds?: string[];
+		category?: string | null;
+		addFormats?: string[];
+		featured?: boolean;
+	}) {
+		return withCapture(async () => {
+			// Resolve os ficheiros das pastas (recursivo) + os selecionados.
+			const folderFileIds = (
+				await Promise.all(
+					(input.folderIds ?? []).map((id) =>
+						vectorLibraryRepository.getAllFileIdsInFolder(id),
+					),
+				)
+			).flat();
+			const ids = [...new Set([...(input.fileIds ?? []), ...folderFileIds])];
+
+			if (ids.length === 0) return { updated: 0 };
+
+			const scalarPatch: { category?: string | null; featured?: boolean } = {};
+			if (input.category !== undefined) scalarPatch.category = input.category;
+			if (input.featured !== undefined) scalarPatch.featured = input.featured;
+			if (Object.keys(scalarPatch).length > 0) {
+				await vectorLibraryRepository.bulkUpdateScalar(ids, scalarPatch);
+			}
+
+			if (input.addFormats && input.addFormats.length > 0) {
+				await vectorLibraryRepository.bulkMergeFormats(ids, input.addFormats);
+			}
+
+			return { updated: ids.length };
+		});
+	},
 };

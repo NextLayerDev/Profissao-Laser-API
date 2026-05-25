@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { supabase } from '../lib/supabase.js';
 import { vectorLibraryService } from '../services/vector-library.js';
 import {
+	bulkUpdateFilesSchema,
 	createFolderSchema,
 	updateFileSchema,
 	updateFolderSchema,
@@ -311,6 +312,25 @@ export const updateFileController = async (
 		}
 		if (!file) return reply.status(404).send({ message: 'File not found' });
 		return reply.send(file);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
+export const bulkUpdateFilesController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	if (!(await requireAdmin(request, reply))) return;
+	try {
+		const input = bulkUpdateFilesSchema.parse(request.body);
+		const { data, error } = await vectorLibraryService.bulkUpdateFiles(input);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(400).send({ message });
+		}
+		return reply.send(data);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(400).send({ message });
