@@ -249,7 +249,7 @@ export async function vectorLibraryRoute(server: FastifyInstance) {
 			preHandler: [authenticateVectorizacao],
 			schema: {
 				description:
-					'Upload a file to the vector library (admin only, multipart/form-data). Fields: file (required), name (optional custom name), folderId (query param).',
+					'Upload a file to the vector library (admin only, multipart/form-data). Fields: file (required), name (optional custom name), category (optional), formats (optional, comma-separated), featured (optional, "true"/"false"), folderId (query param).',
 				querystring: z.object({ folderId: z.string().optional() }),
 				response: {
 					201: vectorLibraryFileSchema,

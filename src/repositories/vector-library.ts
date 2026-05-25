@@ -356,10 +356,23 @@ class VectorLibraryRepository {
 		mimeType: string;
 		size: number | null;
 		order: number;
+		category?: string | null;
+		formats?: string[] | null;
+		featured?: boolean;
 	}) {
 		const { data: file, error } = await supabase
 			.from('pl_vector_library_file')
-			.insert(data)
+			.insert({
+				name: data.name,
+				folderId: data.folderId,
+				fileUrl: data.fileUrl,
+				mimeType: data.mimeType,
+				size: data.size,
+				order: data.order,
+				category: data.category ?? null,
+				formats: data.formats ?? null,
+				featured: data.featured ?? false,
+			})
 			.select()
 			.single();
 
@@ -378,16 +391,30 @@ class VectorLibraryRepository {
 		return data;
 	}
 
-	async updateFile(id: string, name: string) {
-		const { data, error } = await supabase
+	async updateFile(
+		id: string,
+		data: {
+			name?: string;
+			category?: string | null;
+			formats?: string[] | null;
+			featured?: boolean;
+		},
+	) {
+		const patch: Record<string, unknown> = {};
+		if (data.name !== undefined) patch.name = data.name;
+		if (data.category !== undefined) patch.category = data.category;
+		if (data.formats !== undefined) patch.formats = data.formats;
+		if (data.featured !== undefined) patch.featured = data.featured;
+
+		const { data: row, error } = await supabase
 			.from('pl_vector_library_file')
-			.update({ name })
+			.update(patch)
 			.eq('id', id)
 			.select()
 			.single();
 
 		if (error) throw new Error(error.message);
-		return data;
+		return row;
 	}
 
 	async deleteFile(id: string): Promise<string> {

@@ -258,10 +258,24 @@ export const uploadFileController = async (
 		let mimetype = 'application/octet-stream';
 		let size: number | null = null;
 		let customName: string | undefined;
+		let category: string | undefined;
+		let formats: string[] | undefined;
+		let featured: boolean | undefined;
 
 		for await (const part of parts) {
-			if (part.type === 'field' && part.fieldname === 'name') {
-				customName = part.value as string;
+			if (part.type === 'field') {
+				const value = part.value as string;
+				if (part.fieldname === 'name') customName = value;
+				else if (part.fieldname === 'category')
+					category = value.trim() || undefined;
+				else if (part.fieldname === 'formats')
+					formats = value
+						? value
+								.split(',')
+								.map((f) => f.trim())
+								.filter(Boolean)
+						: [];
+				else if (part.fieldname === 'featured') featured = value === 'true';
 			} else if (part.type === 'file' && part.fieldname === 'file') {
 				fileBuffer = await part.toBuffer();
 				filename = part.filename ?? 'file';
@@ -281,6 +295,7 @@ export const uploadFileController = async (
 			mimetype,
 			size,
 			customName,
+			{ category, formats, featured },
 		);
 		if (error) {
 			const message = error instanceof Error ? error.message : 'Unknown error';
@@ -300,10 +315,10 @@ export const updateFileController = async (
 	if (!(await requireAdmin(request, reply))) return;
 	try {
 		const { id } = request.params;
-		const { name } = updateFileSchema.parse(request.body);
+		const data = updateFileSchema.parse(request.body);
 		const { data: file, error } = await vectorLibraryService.updateFile(
 			id,
-			name,
+			data,
 		);
 		if (error) {
 			const message = error instanceof Error ? error.message : 'Unknown error';
