@@ -9,6 +9,7 @@ import {
 	getBreadcrumbsController,
 	getCategoriesController,
 	getContentsController,
+	getFormatsController,
 	getStatsController,
 	listFavoritesController,
 	listFeaturedController,
@@ -28,6 +29,7 @@ import {
 	vectorLibraryCategorySchema,
 	vectorLibraryFileSchema,
 	vectorLibraryFolderSchema,
+	vectorLibraryFormatSchema,
 	vectorLibraryStatsSchema,
 } from '../types/vector-library.js';
 
@@ -81,6 +83,23 @@ export async function vectorLibraryRoute(server: FastifyInstance) {
 			},
 		},
 		getCategoriesController,
+	);
+
+	server.get(
+		'/community/vector-library/formats',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: 'List vector library file formats with counts.',
+				response: {
+					200: z.array(vectorLibraryFormatSchema),
+					500: ErrorSchema,
+				},
+				tags: ['Vector Library'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getFormatsController,
 	);
 
 	server.get(

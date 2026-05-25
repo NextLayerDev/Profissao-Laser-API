@@ -37,6 +37,11 @@ export const vectorLibraryCategorySchema = z.object({
 	count: z.number(),
 });
 
+export const vectorLibraryFormatSchema = z.object({
+	name: z.string(),
+	count: z.number(),
+});
+
 export const listContentsQuery = z.object({
 	parentId: z.string().optional(),
 	search: z.string().optional(),
