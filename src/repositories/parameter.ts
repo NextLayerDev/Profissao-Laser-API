@@ -47,18 +47,16 @@ class ParameterRepository {
 		return { data: data ?? [], total: count ?? 0 };
 	}
 
+	// Retorna TODOS os públicos que casam com os filtros (cap 500). A
+	// ordenação (salvos/likes/rating) e a paginação são feitas no service,
+	// depois do enrichment — senão a ordem só valeria dentro da página.
 	async listCommunity(filters: CommunityListQuery) {
-		const offset = (filters.page - 1) * filters.limit;
-		let orderColumn: string = 'createdAt';
-		if (filters.sort === 'rating') orderColumn = 'createdAt';
-		if (filters.sort === 'likes') orderColumn = 'createdAt';
-
 		let query = supabase
 			.from('pl_parameter')
 			.select('*', { count: 'exact' })
 			.eq('isPublic', true)
-			.order(orderColumn, { ascending: false })
-			.range(offset, offset + filters.limit - 1);
+			.order('createdAt', { ascending: false })
+			.limit(500);
 
 		query = this.applyFilters(query, filters);
 
