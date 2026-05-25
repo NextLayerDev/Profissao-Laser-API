@@ -1,4 +1,5 @@
 import { openrouter } from '../lib/openrouter.js';
+import { captureException } from '../lib/sentry.js';
 import {
 	buildMessages,
 	FALLBACK_ERROR_MESSAGE,
@@ -86,8 +87,15 @@ class SupportChatService {
 			if (parsed.handoff) {
 				await this.requestHuman(chatId, 'ai_auto');
 			}
-		} catch {
-			// degrada gracioso: mensagem de fallback + encaminha pra humano
+		} catch (err) {
+			// Loga o motivo real (modelo indisponível, sem OPENROUTER_API_KEY,
+			// rate limit/429, etc.) pra ficar diagnosticável nos logs, e degrada
+			// gracioso: mensagem de fallback + encaminha pra humano.
+			console.error(
+				`[support-chat] runAiTurn failed (model=${SUPPORT_CHAT_MODEL}, hasKey=${!!process.env.OPENROUTER_API_KEY}):`,
+				err,
+			);
+			captureException(err);
 			await supportChatRepository.addMessage(chatId, {
 				role: 'ai',
 				authorId: null,
