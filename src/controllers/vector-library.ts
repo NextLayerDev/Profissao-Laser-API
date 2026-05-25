@@ -98,6 +98,18 @@ export const getCategoriesController = async (
 	return reply.send(data);
 };
 
+export const getFormatsController = async (
+	_request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const { data, error } = await vectorLibraryService.listFormats();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
+};
+
 export const addFavoriteController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,

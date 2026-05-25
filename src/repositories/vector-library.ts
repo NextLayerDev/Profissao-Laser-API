@@ -38,8 +38,12 @@ class VectorLibraryRepository {
 			.from('pl_vector_library_file')
 			.select('*', { count: 'exact' });
 
-		if (parentId === null) fileQuery = fileQuery.is('folderId', null);
-		else fileQuery = fileQuery.eq('folderId', parentId);
+		// Com categoria: busca em TODAS as pastas (ignora folderId) e não lista
+		// pastas. Sem categoria: navega por pasta (folderId = parentId).
+		if (!category) {
+			if (parentId === null) fileQuery = fileQuery.is('folderId', null);
+			else fileQuery = fileQuery.eq('folderId', parentId);
+		}
 
 		if (search) fileQuery = fileQuery.ilike('name', `%${search}%`);
 		if (category) fileQuery = fileQuery.eq('category', category);
@@ -55,10 +59,10 @@ class VectorLibraryRepository {
 
 		fileQuery = fileQuery.range(offset, offset + limit - 1);
 
-		const [foldersResult, filesResult] = await Promise.all([
-			folderQuery,
-			fileQuery,
-		]);
+		const filesResult = await fileQuery;
+		const foldersResult = category
+			? { data: [] as Record<string, unknown>[], error: null }
+			: await folderQuery;
 
 		if (foldersResult.error) throw new Error(foldersResult.error.message);
 		if (filesResult.error) throw new Error(filesResult.error.message);
@@ -136,6 +140,24 @@ class VectorLibraryRepository {
 			icon: null,
 			count,
 		}));
+	}
+
+	async listFormats() {
+		const { data, error } = await supabase
+			.from('pl_vector_library_file')
+			.select('formats');
+		if (error) throw new Error(error.message);
+
+		const counts = new Map<string, number>();
+		for (const row of (data ?? []) as Array<{ formats: string[] | null }>) {
+			for (const fmt of row.formats ?? []) {
+				if (!fmt) continue;
+				counts.set(fmt, (counts.get(fmt) ?? 0) + 1);
+			}
+		}
+		return [...counts.entries()]
+			.map(([name, count]) => ({ name, count }))
+			.sort((a, b) => a.name.localeCompare(b.name));
 	}
 
 	async addFavorite(fileId: string, customerId: string) {

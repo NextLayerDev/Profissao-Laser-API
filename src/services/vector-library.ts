@@ -28,6 +28,10 @@ export const vectorLibraryService = {
 		return withCapture(() => vectorLibraryRepository.listCategories());
 	},
 
+	async listFormats() {
+		return withCapture(() => vectorLibraryRepository.listFormats());
+	},
+
 	async addFavorite(fileId: string, customerId: string) {
 		return withCapture(() =>
 			vectorLibraryRepository.addFavorite(fileId, customerId),
