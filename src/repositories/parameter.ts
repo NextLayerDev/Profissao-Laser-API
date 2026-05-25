@@ -20,6 +20,7 @@ class ParameterRepository {
 		if (filters.material) q = q.eq('material', filters.material) as T;
 		if (filters.thickness) q = q.eq('thickness', filters.thickness) as T;
 		if (filters.mode) q = q.eq('mode', filters.mode) as T;
+		if (filters.software) q = q.eq('software', filters.software) as T;
 		if (filters.search) {
 			q = q.or(
 				`material.ilike.%${filters.search}%,materialType.ilike.%${filters.search}%,machine.ilike.%${filters.search}%`,
