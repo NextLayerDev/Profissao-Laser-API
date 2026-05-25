@@ -1,4 +1,5 @@
 import { openrouter } from '../lib/openrouter.js';
+import { captureException } from '../lib/sentry.js';
 import {
 	buildMessages,
 	FALLBACK_ERROR_MESSAGE,
@@ -8,8 +9,11 @@ import {
 import { supportChatRepository } from '../repositories/support-chat.js';
 import type { SupportChatStatus } from '../types/support-chat.js';
 
+// Default: modelo de texto barato e confiável do Google (mesma conta/chave
+// OPENROUTER_API_KEY que a prévia usa). Modelos `:free` costumam dar 429/recusar
+// na conta, então evitamos como padrão. Configurável via SUPPORT_CHAT_MODEL.
 const SUPPORT_CHAT_MODEL =
-	process.env.SUPPORT_CHAT_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
+	process.env.SUPPORT_CHAT_MODEL || 'google/gemini-2.5-flash';
 
 const AI_NAME = 'Assistente IA';
 const SYSTEM_NAME = 'Sistema';
@@ -86,8 +90,15 @@ class SupportChatService {
 			if (parsed.handoff) {
 				await this.requestHuman(chatId, 'ai_auto');
 			}
-		} catch {
-			// degrada gracioso: mensagem de fallback + encaminha pra humano
+		} catch (err) {
+			// Loga o motivo real (modelo indisponível, sem OPENROUTER_API_KEY,
+			// rate limit/429, etc.) pra ficar diagnosticável nos logs, e degrada
+			// gracioso: mensagem de fallback + encaminha pra humano.
+			console.error(
+				`[support-chat] runAiTurn failed (model=${SUPPORT_CHAT_MODEL}, hasKey=${!!process.env.OPENROUTER_API_KEY}):`,
+				err,
+			);
+			captureException(err);
 			await supportChatRepository.addMessage(chatId, {
 				role: 'ai',
 				authorId: null,
