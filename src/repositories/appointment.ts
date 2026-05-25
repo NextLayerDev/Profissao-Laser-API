@@ -73,6 +73,28 @@ class AppointmentRepository {
 		return data;
 	}
 
+	async cancelOwn(id: string, email: string) {
+		const { data: existing, error: findError } = await supabase
+			.from('pl_appointment')
+			.select('id, customerEmail')
+			.eq('id', id)
+			.maybeSingle();
+
+		if (findError) throw new Error(findError.message);
+		if (!existing) throw new Error('Appointment not found');
+		if (existing.customerEmail !== email) throw new Error('Forbidden');
+
+		const { data, error } = await supabase
+			.from('pl_appointment')
+			.update({ status: 'cancelado' })
+			.eq('id', id)
+			.select()
+			.single();
+
+		if (error) throw new Error(error.message);
+		return data;
+	}
+
 	async listByCustomerId(customerId: string) {
 		const { data: authUser, error: authError } =
 			await supabase.auth.admin.getUserById(customerId);
