@@ -52,15 +52,28 @@ export const parameterService = {
 	async listCommunity(filters: CommunityListQuery, customerId: string | null) {
 		return withCapture(async () => {
 			const { data, total } = await parameterRepository.listCommunity(filters);
-			let enriched = await enrichWithCounts(data, customerId);
+			const enriched = await enrichWithCounts(data, customerId);
+			const ts = (r: ParameterRow) =>
+				new Date(String(r.createdAt ?? 0)).getTime();
 
-			if (filters.sort === 'rating') {
-				enriched = enriched.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+			if (filters.sort === 'relevant') {
+				// salvos do cliente primeiro, depois mais curtidos, depois recentes
+				enriched.sort((a, b) => {
+					if (a.isSaved !== b.isSaved) return a.isSaved ? -1 : 1;
+					if (b.likesCount !== a.likesCount) return b.likesCount - a.likesCount;
+					return ts(b) - ts(a);
+				});
+			} else if (filters.sort === 'rating') {
+				enriched.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
 			} else if (filters.sort === 'likes') {
-				enriched = enriched.sort((a, b) => b.likesCount - a.likesCount);
+				enriched.sort((a, b) => b.likesCount - a.likesCount);
 			}
+			// 'recent' já vem por createdAt desc do repositório
 
-			return { data: enriched, total };
+			// paginação após ordenar globalmente
+			const offset = (filters.page - 1) * filters.limit;
+			const pageData = enriched.slice(offset, offset + filters.limit);
+			return { data: pageData, total };
 		});
 	},
 

@@ -123,7 +123,8 @@ export const listParametersQuery = z.object({
 });
 
 export const communityListQuery = listParametersQuery.extend({
-	sort: z.enum(['recent', 'rating', 'likes']).default('recent'),
+	// 'relevant' = salvos do cliente primeiro, depois mais curtidos
+	sort: z.enum(['recent', 'rating', 'likes', 'relevant']).default('recent'),
 });
 
 export const machineSchema = z.object({
