@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { requireModule } from '@/middleware/auth.js';
+import { authenticateAdmin, requireModule } from '@/middleware/auth.js';
 import { roleController } from '../controllers/role.js';
 import { ErrorSchema } from '../types/error.js';
 import {
@@ -17,7 +17,7 @@ export async function roleRoute(server: FastifyInstance) {
 	server.get(
 		'/me/permissions',
 		{
-			preHandler: [requireModule('acessos')],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'Effective permissions for the current staff user.',
 				response: { 200: effectivePermissionsSchema, 500: ErrorSchema },
@@ -31,7 +31,7 @@ export async function roleRoute(server: FastifyInstance) {
 	server.get(
 		'/permissions/catalog',
 		{
-			preHandler: [requireModule('acessos')],
+			preHandler: [authenticateAdmin],
 			schema: {
 				description: 'List of permission modules and actions (catalog).',
 				response: { 200: z.array(permissionModuleSchema), 500: ErrorSchema },
