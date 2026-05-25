@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authenticateVectorizacao } from '@/middleware/auth.js';
 import {
 	addFavoriteController,
+	bulkUpdateFilesController,
 	createFolderController,
 	deleteFileController,
 	deleteFolderController,
@@ -21,6 +22,8 @@ import {
 import { ErrorSchema } from '../types/error.js';
 import {
 	breadcrumbItemSchema,
+	bulkUpdateFilesResponseSchema,
+	bulkUpdateFilesSchema,
 	contentsPaginatedSchema,
 	createFolderSchema,
 	listContentsQuery,
@@ -261,6 +264,26 @@ export async function vectorLibraryRoute(server: FastifyInstance) {
 			},
 		},
 		uploadFileController,
+	);
+
+	server.patch(
+		'/community/vector-library/files/bulk',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description:
+					'Bulk update files (admin only). Applies category/featured and merges formats onto the given fileIds plus all files inside folderIds (recursive).',
+				body: bulkUpdateFilesSchema,
+				response: {
+					200: bulkUpdateFilesResponseSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+				},
+				tags: ['Vector Library'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		bulkUpdateFilesController,
 	);
 
 	server.patch(

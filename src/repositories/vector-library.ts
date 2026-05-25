@@ -349,6 +349,68 @@ class VectorLibraryRepository {
 		return urls;
 	}
 
+	/** IDs de todos os ficheiros de uma pasta, incluindo subpastas (recursivo). */
+	async getAllFileIdsInFolder(folderId: string): Promise<string[]> {
+		const ids: string[] = [];
+
+		const { data: files, error: filesError } = await supabase
+			.from('pl_vector_library_file')
+			.select('id')
+			.eq('folderId', folderId);
+		if (filesError) throw new Error(filesError.message);
+		for (const f of files ?? []) ids.push(f.id);
+
+		const { data: subfolders, error: subfoldersError } = await supabase
+			.from('pl_vector_library_folder')
+			.select('id')
+			.eq('parentId', folderId);
+		if (subfoldersError) throw new Error(subfoldersError.message);
+
+		for (const sub of subfolders ?? []) {
+			ids.push(...(await this.getAllFileIdsInFolder(sub.id)));
+		}
+
+		return ids;
+	}
+
+	/** Atualiza campos escalares (category/featured) de vários ficheiros. */
+	async bulkUpdateScalar(
+		ids: string[],
+		patch: { category?: string | null; featured?: boolean },
+	) {
+		if (ids.length === 0 || Object.keys(patch).length === 0) return;
+		const { error } = await supabase
+			.from('pl_vector_library_file')
+			.update(patch)
+			.in('id', ids);
+		if (error) throw new Error(error.message);
+	}
+
+	/** Faz merge (união) dos formatos informados nos ficheiros indicados. */
+	async bulkMergeFormats(ids: string[], addFormats: string[]) {
+		if (ids.length === 0 || addFormats.length === 0) return;
+
+		const { data, error } = await supabase
+			.from('pl_vector_library_file')
+			.select('id, formats')
+			.in('id', ids);
+		if (error) throw new Error(error.message);
+
+		for (const row of (data ?? []) as Array<{
+			id: string;
+			formats: string[] | null;
+		}>) {
+			const current = row.formats ?? [];
+			const merged = [...new Set([...current, ...addFormats])];
+			if (merged.length === current.length) continue; // nada novo
+			const { error: updateError } = await supabase
+				.from('pl_vector_library_file')
+				.update({ formats: merged })
+				.eq('id', row.id);
+			if (updateError) throw new Error(updateError.message);
+		}
+	}
+
 	async createFile(data: {
 		name: string;
 		folderId: string | null;

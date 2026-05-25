@@ -81,6 +81,20 @@ export const updateFileSchema = z.object({
 	name: z.string(),
 });
 
+export const bulkUpdateFilesSchema = z.object({
+	fileIds: z.array(z.string()).default([]),
+	folderIds: z.array(z.string()).default([]),
+	// Presença = aplicar. Ausência = não alterar.
+	category: z.string().nullable().optional(),
+	addFormats: z.array(z.string()).optional(),
+	featured: z.boolean().optional(),
+});
+
+export const bulkUpdateFilesResponseSchema = z.object({
+	updated: z.number(),
+});
+
 export type CreateFolder = z.infer<typeof createFolderSchema>;
 export type UpdateFolder = z.infer<typeof updateFolderSchema>;
 export type UpdateFile = z.infer<typeof updateFileSchema>;
+export type BulkUpdateFiles = z.infer<typeof bulkUpdateFilesSchema>;
