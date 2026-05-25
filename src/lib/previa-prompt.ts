@@ -54,6 +54,7 @@ export function generatePrompt(
 	textoLenteDireita?: string,
 	textoLenteEsquerda?: string,
 	watermarkMode: 'none' | 'corners' | 'tiled' = 'none',
+	productColor: string | null = null,
 ): string {
 	// hasWatermark = qualquer modo ativo (corners ou tiled).
 	// Usado pelos blocos de INPUT IMAGES; o bloco de instruções da watermark
@@ -382,6 +383,14 @@ export function generatePrompt(
 	lines.push(`╚════════════════════════════════════════════════════════════╝`);
 	lines.push('');
 
+	// Cor/material da variante escolhida — orienta a base e o contraste da gravação.
+	if (productColor) {
+		lines.push(
+			`🎨 PRODUCT BASE COLOR/MATERIAL: ${productColor} — the product base MUST match this exact color/material. The engraving contrast and metallic tone must be appropriate for this base (e.g. dark base = lighter engraving marks, light base = darker/deeper marks). Do NOT change the product base color.`,
+		);
+		lines.push('');
+	}
+
 	if (isTextOnly) {
 		// MODO APENAS TEXTO - SEM LOGO
 		lines.push('🔤 MODE: TEXT-ONLY ENGRAVING (NO LOGO)');
@@ -422,8 +431,65 @@ export function generatePrompt(
 			lines.push('│                     (place in 2 corners as overlay)     │');
 		}
 		lines.push('└─────────────────────────────────────────────────────────┘');
+		lines.push('');
+		// ── FIDELIDADE DO LOGO — reproduzir a imagem [2] EXATAMENTE ──
+		lines.push(
+			'🎯 LOGO FIDELITY — REPRODUCE IMAGE [2] EXACTLY (HIGHEST PRIORITY):',
+		);
+		lines.push('┌─────────────────────────────────────────────────────────┐');
+		lines.push('│ Image [2] is the AUTHORITATIVE logo. Treat it as a       │');
+		lines.push('│ stencil to be engraved — NOT as inspiration.             │');
+		lines.push('│ Reproduce with 100% fidelity:                            │');
+		lines.push('│  • SAME exact shapes, contours, curves, proportions      │');
+		lines.push('│  • SAME internal details, cutouts, gaps and spacing      │');
+		lines.push('│  • SAME letters/typography that exist INSIDE the logo    │');
+		lines.push('│  • Preserve aspect ratio when scaling (NO stretch/skew)  │');
+		lines.push('│                                                          │');
+		lines.push('│ ❌ ABSOLUTELY FORBIDDEN:                                 │');
+		lines.push('│  • Redrawing, restyling, simplifying or "improving" it   │');
+		lines.push('│  • Re-vectorizing into a different/cleaner shape         │');
+		lines.push('│  • Adding, removing, moving or inventing ANY element     │');
+		lines.push('│  • Reinterpreting or re-spelling text inside the logo    │');
+		lines.push('│  • Changing the logo composition or layout               │');
+		lines.push('│                                                          │');
+		lines.push('│ ✅ ONLY allowed change: render the SAME artwork as a     │');
+		lines.push('│   realistic metallic laser engraving (depth/tone),      │');
+		lines.push('│   keeping the EXACT silhouette + every internal detail. │');
+		lines.push('└─────────────────────────────────────────────────────────┘');
 	}
 	lines.push('');
+
+	// ── FIDELIDADE DO TEXTO — gravar string exata (nome personalizado) ──
+	if (hasCustomName && customName && customName.trim().length > 0) {
+		lines.push(
+			'🔠 TEXT FIDELITY — ENGRAVE THIS EXACT TEXT (HIGHEST PRIORITY):',
+		);
+		lines.push('┌─────────────────────────────────────────────────────────┐');
+		lines.push(`│ TEXT TO ENGRAVE: "${customName.trim()}"`);
+		lines.push('│  • Engrave it character-for-character, EXACT spelling   │');
+		lines.push('│  • Preserve accents, casing, spaces and punctuation     │');
+		lines.push('│  • Must be 100% legible and correctly oriented          │');
+		lines.push('│  • NO extra, missing or substituted characters          │');
+		lines.push('│  • NO decorative symbols added around the text          │');
+		lines.push('└─────────────────────────────────────────────────────────┘');
+		lines.push('');
+	}
+
+	// ── FIDELIDADE DO TEXTO DAS LENTES (modo lentes) ──
+	if (modoLentes && (textoLenteDireita || textoLenteEsquerda)) {
+		lines.push('🔠 LENS TEXT FIDELITY — engrave EXACT text on each lens:');
+		lines.push('┌─────────────────────────────────────────────────────────┐');
+		if (textoLenteDireita) {
+			lines.push(`│ RIGHT lens text: "${textoLenteDireita.trim()}"`);
+		}
+		if (textoLenteEsquerda) {
+			lines.push(`│ LEFT lens text: "${textoLenteEsquerda.trim()}"`);
+		}
+		lines.push('│  • Exact spelling/accents/casing, fully legible         │');
+		lines.push('│  • NO extra/missing/substituted characters              │');
+		lines.push('└─────────────────────────────────────────────────────────┘');
+		lines.push('');
+	}
 	lines.push('🚨 CRITICAL - OUTPUT DIMENSIONS REQUIREMENT:');
 	lines.push('┌─────────────────────────────────────────────────────────┐');
 	lines.push('│ OUTPUT: 1024x1024 photographic quality.                 │');

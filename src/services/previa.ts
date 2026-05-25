@@ -126,6 +126,7 @@ class PreviaService {
 				textoLenteDireita ?? undefined,
 				textoLenteEsquerda ?? undefined,
 				resolvedWatermarkMode,
+				productColor,
 			);
 
 			// ── Montar mensagem (produto + logo opcional + watermark opcional) ──
