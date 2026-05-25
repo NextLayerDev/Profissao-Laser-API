@@ -55,6 +55,23 @@ class UsersRepository {
 		if (error) throw error;
 		return data;
 	}
+
+	/**
+	 * Resolve o cargo (grants/isSuperAdmin) + overrides de um usuário staff,
+	 * buscando por id OU email (mesma lógica do authenticateAdmin).
+	 */
+	async getEffectivePermissions(authId: string, email?: string | null) {
+		const filter = email
+			? `id.eq.${authId},email.eq.${email}`
+			: `id.eq.${authId}`;
+		const { data, error } = await supabase
+			.from('Users')
+			.select('overrides, Permissions(grants, isSuperAdmin)')
+			.or(filter)
+			.maybeSingle();
+		if (error) throw error;
+		return data;
+	}
 }
 
 export const usersRepository = new UsersRepository();

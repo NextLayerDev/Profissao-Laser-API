@@ -34,6 +34,7 @@ import { promoLinkRoute } from './routes/promo-link.js';
 import { provisioningRoute } from './routes/provisioning.js';
 import { purchaseRoute } from './routes/purchase.js';
 import { quizRoute } from './routes/quiz.js';
+import { roleRoute } from './routes/role.js';
 import { savedLessonRoute } from './routes/saved-lesson.js';
 import { supportChatRoute } from './routes/support-chat.js';
 import { systemClassRoute } from './routes/system-class.js';
@@ -74,6 +75,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(globalPromoLinkRoute);
 	app.register(purchaseRoute);
 	app.register(quizRoute);
+	app.register(roleRoute);
 	app.register(userRoute);
 	app.register(progressRoute);
 	app.register(savedLessonRoute);
