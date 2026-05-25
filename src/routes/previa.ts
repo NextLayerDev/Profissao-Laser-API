@@ -10,7 +10,7 @@ import {
 	getPreviaUsageUsersController,
 	updatePreviaController,
 } from '../controllers/previa.js';
-import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
+import { authenticateCustomer, requireModule } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import {
 	generatePreviaSchema,
@@ -131,7 +131,7 @@ export async function previaRoute(server: FastifyInstance) {
 	server.get(
 		'/previas/usage/stats',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('previas')],
 			schema: {
 				description:
 					'Stats globais de uso da feature de prévias IA (admin). Retorna: prévias geradas hoje (BRT), customers ativos hoje, total de customers que já usaram.',
@@ -150,7 +150,7 @@ export async function previaRoute(server: FastifyInstance) {
 	server.get(
 		'/previas/usage/users',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('previas')],
 			schema: {
 				description:
 					'Lista paginada de customers que geraram prévias, com totalPrevias, todayPrevias e lastGeneratedAt. Suporta busca por nome, email ou customerId. Apenas staff.',

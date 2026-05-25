@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticateAdmin } from '@/middleware/auth.js';
+import { requireModule } from '@/middleware/auth.js';
 import { usersController } from '../controllers/user.js';
 import { ErrorSchema } from '../types/error.js';
 import { userSchema, userUpdateSchema } from '../types/user.js';
@@ -9,7 +9,7 @@ export async function userRoute(server: FastifyInstance) {
 	server.get(
 		'/users',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Get all users',
 				response: {
@@ -25,7 +25,7 @@ export async function userRoute(server: FastifyInstance) {
 	server.get(
 		'/user/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Get a user by ID',
 				params: z.object({ id: z.uuid() }),
@@ -43,7 +43,7 @@ export async function userRoute(server: FastifyInstance) {
 	server.patch(
 		'/user/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Update a user by ID',
 				params: z.object({ id: z.uuid() }),
@@ -62,7 +62,7 @@ export async function userRoute(server: FastifyInstance) {
 	server.delete(
 		'/user/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Delete a user by ID',
 				params: z.object({ id: z.uuid() }),
@@ -80,7 +80,7 @@ export async function userRoute(server: FastifyInstance) {
 	server.patch(
 		'/colaborador/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Update a colaborador by ID',
 				params: z.object({ id: z.uuid() }),
@@ -100,7 +100,7 @@ export async function userRoute(server: FastifyInstance) {
 	server.delete(
 		'/colaborador/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Delete a colaborador by ID',
 				params: z.object({ id: z.uuid() }),
@@ -119,7 +119,7 @@ export async function userRoute(server: FastifyInstance) {
 	server.get(
 		'/user/:id/permissions',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('acessos')],
 			schema: {
 				description: 'Get permissions of a user',
 				params: z.object({ id: z.uuid() }),

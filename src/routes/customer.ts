@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { customerController } from '../controllers/customer.js';
-import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
+import { authenticateCustomer, requireModule } from '../middleware/auth.js';
 import { customerSchema } from '../types/customer.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -60,7 +60,7 @@ export async function customerRoute(server: FastifyInstance) {
 	server.delete(
 		'/customer',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('alunos')],
 			schema: {
 				description: 'Delete a customer by ID',
 				body: z.object({ id: z.string() }),
@@ -78,7 +78,7 @@ export async function customerRoute(server: FastifyInstance) {
 	server.patch(
 		'/customer/:id/block',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('alunos')],
 			schema: {
 				description: 'Block or unblock a customer',
 				params: z.object({ id: z.string() }),
@@ -96,7 +96,7 @@ export async function customerRoute(server: FastifyInstance) {
 	server.patch(
 		'/customer/:id/password',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('alunos')],
 			schema: {
 				description: 'Change the password of a customer',
 				params: z.object({ id: z.string() }),
@@ -164,7 +164,7 @@ export async function customerRoute(server: FastifyInstance) {
 	server.post(
 		'/customer/subscription/cancel',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('alunos')],
 			schema: {
 				description:
 					'Cancel a customer subscription at period end by email and subscription ID (Admin).',

@@ -13,7 +13,7 @@ import {
 	uploadProductImageController,
 	uploadVariantImageController,
 } from '../controllers/laser-product.js';
-import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
+import { authenticateCustomer, requireModule } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import {
 	createLaserProductSchema,
@@ -74,7 +74,7 @@ export async function laserProductRoute(server: FastifyInstance) {
 	server.post(
 		'/laser-products',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('previas')],
 			schema: {
 				description: 'Cria novo produto no catálogo (apenas staff).',
 				body: createLaserProductSchema,
@@ -94,7 +94,7 @@ export async function laserProductRoute(server: FastifyInstance) {
 	server.patch(
 		'/laser-products/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('previas')],
 			schema: {
 				description: 'Atualiza produto (apenas staff).',
 				params: z.object({ id: z.string() }),
@@ -116,7 +116,7 @@ export async function laserProductRoute(server: FastifyInstance) {
 	server.delete(
 		'/laser-products/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('previas')],
 			schema: {
 				description:
 					'Remove produto, suas variants e os arquivos de imagem associados no CDN.',
@@ -138,7 +138,7 @@ export async function laserProductRoute(server: FastifyInstance) {
 	server.post(
 		'/laser-products/:id/image',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('previas')],
 			schema: {
 				description: [
 					'Upload da foto do **produto** via **multipart/form-data**. Substitui a imagem antiga. As variants têm foto própria em `/variants/:variantId/image`.',
@@ -186,7 +186,7 @@ export async function laserProductRoute(server: FastifyInstance) {
 	server.post(
 		'/laser-products/:id/variants',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('previas')],
 			schema: {
 				description:
 					'Cria nova variant. Pelo menos colorName OU tipo deve ser informado.',
@@ -209,7 +209,7 @@ export async function laserProductRoute(server: FastifyInstance) {
 	server.patch(
 		'/laser-products/:id/variants/:variantId',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('previas')],
 			schema: {
 				description: 'Atualiza variant (apenas staff).',
 				params: z.object({ id: z.string(), variantId: z.string() }),
@@ -231,7 +231,7 @@ export async function laserProductRoute(server: FastifyInstance) {
 	server.post(
 		'/laser-products/:id/variants/:variantId/image',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('previas')],
 			schema: {
 				description: [
 					'Upload da foto da variant via **multipart/form-data**. Substitui imagem antiga.',
@@ -260,7 +260,7 @@ export async function laserProductRoute(server: FastifyInstance) {
 	server.delete(
 		'/laser-products/:id/variants/:variantId',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('previas')],
 			schema: {
 				description: 'Remove variant e arquivo de imagem associado.',
 				params: z.object({ id: z.string(), variantId: z.string() }),

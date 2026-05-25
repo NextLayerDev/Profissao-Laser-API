@@ -6,7 +6,7 @@ import {
 	listLaserLineTypesController,
 	updateLaserLineTypeController,
 } from '../controllers/laser-line-type.js';
-import { authenticate, authenticateAdmin } from '../middleware/auth.js';
+import { authenticate, requireModule } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import {
 	laserLineTypeSchema,
@@ -36,7 +36,7 @@ export async function laserLineTypeRoute(server: FastifyInstance) {
 	server.post(
 		'/laser-line-types',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description:
 					'Cria um tipo de linha com upload de imagem (multipart: file + software + name + order). Staff only.',
@@ -56,7 +56,7 @@ export async function laserLineTypeRoute(server: FastifyInstance) {
 	server.patch(
 		'/laser-line-types/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description:
 					'Atualiza tipo de linha. Multipart (com file) troca imagem; JSON puro só metadados. Staff only.',
@@ -77,7 +77,7 @@ export async function laserLineTypeRoute(server: FastifyInstance) {
 	server.delete(
 		'/laser-line-types/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('parametros')],
 			schema: {
 				description: 'Remove tipo de linha + imagem. Staff only.',
 				params: z.object({ id: z.string() }),

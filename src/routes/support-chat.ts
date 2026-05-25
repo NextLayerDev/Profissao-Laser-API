@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticateAdmin, authenticateCustomer } from '@/middleware/auth.js';
+import { authenticateCustomer, requireModule } from '@/middleware/auth.js';
 import {
 	adminCloseSupportChatController,
 	adminSendSupportMessageController,
@@ -30,7 +30,7 @@ export async function supportChatRoute(server: FastifyInstance) {
 	server.get(
 		'/support-chats/admin',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description:
 					'List all support chats, optionally by status (staff only).',
@@ -50,7 +50,7 @@ export async function supportChatRoute(server: FastifyInstance) {
 	server.get(
 		'/support-chats/admin/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Get a support chat with messages (staff only, polling).',
 				params: idParam,
@@ -70,7 +70,7 @@ export async function supportChatRoute(server: FastifyInstance) {
 	server.post(
 		'/support-chats/admin/:id/messages',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Attendant replies in a support chat (staff only).',
 				params: idParam,
@@ -90,7 +90,7 @@ export async function supportChatRoute(server: FastifyInstance) {
 	server.post(
 		'/support-chats/admin/:id/take-over',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Attendant takes over the conversation (staff only).',
 				params: idParam,
@@ -109,7 +109,7 @@ export async function supportChatRoute(server: FastifyInstance) {
 	server.post(
 		'/support-chats/admin/:id/close',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Close a support chat (staff only).',
 				params: idParam,
