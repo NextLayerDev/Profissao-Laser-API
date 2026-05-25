@@ -120,6 +120,7 @@ export const listParametersQuery = z.object({
 	thickness: z.string().optional(),
 	search: z.string().optional(),
 	mode: z.string().optional(),
+	software: z.string().optional(),
 });
 
 export const communityListQuery = listParametersQuery.extend({
