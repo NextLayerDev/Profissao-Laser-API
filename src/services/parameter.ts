@@ -40,10 +40,12 @@ async function enrichWithCounts(
 export const parameterService = {
 	async list(filters: ListParametersQuery, customerId: string | null) {
 		return withCapture(async () => {
-			const { data, total } = await parameterRepository.list(
-				filters,
-				customerId ?? undefined,
-			);
+			// Lista de gestão: retorna TODOS os parâmetros (catálogo compartilhado),
+			// não apenas os criados pelo usuário logado — antes filtrava por
+			// createdBy=usuário, então um cargo sem params criados via lista vazia
+			// mesmo tendo permissão. `customerId` é usado só para enriquecer com
+			// as interações (likes/saves) do usuário.
+			const { data, total } = await parameterRepository.list(filters);
 			const enriched = await enrichWithCounts(data, customerId);
 			return { data: enriched, total };
 		});
