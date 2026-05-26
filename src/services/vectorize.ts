@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
+import sharp from 'sharp';
 import { withCapture } from '@/lib/sentry.js';
 import {
 	uploadSvgFile,
 	uploadVectorOriginalImage,
 	uploadVectorPng,
 } from '../lib/storage.js';
-import { generateDxf, preprocessImage } from '../lib/vectorize.js';
+import { svgToDxf, vectorizeImage } from '../lib/vectorize.js';
 import { vectorRepository } from '../repositories/vector.js';
 import type { VectorizeParams } from '../types/vector.js';
 
@@ -22,22 +23,25 @@ export const vectorizeService = {
 			const { buffer, filename, mimetype, params } = input;
 			const id = crypto.randomUUID();
 
-			const [{ svgContent, pngBuffer, width, height }, originalUrl] =
-				await Promise.all([
-					preprocessImage(buffer, params),
-					uploadVectorOriginalImage(
-						buffer,
-						`${customerId}/${id}_original_${filename}`,
-						mimetype,
-					),
-				]);
+			// Vetoriza (motor Potrace) + sobe o original em paralelo
+			const [svgContent, originalUrl] = await Promise.all([
+				vectorizeImage(buffer, params),
+				uploadVectorOriginalImage(
+					buffer,
+					`${customerId}/${id}_original_${filename}`,
+					mimetype,
+				),
+			]);
+
+			// PNG = rasterização do SVG vetorizado (preview/download)
+			const pngBuffer = await sharp(Buffer.from(svgContent)).png().toBuffer();
 
 			const [svgUrl, pngUrl] = await Promise.all([
 				uploadSvgFile(svgContent, `${customerId}/${id}_${filename}.svg`),
 				uploadVectorPng(pngBuffer, `${customerId}/${id}_${filename}.png`),
 			]);
 
-			const dxfContent = generateDxf(width, height);
+			const dxfContent = svgToDxf(svgContent);
 
 			const record = await vectorRepository.create(customerId, {
 				original_name: filename,
@@ -47,7 +51,16 @@ export const vectorizeService = {
 				png_url: pngUrl,
 			});
 
-			return { ...record, dxfContent, pngUrl };
+			// Retorna o SVG inline (corrige o contrato com o front: preview/baixar/salvar)
+			return {
+				...record,
+				svgContent,
+				originalName: filename,
+				isColor: params.mode === 'posterize',
+				svgUrl,
+				pngUrl,
+				dxfContent,
+			};
 		});
 	},
 
@@ -94,17 +107,12 @@ export const vectorizeService = {
 				};
 			}
 
-			// DXF: fetch SVG to get dimensions then generate
+			// DXF: busca o SVG salvo e converte os paths em LWPOLYLINE
 			const svgRes = await fetch(vector.svg_url);
 			if (!svgRes.ok) throw new Error('Failed to fetch SVG');
 			const svgText = await svgRes.text();
 
-			const widthMatch = /width="(\d+)"/.exec(svgText);
-			const heightMatch = /height="(\d+)"/.exec(svgText);
-			const width = widthMatch ? Number(widthMatch[1]) : 800;
-			const height = heightMatch ? Number(heightMatch[1]) : 600;
-
-			const dxfContent = generateDxf(width, height);
+			const dxfContent = svgToDxf(svgText);
 			return {
 				type: 'content' as const,
 				content: dxfContent,

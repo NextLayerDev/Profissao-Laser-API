@@ -29,18 +29,85 @@ export const listVectorsQuery = z.object({
 	customerId: z.string().uuid().optional(),
 });
 
+// ─── Parâmetros do motor Potrace (porte do site_nextlayer) ───────────
+// Presets de qualidade (front): rapido / detalhado / svg → resolvem estes
+// campos. `mode` é o algoritmo Potrace (trace ou posterize).
 export const vectorizeParamsSchema = z.object({
-	mode: z.enum(['contorno', 'detalhado', 'preenchimento']).default('detalhado'),
-	detailLevel: z.coerce.number().int().min(0).max(100).default(50),
-	smoothing: z.coerce.number().int().min(0).max(100).default(0),
-	noiseReduction: z.coerce.number().int().min(0).max(100).default(0),
-	blackAndWhite: z.boolean().default(false),
-	invertColors: z.boolean().default(false),
+	// Preset de qualidade (rótulo p/ histórico; o front já envia os campos resolvidos)
+	preset: z.enum(['rapido', 'detalhado', 'svg']).optional(),
+	// Potrace base
+	turdSize: z.number().default(5),
+	optTolerance: z.number().default(0.2),
+	alphaMax: z.number().default(1),
+	drawingStyle: z.enum(['fill', 'stroke', 'outline']).default('fill'),
+	color: z.string().default('#000000'),
+	strokeWidth: z.number().default(1),
+	nonScalingStroke: z.boolean().default(false),
+	// Pré-processamento
+	threshold: z.number().int().min(0).max(255).default(128),
+	invert: z.boolean().default(false),
+	blur: z.number().nullable().default(null),
+	sharpen: z.boolean().default(false),
+	brightness: z.number().nullable().default(null),
+	contrast: z.number().nullable().default(null),
+	gamma: z.number().nullable().default(null),
+	// Potrace expostos
+	turnPolicy: z
+		.enum(['black', 'white', 'left', 'right', 'minority', 'majority'])
+		.nullable()
+		.default(null),
+	blackOnWhite: z.boolean().default(true),
+	// Posterize
+	mode: z.enum(['trace', 'posterize']).default('trace'),
+	posterizeLevels: z.number().int().min(2).max(10).default(4),
+	posterizeFillStrategy: z
+		.enum(['dominant', 'mean', 'median', 'spread'])
+		.default('dominant'),
+	posterizeRangeDistribution: z.enum(['auto', 'equal']).default('auto'),
+	// Dithering
+	ditherAlgorithm: z
+		.enum([
+			'floydSteinberg',
+			'atkinson',
+			'stucki',
+			'jarvis',
+			'sierra',
+			'ordered',
+			'halftone',
+		])
+		.nullable()
+		.default(null),
+	// Padrões de linha
+	linePattern: z
+		.enum([
+			'none',
+			'horizontal',
+			'vertical',
+			'diagonal45',
+			'diagonal135',
+			'crosshatch',
+			'diamondHatch',
+		])
+		.default('none'),
+	lineSpacing: z.number().default(3),
+	lineAngle: z.number().nullable().default(null),
+	// Saída / dimensões
+	dpi: z.number().int().nullable().default(null),
+	outputWidth: z.number().nullable().default(null),
+	outputHeight: z.number().nullable().default(null),
+	svgOptimize: z.boolean().default(false),
+	// Detecção de bordas
+	edgeDetection: z.enum(['none', 'sobel', 'canny']).default('none'),
 });
 
 export const vectorizeResultSchema = vectorSchema.extend({
-	dxfContent: z.string().optional(),
+	// Inline para o front pré-visualizar/baixar sem nova requisição
+	svgContent: z.string(),
+	originalName: z.string(),
+	isColor: z.boolean(),
+	svgUrl: z.string().optional(),
 	pngUrl: z.string().optional(),
+	dxfContent: z.string().optional(),
 });
 
 export const batchVectorizeResultSchema = z.object({

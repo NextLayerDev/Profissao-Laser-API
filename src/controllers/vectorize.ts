@@ -1,22 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { reserveToolUsage } from '../lib/tool-usage-guard.js';
-import { parseFormBoolean } from '../lib/vectorize.js';
+import { parseVectorizeParams } from '../lib/vectorize.js';
 import { vectorizeService } from '../services/vectorize.js';
-import type { VectorizeParams } from '../types/vector.js';
 import { mapCreditError } from './credit.js';
-
-function extractParams(fields: Record<string, string>): VectorizeParams {
-	return {
-		mode: (fields.mode as VectorizeParams['mode']) ?? 'detalhado',
-		detailLevel:
-			fields.detailLevel !== undefined ? Number(fields.detailLevel) : 50,
-		smoothing: fields.smoothing !== undefined ? Number(fields.smoothing) : 0,
-		noiseReduction:
-			fields.noiseReduction !== undefined ? Number(fields.noiseReduction) : 0,
-		blackAndWhite: parseFormBoolean(fields.blackAndWhite),
-		invertColors: parseFormBoolean(fields.invertColors),
-	};
-}
 
 export const vectorizeController = async (
 	request: FastifyRequest,
@@ -62,7 +48,7 @@ export const vectorizeController = async (
 		}
 
 		try {
-			const params = extractParams(fields);
+			const params = parseVectorizeParams(fields);
 			const { data: result, error } = await vectorizeService.vectorize(
 				customerId,
 				{ buffer: fileBuffer, filename, mimetype, params },
@@ -139,7 +125,7 @@ export const vectorizeBatchController = async (
 		}
 
 		try {
-			const params = extractParams(fields);
+			const params = parseVectorizeParams(fields);
 			const inputs = fileParts.map((f) => ({ ...f, params }));
 
 			const { data: result, error } = await vectorizeService.vectorizeBatch(
