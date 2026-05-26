@@ -47,12 +47,29 @@ interface ReserveParams {
 	 * (ex.: retries internos).
 	 */
 	idempotencyKey?: string;
+	/**
+	 * Conta de teste ilimitada: ignora cobrança de voxes E limite do tier
+	 * gratuito (sem débito, sem log). Definido a partir de
+	 * `request.isUnlimitedCustomer`.
+	 */
+	unlimited?: boolean;
 }
 
 export async function reserveToolUsage(
 	params: ReserveParams,
 ): Promise<ReservedToolUsage> {
 	const { customerId, feature, confirmed } = params;
+
+	// ── Conta de teste ilimitada: bypass total ───────────────────────
+	if (params.unlimited) {
+		return {
+			isFree: false,
+			balance: Number.POSITIVE_INFINITY,
+			commit: async () => {},
+			rollback: async () => {},
+		};
+	}
+
 	const { balance } = await creditService.getBalance(customerId);
 
 	// ── Tier gratuito ────────────────────────────────────────────────

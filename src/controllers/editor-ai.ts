@@ -34,6 +34,7 @@ export const editorAiController = async (
 			customerId,
 			feature: 'editor-ai',
 			confirmed,
+			unlimited: request.isUnlimitedCustomer,
 		});
 	} catch (err) {
 		return mapCreditError(err, reply);
@@ -66,6 +67,7 @@ export const editorRemoveBackgroundController = async (
 			customerId,
 			feature: 'editor-ai',
 			confirmed,
+			unlimited: request.isUnlimitedCustomer,
 		});
 	} catch (err) {
 		return mapCreditError(err, reply);

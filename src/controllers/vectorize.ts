@@ -55,6 +55,7 @@ export const vectorizeController = async (
 				customerId,
 				feature: 'vectorize',
 				confirmed,
+				unlimited: request.isUnlimitedCustomer,
 			});
 		} catch (err) {
 			return mapCreditError(err, reply);
@@ -131,6 +132,7 @@ export const vectorizeBatchController = async (
 				customerId,
 				feature: 'vectorize',
 				confirmed,
+				unlimited: request.isUnlimitedCustomer,
 			});
 		} catch (err) {
 			return mapCreditError(err, reply);
