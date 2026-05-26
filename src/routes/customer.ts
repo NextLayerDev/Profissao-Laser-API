@@ -111,6 +111,28 @@ export async function customerRoute(server: FastifyInstance) {
 		customerController.changePassword,
 	);
 
+	server.patch(
+		'/customer/:id/test-unlimited',
+		{
+			preHandler: [requireModule('alunos')],
+			schema: {
+				description:
+					'Marca/desmarca um customer como conta de teste ilimitada.',
+				params: z.object({ id: z.string() }),
+				body: z.object({ unlimited: z.boolean() }),
+				response: {
+					200: z.object({
+						message: z.string(),
+						isTestUnlimited: z.boolean(),
+					}),
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+			},
+		},
+		customerController.setTestUnlimited,
+	);
+
 	server.get(
 		'/me/subscription',
 		{

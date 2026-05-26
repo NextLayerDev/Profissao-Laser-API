@@ -168,6 +168,21 @@ export const customerService = {
 		});
 	},
 
+	async setTestUnlimited(id: string, unlimited: boolean) {
+		return withCapture(async () => {
+			const { error } = await customerRepository.updateCustomer(id, {
+				isTestUnlimited: unlimited,
+			});
+			if (error) throw new Error(error.message);
+			return {
+				message: unlimited
+					? 'Conta marcada como teste ilimitada'
+					: 'Conta teste removida',
+				isTestUnlimited: unlimited,
+			};
+		});
+	},
+
 	async changePassword(id: string, password: string) {
 		return withCapture(async () => {
 			const { error: authError } = await supabase.auth.admin.updateUserById(
