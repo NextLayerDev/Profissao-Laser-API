@@ -147,7 +147,7 @@ export const authenticateCustomer = async (
 
 	const { data: customer, error: customerError } = await supabase
 		.from('Customers')
-		.select('id, name')
+		.select('id, name, isTestUnlimited')
 		.or(`id.eq.${user.id},email.eq.${user.email}`)
 		.maybeSingle();
 
@@ -164,6 +164,8 @@ export const authenticateCustomer = async (
 		name: customer.name,
 		image: null,
 	};
+	request.isUnlimitedCustomer =
+		(customer as { isTestUnlimited?: boolean }).isTestUnlimited === true;
 };
 
 export const authenticateVectorizacao = async (
@@ -187,7 +189,7 @@ export const authenticateVectorizacao = async (
 
 	const { data: customer, error: customerError } = await supabase
 		.from('Customers')
-		.select('id, name, email')
+		.select('id, name, email, isTestUnlimited')
 		.or(`id.eq.${user.id},email.eq.${user.email}`)
 		.maybeSingle();
 
@@ -197,6 +199,17 @@ export const authenticateVectorizacao = async (
 			error: 'Forbidden',
 			message: 'Customer not found',
 		});
+	}
+
+	// Conta de teste ilimitada: libera sem checar assinatura.
+	if ((customer as { isTestUnlimited?: boolean }).isTestUnlimited === true) {
+		request.currentCustomer = {
+			id: customer.id,
+			name: customer.name,
+			image: null,
+		};
+		request.isUnlimitedCustomer = true;
+		return;
 	}
 
 	const customerEmail =
@@ -294,7 +307,7 @@ export const authenticateProgress = async (
 	// Customer: set currentCustomer
 	const { data: customer, error } = await supabase
 		.from('Customers')
-		.select('id, name')
+		.select('id, name, isTestUnlimited')
 		.or(`id.eq.${user.id},email.eq.${user.email}`)
 		.maybeSingle();
 
@@ -311,6 +324,8 @@ export const authenticateProgress = async (
 		name: customer.name,
 		image: null,
 	};
+	request.isUnlimitedCustomer =
+		(customer as { isTestUnlimited?: boolean }).isTestUnlimited === true;
 };
 
 export const authenticateCommunity = async (
@@ -338,6 +353,7 @@ export const authenticateCommunity = async (
 		.select(`
 			id,
 			name,
+			isTestUnlimited,
 			pl_community_profile (
 				image
 			)
@@ -351,6 +367,17 @@ export const authenticateCommunity = async (
 			error: 'Forbidden',
 			message: 'Customer not found',
 		});
+	}
+
+	// Conta de teste ilimitada: libera sem checar assinatura.
+	if ((customer as { isTestUnlimited?: boolean }).isTestUnlimited === true) {
+		request.currentCustomer = {
+			id: customer.id,
+			name: customer.name,
+			image: null,
+		};
+		request.isUnlimitedCustomer = true;
+		return;
 	}
 
 	// Verify active subscription in a class with comunidade: true

@@ -9,6 +9,7 @@ export const customerSchema = z.object({
 	password: z.string().min(6),
 	role: z.string().optional(),
 	phone: z.string().nullish(),
+	isTestUnlimited: z.boolean().optional(),
 });
 
 export type Customer = z.infer<typeof customerSchema>;

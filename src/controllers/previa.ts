@@ -37,7 +37,11 @@ export const generatePreviaController = async (
 			return reply.status(403).send({ message: 'Customer not found' });
 		}
 		const body = generatePreviaSchema.parse(request.body);
-		const previa = await previaService.generate(customerId, body);
+		const previa = await previaService.generate(
+			customerId,
+			body,
+			request.isUnlimitedCustomer,
+		);
 		return reply.status(201).send(previa);
 	} catch (err) {
 		// Free-tier / créditos / confirmação → 402/429 estruturados

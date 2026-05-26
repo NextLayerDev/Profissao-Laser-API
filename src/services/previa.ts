@@ -22,6 +22,7 @@ class PreviaService {
 	async generate(
 		customerId: string,
 		body: GeneratePreviaInput,
+		unlimited?: boolean,
 	): Promise<Previa> {
 		const {
 			productVariantId,
@@ -44,6 +45,7 @@ class PreviaService {
 			customerId,
 			feature: 'previa',
 			confirmed: body.useCredits === true,
+			unlimited,
 		});
 
 		try {

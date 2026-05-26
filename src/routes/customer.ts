@@ -138,6 +138,23 @@ export async function customerRoute(server: FastifyInstance) {
 		customerController.getMySubscription,
 	);
 
+	server.get(
+		'/me/unlimited',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Whether the authenticated customer is an unlimited test account.',
+				response: {
+					200: z.object({ unlimited: z.boolean() }),
+					401: ErrorSchema,
+				},
+				tags: ['Customer'],
+			},
+		},
+		async (request) => ({ unlimited: request.isUnlimitedCustomer === true }),
+	);
+
 	server.post(
 		'/me/subscription/cancel',
 		{

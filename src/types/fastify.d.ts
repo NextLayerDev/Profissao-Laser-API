@@ -7,5 +7,7 @@ declare module 'fastify' {
 		/** Permissões efetivas do staff (preenchidas por authenticateAdmin). */
 		effectivePermissions?: string[];
 		isSuperAdminUser?: boolean;
+		/** Customer marcado como teste ilimitado (preenchido pelos middlewares de customer). */
+		isUnlimitedCustomer?: boolean;
 	}
 }
