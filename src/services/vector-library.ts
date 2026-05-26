@@ -93,6 +93,11 @@ export const vectorLibraryService = {
 		mimetype: string,
 		size: number | null,
 		customName?: string,
+		config?: {
+			category?: string | null;
+			formats?: string[] | null;
+			featured?: boolean;
+		},
 	) {
 		return withCapture(async () => {
 			const ext = filename.split('.').pop() ?? 'bin';
@@ -113,12 +118,23 @@ export const vectorLibraryService = {
 				mimeType: mimetype,
 				size,
 				order,
+				category: config?.category ?? null,
+				formats: config?.formats ?? null,
+				featured: config?.featured ?? false,
 			});
 		});
 	},
 
-	async updateFile(id: string, name: string) {
-		return withCapture(() => vectorLibraryRepository.updateFile(id, name));
+	async updateFile(
+		id: string,
+		data: {
+			name?: string;
+			category?: string | null;
+			formats?: string[] | null;
+			featured?: boolean;
+		},
+	) {
+		return withCapture(() => vectorLibraryRepository.updateFile(id, data));
 	},
 
 	async deleteFile(id: string) {

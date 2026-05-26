@@ -78,7 +78,10 @@ export const updateFolderSchema = z.object({
 });
 
 export const updateFileSchema = z.object({
-	name: z.string(),
+	name: z.string().min(1).optional(),
+	category: z.string().nullable().optional(),
+	formats: z.array(z.string()).nullable().optional(),
+	featured: z.boolean().optional(),
 });
 
 export const bulkUpdateFilesSchema = z.object({
