@@ -1,17 +1,13 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
-	CreditConfirmationRequiredError,
-	InsufficientCreditsError,
-} from '../lib/credit-errors.js';
-import { FreeTierQuotaError } from '../lib/free-tier-quota.js';
-import {
 	FONT_OPTIONS,
 	LASER_OPTIONS,
 	LASER_RANGES,
 } from '../lib/previa-options.js';
+import { UpvoxApiError } from '../lib/upvox-client.js';
+import { replyUpvoxError } from '../lib/upvox-reply.js';
 import { previaService } from '../services/previa.js';
 import { generatePreviaSchema, updatePreviaSchema } from '../types/previa.js';
-import { mapCreditError } from './credit.js';
 
 const VALIDATION_MESSAGES = new Set([
 	'Imagens base e produto são obrigatórias',
@@ -36,41 +32,26 @@ export const generatePreviaController = async (
 		if (!customerId) {
 			return reply.status(403).send({ message: 'Customer not found' });
 		}
+		const jwt = request.headers.authorization ?? '';
+		if (!jwt) {
+			return reply
+				.status(401)
+				.send({ message: 'Missing Authorization header' });
+		}
 		const body = generatePreviaSchema.parse(request.body);
 		const previa = await previaService.generate(
 			customerId,
+			jwt,
 			body,
 			request.isUnlimitedCustomer,
 		);
 		return reply.status(201).send(previa);
 	} catch (err) {
-		// Free-tier / créditos / confirmação → 402/429 estruturados
-		if (
-			err instanceof FreeTierQuotaError ||
-			err instanceof CreditConfirmationRequiredError ||
-			err instanceof InsufficientCreditsError
-		) {
-			return mapCreditError(err, reply);
+		if (err instanceof UpvoxApiError) {
+			return replyUpvoxError(err, reply);
 		}
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(statusFor(message)).send({ message });
-	}
-};
-
-export const getPreviaQuotaController = async (
-	request: FastifyRequest,
-	reply: FastifyReply,
-) => {
-	try {
-		const customerId = request.currentCustomer?.id;
-		if (!customerId) {
-			return reply.status(403).send({ message: 'Customer not found' });
-		}
-		const quota = await previaService.getQuota(customerId);
-		return reply.send(quota);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
-		return reply.status(500).send({ message });
 	}
 };
 

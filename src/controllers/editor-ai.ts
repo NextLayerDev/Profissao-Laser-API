@@ -1,12 +1,13 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { reserveToolUsage } from '../lib/tool-usage-guard.js';
+import { UpvoxApiError } from '../lib/upvox-client.js';
+import { reserveUpvoxTool } from '../lib/upvox-guard.js';
+import { replyUpvoxError } from '../lib/upvox-reply.js';
 import { editorAiService } from '../services/editor-ai.js';
 import {
 	applyColorRequestSchema,
 	editorAiRequestSchema,
 	removeBackgroundRequestSchema,
 } from '../types/editor-ai.js';
-import { mapCreditError } from './credit.js';
 
 function statusFor(message: string): number {
 	if (message.includes('Limite de requisições')) return 429;
@@ -26,27 +27,40 @@ export const editorAiController = async (
 	if (!customerId) {
 		return reply.status(403).send({ message: 'Customer not found' });
 	}
-	const confirmed =
-		(request.body as { useCredits?: boolean } | undefined)?.useCredits === true;
-	let usage: Awaited<ReturnType<typeof reserveToolUsage>>;
+	const jwt = request.headers.authorization ?? '';
+	if (!jwt) {
+		return reply.status(401).send({ message: 'Missing Authorization header' });
+	}
+
+	let body: ReturnType<typeof editorAiRequestSchema.parse>;
 	try {
-		usage = await reserveToolUsage({
+		body = editorAiRequestSchema.parse(request.body);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Invalid payload';
+		return reply.status(400).send({ message });
+	}
+
+	let usage: Awaited<ReturnType<typeof reserveUpvoxTool>>;
+	try {
+		usage = await reserveUpvoxTool({
+			jwt,
 			customerId,
-			feature: 'editor-ai',
-			confirmed,
+			toolKey: body.toolKey,
+			courseSlug: body.courseSlug,
 			unlimited: request.isUnlimitedCustomer,
 		});
 	} catch (err) {
-		return mapCreditError(err, reply);
+		return replyUpvoxError(err, reply);
 	}
+
 	try {
-		const body = editorAiRequestSchema.parse(request.body);
 		const result = await editorAiService.generateOrEdit(body);
 		await usage.commit();
 		return reply.send(result);
 	} catch (err) {
-		await usage.rollback();
 		const message = err instanceof Error ? err.message : 'Unknown error';
+		await usage.rollback(`editor-ai.generateOrEdit: ${message}`);
+		if (err instanceof UpvoxApiError) return replyUpvoxError(err, reply);
 		return reply.status(statusFor(message)).send({ message });
 	}
 };
@@ -59,27 +73,40 @@ export const editorRemoveBackgroundController = async (
 	if (!customerId) {
 		return reply.status(403).send({ message: 'Customer not found' });
 	}
-	const confirmed =
-		(request.body as { useCredits?: boolean } | undefined)?.useCredits === true;
-	let usage: Awaited<ReturnType<typeof reserveToolUsage>>;
+	const jwt = request.headers.authorization ?? '';
+	if (!jwt) {
+		return reply.status(401).send({ message: 'Missing Authorization header' });
+	}
+
+	let body: ReturnType<typeof removeBackgroundRequestSchema.parse>;
 	try {
-		usage = await reserveToolUsage({
+		body = removeBackgroundRequestSchema.parse(request.body);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Invalid payload';
+		return reply.status(400).send({ message });
+	}
+
+	let usage: Awaited<ReturnType<typeof reserveUpvoxTool>>;
+	try {
+		usage = await reserveUpvoxTool({
+			jwt,
 			customerId,
-			feature: 'editor-ai',
-			confirmed,
+			toolKey: body.toolKey,
+			courseSlug: body.courseSlug,
 			unlimited: request.isUnlimitedCustomer,
 		});
 	} catch (err) {
-		return mapCreditError(err, reply);
+		return replyUpvoxError(err, reply);
 	}
+
 	try {
-		const body = removeBackgroundRequestSchema.parse(request.body);
 		const result = await editorAiService.removeBackground(body);
 		await usage.commit();
 		return reply.send(result);
 	} catch (err) {
-		await usage.rollback();
 		const message = err instanceof Error ? err.message : 'Unknown error';
+		await usage.rollback(`editor-ai.removeBackground: ${message}`);
+		if (err instanceof UpvoxApiError) return replyUpvoxError(err, reply);
 		return reply.status(statusFor(message)).send({ message });
 	}
 };

@@ -5,7 +5,6 @@ import {
 	generatePreviaController,
 	getPreviaHistoryController,
 	getPreviaOptionsController,
-	getPreviaQuotaController,
 	getPreviaUsageStatsController,
 	getPreviaUsageUsersController,
 	updatePreviaController,
@@ -17,8 +16,6 @@ import {
 	previaHistoryQuerySchema,
 	previaHistoryResponseSchema,
 	previaOptionsResponseSchema,
-	previaQuotaErrorSchema,
-	previaQuotaSchema,
 	previaSchema,
 	previaUsageStatsSchema,
 	previaUsageUsersQuerySchema,
@@ -33,39 +30,23 @@ export async function previaRoute(server: FastifyInstance) {
 			preHandler: [authenticateCustomer],
 			schema: {
 				description:
-					'Gera uma prévia fotorrealista de gravação a laser via IA (Nano Banana 2 / Gemini 3 Pro Image). Salva a imagem gerada e retorna o registro completo. Limite de 5 gerações por dia por customer (reset 00:00 BRT) — ao bater retorna 429 com payload sugerindo upgrade.',
+					'Gera uma prévia fotorrealista de gravação a laser via IA. Cobra voxes pela upvox-api (POST /v1/tool/:toolKey/invoke) — body deve incluir toolKey + courseSlug.',
 				body: generatePreviaSchema,
 				response: {
 					201: previaSchema,
 					400: ErrorSchema,
+					401: ErrorSchema,
+					402: ErrorSchema,
 					403: ErrorSchema,
-					429: previaQuotaErrorSchema,
+					404: ErrorSchema,
 					500: ErrorSchema,
+					502: ErrorSchema,
 				},
 				tags: ['Previas'],
 				security: [{ bearerAuth: [] }],
 			},
 		},
 		generatePreviaController,
-	);
-
-	server.get(
-		'/previas/quota',
-		{
-			preHandler: [authenticateCustomer],
-			schema: {
-				description:
-					'Retorna o uso diário de prévias do customer logado: limite, usados, restantes e quando reseta. Útil para o front mostrar o contador antes do usuário tentar gerar.',
-				response: {
-					200: previaQuotaSchema,
-					403: ErrorSchema,
-					500: ErrorSchema,
-				},
-				tags: ['Previas'],
-				security: [{ bearerAuth: [] }],
-			},
-		},
-		getPreviaQuotaController,
 	);
 
 	server.get(

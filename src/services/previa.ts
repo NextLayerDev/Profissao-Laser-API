@@ -6,21 +6,20 @@ import {
 } from '../lib/openrouter.js';
 import { generatePrompt, imageUrlToBase64 } from '../lib/previa-prompt.js';
 import { deletePreviaImageByUrl, uploadPreviaImage } from '../lib/storage.js';
-import { reserveToolUsage } from '../lib/tool-usage-guard.js';
+import { reserveUpvoxTool } from '../lib/upvox-guard.js';
 import { previaRepository } from '../repositories/previa.js';
 import { customerWatermarkRepository } from '../repositories/watermark.js';
-import type { FeatureQuota } from '../types/credit.js';
 import type {
 	GeneratePreviaInput,
 	Previa,
 	UpdatePreviaInput,
 } from '../types/previa.js';
-import { creditService } from './credit.js';
 import { laserProductService } from './laser-product.js';
 
 class PreviaService {
 	async generate(
 		customerId: string,
+		jwt: string,
 		body: GeneratePreviaInput,
 		unlimited?: boolean,
 	): Promise<Previa> {
@@ -40,11 +39,12 @@ class PreviaService {
 			notes,
 		} = body;
 
-		// ── Reserva uso (free-tier 2/semana se balance 0, senão cobra voxes). ───
-		const usage = await reserveToolUsage({
+		// ── Reserva uso na upvox-api (entitlement + capacity + cobrança). ──────
+		const usage = await reserveUpvoxTool({
+			jwt,
 			customerId,
-			feature: 'previa',
-			confirmed: body.useCredits === true,
+			toolKey: body.toolKey,
+			courseSlug: body.courseSlug,
 			unlimited,
 		});
 
@@ -222,7 +222,8 @@ class PreviaService {
 			await usage.commit();
 			return previa;
 		} catch (err) {
-			await usage.rollback();
+			const reason = err instanceof Error ? err.message : String(err);
+			await usage.rollback(`previa.generate: ${reason}`);
 			throw err;
 		}
 	}
@@ -268,10 +269,6 @@ class PreviaService {
 			limit,
 		});
 		return { data, total, page, limit };
-	}
-
-	async getQuota(customerId: string): Promise<FeatureQuota> {
-		return creditService.getFeatureQuota(customerId, 'previa');
 	}
 
 	async update(

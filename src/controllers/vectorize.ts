@@ -1,9 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { reserveToolUsage } from '../lib/tool-usage-guard.js';
+import { UpvoxApiError } from '../lib/upvox-client.js';
+import { reserveUpvoxTool } from '../lib/upvox-guard.js';
+import { replyUpvoxError } from '../lib/upvox-reply.js';
 import { parseFormBoolean } from '../lib/vectorize.js';
 import { vectorizeService } from '../services/vectorize.js';
 import type { VectorizeParams } from '../types/vector.js';
-import { mapCreditError } from './credit.js';
 
 function extractParams(fields: Record<string, string>): VectorizeParams {
 	return {
@@ -18,6 +19,21 @@ function extractParams(fields: Record<string, string>): VectorizeParams {
 	};
 }
 
+function requireUpvoxFields(
+	fields: Record<string, string>,
+	reply: FastifyReply,
+): { toolKey: string; courseSlug: string } | null {
+	const toolKey = fields.toolKey;
+	const courseSlug = fields.courseSlug;
+	if (!toolKey || !courseSlug) {
+		reply
+			.status(400)
+			.send({ message: 'toolKey e courseSlug são obrigatórios' });
+		return null;
+	}
+	return { toolKey, courseSlug };
+}
+
 export const vectorizeController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
@@ -26,6 +42,12 @@ export const vectorizeController = async (
 		const customerId = request.currentCustomer?.id;
 		if (!customerId) {
 			return reply.status(403).send({ message: 'Customer not found' });
+		}
+		const jwt = request.headers.authorization ?? '';
+		if (!jwt) {
+			return reply
+				.status(401)
+				.send({ message: 'Missing Authorization header' });
 		}
 
 		let fileBuffer: Buffer | null = null;
@@ -47,18 +69,20 @@ export const vectorizeController = async (
 			return reply.status(400).send({ message: 'File is required' });
 		}
 
-		// useCredits arrives as a multipart form field string
-		const confirmed = fields.useCredits === 'true';
-		let usage: Awaited<ReturnType<typeof reserveToolUsage>>;
+		const upvoxFields = requireUpvoxFields(fields, reply);
+		if (!upvoxFields) return;
+
+		let usage: Awaited<ReturnType<typeof reserveUpvoxTool>>;
 		try {
-			usage = await reserveToolUsage({
+			usage = await reserveUpvoxTool({
+				jwt,
 				customerId,
-				feature: 'vectorize',
-				confirmed,
+				toolKey: upvoxFields.toolKey,
+				courseSlug: upvoxFields.courseSlug,
 				unlimited: request.isUnlimitedCustomer,
 			});
 		} catch (err) {
-			return mapCreditError(err, reply);
+			return replyUpvoxError(err, reply);
 		}
 
 		try {
@@ -69,20 +93,21 @@ export const vectorizeController = async (
 			);
 
 			if (error) {
-				await usage.rollback();
 				const message =
 					error instanceof Error ? error.message : 'Unknown error';
+				await usage.rollback(`vectorize: ${message}`);
 				return reply.status(500).send({ message });
 			}
 
 			await usage.commit();
 			return reply.status(201).send(result);
 		} catch (err) {
-			await usage.rollback();
 			const message = err instanceof Error ? err.message : 'Unknown error';
+			await usage.rollback(`vectorize: ${message}`);
 			return reply.status(500).send({ message });
 		}
 	} catch (err) {
+		if (err instanceof UpvoxApiError) return replyUpvoxError(err, reply);
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
@@ -96,6 +121,12 @@ export const vectorizeBatchController = async (
 		const customerId = request.currentCustomer?.id;
 		if (!customerId) {
 			return reply.status(403).send({ message: 'Customer not found' });
+		}
+		const jwt = request.headers.authorization ?? '';
+		if (!jwt) {
+			return reply
+				.status(401)
+				.send({ message: 'Missing Authorization header' });
 		}
 
 		const fileParts: Array<{
@@ -124,18 +155,20 @@ export const vectorizeBatchController = async (
 				.send({ message: 'At least one file is required' });
 		}
 
-		// useCredits arrives as a multipart form field string
-		const confirmed = fields.useCredits === 'true';
-		let usage: Awaited<ReturnType<typeof reserveToolUsage>>;
+		const upvoxFields = requireUpvoxFields(fields, reply);
+		if (!upvoxFields) return;
+
+		let usage: Awaited<ReturnType<typeof reserveUpvoxTool>>;
 		try {
-			usage = await reserveToolUsage({
+			usage = await reserveUpvoxTool({
+				jwt,
 				customerId,
-				feature: 'vectorize',
-				confirmed,
+				toolKey: upvoxFields.toolKey,
+				courseSlug: upvoxFields.courseSlug,
 				unlimited: request.isUnlimitedCustomer,
 			});
 		} catch (err) {
-			return mapCreditError(err, reply);
+			return replyUpvoxError(err, reply);
 		}
 
 		try {
@@ -148,20 +181,21 @@ export const vectorizeBatchController = async (
 			);
 
 			if (error) {
-				await usage.rollback();
 				const message =
 					error instanceof Error ? error.message : 'Unknown error';
+				await usage.rollback(`vectorizeBatch: ${message}`);
 				return reply.status(500).send({ message });
 			}
 
 			await usage.commit();
 			return reply.status(201).send(result);
 		} catch (err) {
-			await usage.rollback();
 			const message = err instanceof Error ? err.message : 'Unknown error';
+			await usage.rollback(`vectorizeBatch: ${message}`);
 			return reply.status(500).send({ message });
 		}
 	} catch (err) {
+		if (err instanceof UpvoxApiError) return replyUpvoxError(err, reply);
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
