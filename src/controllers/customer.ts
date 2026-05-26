@@ -78,6 +78,27 @@ class CustomerController {
 		reply.status(200).send(result);
 	}
 
+	async setTestUnlimited(
+		request: FastifyRequest<{
+			Params: { id: string };
+			Body: { unlimited: boolean };
+		}>,
+		reply: FastifyReply,
+	) {
+		const { id } = request.params;
+		const { unlimited } = request.body;
+		const { data: result, error } = await customerService.setTestUnlimited(
+			id,
+			unlimited,
+		);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
+		reply.status(200).send(result);
+	}
+
 	async changePassword(
 		request: FastifyRequest<{
 			Params: { id: string };
