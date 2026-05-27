@@ -16,6 +16,18 @@ CREATE TABLE IF NOT EXISTS public.pl_community_event (
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Idempotente: garante as colunas novas mesmo quando a tabela já existia numa
+-- versão antiga (o CREATE TABLE IF NOT EXISTS acima NÃO adiciona colunas a uma
+-- tabela pré-existente). Corrige o 400 ao criar evento:
+-- "Could not find the 'waitingRoomOpensMinutesBefore' column ... in the schema cache".
+ALTER TABLE public.pl_community_event
+  ADD COLUMN IF NOT EXISTS "streamUrl" TEXT,
+  ADD COLUMN IF NOT EXISTS "streamProvider" TEXT,
+  ADD COLUMN IF NOT EXISTS "waitingRoomOpensMinutesBefore" INTEGER NOT NULL DEFAULT 15,
+  ADD COLUMN IF NOT EXISTS "hostId" UUID,
+  ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 CREATE INDEX IF NOT EXISTS idx_pl_community_event_date ON public.pl_community_event (date);
 
 -- Presença na sala de espera. Linhas com leftAt NULL = customer ativo no momento.
