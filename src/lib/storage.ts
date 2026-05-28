@@ -72,6 +72,14 @@ export async function uploadCommunityFile(
 	return upload('community-files', buffer, path, mimetype);
 }
 
+export async function uploadCustomerAvatar(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('customer-avatars', buffer, path, mimetype);
+}
+
 export async function uploadDoubtFile(
 	buffer: Buffer,
 	path: string,
