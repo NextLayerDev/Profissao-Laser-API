@@ -17,7 +17,7 @@ import {
 export function mapCreditError(err: unknown, reply: FastifyReply) {
 	if (err instanceof FreeTierQuotaError) {
 		return reply.status(429).send({
-			message: `Limite gratuito de ${err.limit} usos atingido. Compre voxes para continuar.`,
+			message: `Limite gratuito de ${err.limit} usos atingido. Compre voxxys para continuar.`,
 			code: 'FREE_TIER_LIMIT_REACHED',
 			feature: err.feature,
 			limit: err.limit,
