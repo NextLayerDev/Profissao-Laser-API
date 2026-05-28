@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate, requireModule } from '@/middleware/auth.js';
 import {
+	cancelMyAppointmentController,
 	createAppointmentController,
 	deleteAppointmentController,
 	getAppointmentsByCustomerController,
@@ -160,6 +161,27 @@ export async function appointmentRoute(server: FastifyInstance) {
 			},
 		},
 		updateAppointmentStatusController,
+	);
+
+	server.patch(
+		'/appointment/:id/cancel',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Cancel your own appointment (authenticated customer; matched by e-mail).',
+				params: z.object({ id: z.string().uuid() }),
+				response: {
+					200: appointmentSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Appointments'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		cancelMyAppointmentController,
 	);
 
 	server.patch(

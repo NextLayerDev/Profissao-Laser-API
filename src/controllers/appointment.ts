@@ -224,6 +224,32 @@ export const updateAppointmentTechnicianController = async (
 	}
 };
 
+export const cancelMyAppointmentController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const email = request.currentUser.email;
+		if (!email) {
+			return reply.status(403).send({ message: 'Forbidden' });
+		}
+		const appointment = await appointmentRepository.cancelOwn(
+			request.params.id,
+			email,
+		);
+		return reply.send(appointment);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		const status =
+			message === 'Appointment not found'
+				? 404
+				: message === 'Forbidden'
+					? 403
+					: 500;
+		return reply.status(status).send({ message });
+	}
+};
+
 export const deleteAppointmentController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,
 	reply: FastifyReply,
