@@ -75,6 +75,7 @@ export const communityProjectSchema = z.object({
 	id: z.string(),
 	title: z.string(),
 	author: z.string(),
+	authorAvatar: z.string().nullable().optional(),
 	img: z.string().nullable().optional(),
 	description: z.string().nullable().optional(),
 	material: z.string().nullable().optional(),

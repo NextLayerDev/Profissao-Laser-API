@@ -370,49 +370,58 @@ class CommunityRepository {
 		const { data, error } = await query;
 		if (error) throw new Error(error.message);
 
-		return (data ?? []).map(
-			(p: {
-				id: string;
-				title: string;
-				authorName: string;
-				img: string | null;
-				description: string | null;
-				material: string | null;
-				technique: string | null;
-				createdAt: string;
-				likes: number;
-				comments: number;
-			}) => ({
-				id: p.id,
-				title: p.title,
-				author: p.authorName,
-				img: p.img,
-				description: p.description,
-				material: p.material,
-				technique: p.technique,
-				time: p.createdAt,
-				likes: p.likes,
-				comments: p.comments,
-			}),
+		const rows = data ?? [];
+		const avatarMap = await this.getAuthorAvatars(
+			rows.map((p: { authorId?: string | null }) => p.authorId),
+		);
+		return rows.map((p: { authorId?: string | null }) =>
+			this.mapProject(p, avatarMap.get(p.authorId ?? '') ?? null),
 		);
 	}
 
-	private mapProject(p: {
-		id: string;
-		title: string;
-		authorName: string;
-		img: string | null;
-		description: string | null;
-		material: string | null;
-		technique: string | null;
-		createdAt: string;
-		likes: number;
-		comments: number;
-	}) {
+	/** Busca a foto (pl_community_profile.image) dos autores em uma só query. */
+	private async getAuthorAvatars(
+		authorIds: (string | null | undefined)[],
+	): Promise<Map<string, string | null>> {
+		const ids = Array.from(
+			new Set(authorIds.filter((id): id is string => !!id)),
+		);
+		const map = new Map<string, string | null>();
+		if (ids.length === 0) return map;
+		const { data, error } = await supabase
+			.from('pl_community_profile')
+			.select('customerId, image')
+			.in('customerId', ids);
+		if (error) throw new Error(error.message);
+		for (const row of (data ?? []) as {
+			customerId: string;
+			image: string | null;
+		}[]) {
+			map.set(row.customerId, row.image ?? null);
+		}
+		return map;
+	}
+
+	private mapProject(
+		p: {
+			id: string;
+			title: string;
+			authorName: string;
+			img: string | null;
+			description: string | null;
+			material: string | null;
+			technique: string | null;
+			createdAt: string;
+			likes: number;
+			comments: number;
+		},
+		authorAvatar: string | null = null,
+	) {
 		return {
 			id: p.id,
 			title: p.title,
 			author: p.authorName,
+			authorAvatar,
 			img: p.img,
 			description: p.description,
 			material: p.material,
@@ -430,7 +439,11 @@ class CommunityRepository {
 		]);
 		if (error) throw new Error(error.message);
 		if (!project) return null;
-		return { ...this.mapProject(project), commentList: comments };
+		const avatarMap = await this.getAuthorAvatars([project.authorId]);
+		return {
+			...this.mapProject(project, avatarMap.get(project.authorId) ?? null),
+			commentList: comments,
+		};
 	}
 
 	async updateProject(id: string, data: UpdateProject) {
