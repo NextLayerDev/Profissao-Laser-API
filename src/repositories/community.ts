@@ -346,6 +346,7 @@ class CommunityRepository {
 			search?: string;
 			sort?: string;
 		},
+		currentCustomerId?: string,
 	) {
 		const from = (page - 1) * limit;
 		const to = from + limit - 1;
@@ -371,12 +372,79 @@ class CommunityRepository {
 		if (error) throw new Error(error.message);
 
 		const rows = data ?? [];
-		const avatarMap = await this.getAuthorAvatars(
-			rows.map((p: { authorId?: string | null }) => p.authorId),
+		const [avatarMap, likedSet] = await Promise.all([
+			this.getAuthorAvatars(
+				rows.map((p: { authorId?: string | null }) => p.authorId),
+			),
+			this.getLikedProjectIds(
+				rows.map((p: { id: string }) => p.id),
+				currentCustomerId,
+			),
+		]);
+		return rows.map((p: { id: string; authorId?: string | null }) =>
+			this.mapProject(
+				p,
+				avatarMap.get(p.authorId ?? '') ?? null,
+				likedSet.has(p.id),
+			),
 		);
-		return rows.map((p: { authorId?: string | null }) =>
-			this.mapProject(p, avatarMap.get(p.authorId ?? '') ?? null),
-		);
+	}
+
+	/** Projetos curtidos pelo customer atual (entre os ids dados) — 1 query. */
+	private async getLikedProjectIds(
+		projectIds: string[],
+		customerId?: string,
+	): Promise<Set<string>> {
+		const set = new Set<string>();
+		if (!customerId || projectIds.length === 0) return set;
+		const { data, error } = await supabase
+			.from('pl_community_project_like')
+			.select('projectId')
+			.eq('customerId', customerId)
+			.in('projectId', projectIds);
+		if (error) throw new Error(error.message);
+		for (const row of (data ?? []) as { projectId: string }[]) {
+			set.add(row.projectId);
+		}
+		return set;
+	}
+
+	/** Curtir/descurtir um projeto; recomputa o contador e retorna o estado. */
+	async toggleProjectLike(projectId: string, customerId: string) {
+		const { data: existing } = await supabase
+			.from('pl_community_project_like')
+			.select('id')
+			.eq('projectId', projectId)
+			.eq('customerId', customerId)
+			.maybeSingle();
+
+		if (existing) {
+			const { error } = await supabase
+				.from('pl_community_project_like')
+				.delete()
+				.eq('projectId', projectId)
+				.eq('customerId', customerId);
+			if (error) throw new Error(error.message);
+		} else {
+			const { error } = await supabase
+				.from('pl_community_project_like')
+				.insert({ projectId, customerId });
+			if (error) throw new Error(error.message);
+		}
+
+		// Mantém o contador denormalizado (pl_community_project.likes) sincronizado.
+		const { count, error: countError } = await supabase
+			.from('pl_community_project_like')
+			.select('*', { count: 'exact', head: true })
+			.eq('projectId', projectId);
+		if (countError) throw new Error(countError.message);
+		const likes = count ?? 0;
+		await supabase
+			.from('pl_community_project')
+			.update({ likes })
+			.eq('id', projectId);
+
+		return { liked: !existing, likes };
 	}
 
 	/** Busca a foto (pl_community_profile.image) dos autores em uma só query. */
@@ -416,6 +484,7 @@ class CommunityRepository {
 			comments: number;
 		},
 		authorAvatar: string | null = null,
+		liked = false,
 	) {
 		return {
 			id: p.id,
@@ -429,19 +498,27 @@ class CommunityRepository {
 			time: p.createdAt,
 			likes: p.likes,
 			comments: p.comments,
+			liked,
 		};
 	}
 
-	async getProject(id: string) {
+	async getProject(id: string, currentCustomerId?: string) {
 		const [{ data: project, error }, comments] = await Promise.all([
 			supabase.from('pl_community_project').select('*').eq('id', id).single(),
 			this.listProjectComments(id, 1, 100),
 		]);
 		if (error) throw new Error(error.message);
 		if (!project) return null;
-		const avatarMap = await this.getAuthorAvatars([project.authorId]);
+		const [avatarMap, likedSet] = await Promise.all([
+			this.getAuthorAvatars([project.authorId]),
+			this.getLikedProjectIds([project.id], currentCustomerId),
+		]);
 		return {
-			...this.mapProject(project, avatarMap.get(project.authorId) ?? null),
+			...this.mapProject(
+				project,
+				avatarMap.get(project.authorId) ?? null,
+				likedSet.has(project.id),
+			),
 			commentList: comments,
 		};
 	}

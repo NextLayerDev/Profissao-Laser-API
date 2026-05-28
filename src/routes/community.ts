@@ -29,6 +29,7 @@ import {
 	leaveWaitingRoomController,
 	sendMessageController,
 	togglePostLikeController,
+	toggleProjectLikeController,
 	updateChannelController,
 	updateEventController,
 	updateProjectController,
@@ -372,6 +373,24 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		getProjectController,
+	);
+
+	server.post(
+		'/community/projects/:projectId/like',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Toggle like/unlike on a community project.',
+				params: z.object({ projectId: z.string() }),
+				response: {
+					200: z.object({ liked: z.boolean(), likes: z.number() }),
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		toggleProjectLikeController,
 	);
 
 	server.patch(
