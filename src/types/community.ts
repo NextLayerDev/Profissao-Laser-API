@@ -83,6 +83,7 @@ export const communityProjectSchema = z.object({
 	time: z.string(),
 	likes: z.number(),
 	comments: z.number(),
+	liked: z.boolean().optional(),
 });
 
 export const createProjectSchema = z.object({

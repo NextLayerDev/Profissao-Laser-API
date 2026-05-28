@@ -107,14 +107,23 @@ export const communityService = {
 			search?: string;
 			sort?: string;
 		},
+		currentCustomerId?: string,
 	) {
 		return withCapture(() =>
-			communityRepository.listProjects(page, limit, filters),
+			communityRepository.listProjects(page, limit, filters, currentCustomerId),
 		);
 	},
 
-	async getProject(id: string) {
-		return withCapture(() => communityRepository.getProject(id));
+	async getProject(id: string, currentCustomerId?: string) {
+		return withCapture(() =>
+			communityRepository.getProject(id, currentCustomerId),
+		);
+	},
+
+	async toggleProjectLike(projectId: string, customerId: string) {
+		return withCapture(() =>
+			communityRepository.toggleProjectLike(projectId, customerId),
+		);
 	},
 
 	async createProject(data: CreateProject, authorId: string) {

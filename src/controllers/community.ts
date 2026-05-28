@@ -335,6 +335,7 @@ export const getProjectsController = async (
 		Number(page ?? 1),
 		Number(limit ?? 20),
 		{ material, technique, search, sort },
+		request.currentCustomer?.id ?? request.currentUser?.id,
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
@@ -343,12 +344,33 @@ export const getProjectsController = async (
 	return reply.send(projects);
 };
 
+export const toggleProjectLikeController = async (
+	request: FastifyRequest<{ Params: { projectId: string } }>,
+	reply: FastifyReply,
+) => {
+	const { projectId } = request.params;
+	const customerId =
+		request.currentCustomer?.id ?? request.currentUser?.id ?? '';
+	const { data: result, error } = await communityService.toggleProjectLike(
+		projectId,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.send(result);
+};
+
 export const getProjectController = async (
 	request: FastifyRequest<{ Params: { projectId: string } }>,
 	reply: FastifyReply,
 ) => {
 	const { projectId } = request.params;
-	const { data: project, error } = await communityService.getProject(projectId);
+	const { data: project, error } = await communityService.getProject(
+		projectId,
+		request.currentCustomer?.id ?? request.currentUser?.id,
+	);
 	if (error) {
 		return reply.status(500).send({
 			message: error instanceof Error ? error.message : 'Unknown error',
