@@ -241,6 +241,25 @@ export async function customerRoute(server: FastifyInstance) {
 		profileController.uploadAvatar,
 	);
 
+	server.delete(
+		'/me/avatar',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Remove the authenticated customer avatar (reverts to default initials).',
+				response: {
+					200: z.object({ avatar: z.string().nullable() }),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.removeAvatar,
+	);
+
 	server.patch(
 		'/me/password',
 		{

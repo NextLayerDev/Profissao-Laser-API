@@ -77,6 +77,18 @@ class ProfileController {
 		return reply.status(200).send(data);
 	}
 
+	async removeAvatar(request: FastifyRequest, reply: FastifyReply) {
+		const id = request.currentCustomer?.id;
+		if (!id) return reply.status(401).send({ message: 'Unauthorized' });
+		const { data, error } = await profileService.removeMyAvatar(id);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
+		return reply.status(200).send(data);
+	}
+
 	async changeMyPassword(request: FastifyRequest, reply: FastifyReply) {
 		const id = request.currentCustomer?.id;
 		const email = request.currentUser?.email;

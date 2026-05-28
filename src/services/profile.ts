@@ -77,6 +77,13 @@ export const profileService = {
 		});
 	},
 
+	async removeMyAvatar(customerId: string) {
+		return withCapture(async () => {
+			await profileRepository.upsertByCustomerId(customerId, { image: null });
+			return { avatar: null };
+		});
+	},
+
 	async changeMyPassword(
 		customerId: string,
 		email: string,
