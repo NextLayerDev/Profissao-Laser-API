@@ -1,8 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { customerController } from '../controllers/customer.js';
+import { profileController } from '../controllers/profile.js';
 import { authenticateCustomer, requireModule } from '../middleware/auth.js';
-import { customerSchema } from '../types/customer.js';
+import {
+	changeMyPasswordSchema,
+	customerProfileSchema,
+	customerSchema,
+	updateProfileSchema,
+} from '../types/customer.js';
 import { ErrorSchema } from '../types/error.js';
 
 export async function customerRoute(server: FastifyInstance) {
@@ -175,6 +181,85 @@ export async function customerRoute(server: FastifyInstance) {
 			},
 		},
 		async (request) => ({ unlimited: request.isUnlimitedCustomer === true }),
+	);
+
+	server.get(
+		'/me/profile',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description: 'Get the authenticated customer profile.',
+				response: {
+					200: customerProfileSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.getMyProfile,
+	);
+
+	server.patch(
+		'/me/profile',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Update the authenticated customer profile (name, nickname, bio).',
+				body: updateProfileSchema,
+				response: {
+					200: customerProfileSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.updateMyProfile,
+	);
+
+	server.post(
+		'/me/avatar',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Upload the authenticated customer avatar (multipart/form-data, field "file").',
+				response: {
+					200: z.object({ avatar: z.string() }),
+					400: ErrorSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.uploadAvatar,
+	);
+
+	server.patch(
+		'/me/password',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Change the authenticated customer password (validates the current one).',
+				body: changeMyPasswordSchema,
+				response: {
+					200: z.object({ message: z.string() }),
+					400: ErrorSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.changeMyPassword,
 	);
 
 	server.post(
