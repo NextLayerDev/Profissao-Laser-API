@@ -1,9 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import {
-	getEffectivePermissions,
-	type RolePermissionRow,
-	type UserOverrides,
-} from '../lib/permissions.js';
+import { fetchExternalUser, isStaffRole } from '../lib/external-auth.js';
 import { stripe } from '../lib/stripe.js';
 import { supabase } from '../lib/supabase.js';
 
@@ -23,16 +19,24 @@ export const authenticate = async (
 	}
 
 	try {
-		const {
-			data: { user },
-			error,
-		} = await supabase.auth.getUser(token);
+		// O login é feito na nova API. GET /v1/me valida o token e devolve o
+		// usuário com `role`/`blocked`, que usamos como fonte de autorização.
+		const user = await fetchExternalUser(token);
 
-		if (error || !user) {
+		if (!user) {
 			throw new Error('User not found');
 		}
 
+		if (user.blocked) {
+			return reply.status(403).send({
+				statusCode: 403,
+				error: 'Forbidden',
+				message: 'User is blocked',
+			});
+		}
+
 		request.currentUser = user;
+		request.currentRole = user.role;
 		request.currentCustomer = null;
 	} catch (error) {
 		request.log.warn({ error }, 'Authentication error');
@@ -49,16 +53,10 @@ export const authenticateAdmin = async (
 	reply: FastifyReply,
 ) => {
 	await authenticate(request, reply);
-	if (!request.currentUser) return;
+	if (reply.sent || !request.currentUser) return;
 
-	const user = request.currentUser;
-	const { data: platformUser } = await supabase
-		.from('Users')
-		.select('id, overrides, Permissions(grants, isSuperAdmin)')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (!platformUser) {
+	// O acesso ao painel é definido pelo role do token (admin/staff).
+	if (!isStaffRole(request.currentRole)) {
 		return reply.status(403).send({
 			statusCode: 403,
 			error: 'Forbidden',
@@ -66,16 +64,10 @@ export const authenticateAdmin = async (
 		});
 	}
 
-	// Resolve permissões efetivas (cargo + overrides) uma vez por request.
-	const pu = platformUser as {
-		overrides?: UserOverrides | null;
-		Permissions?: RolePermissionRow | RolePermissionRow[] | null;
-	};
-	const role = Array.isArray(pu.Permissions)
-		? (pu.Permissions[0] ?? null)
-		: (pu.Permissions ?? null);
-	request.effectivePermissions = getEffectivePermissions(role, pu.overrides);
-	request.isSuperAdminUser = role?.isSuperAdmin ?? false;
+	// O /v1/me não traz grants granulares, então admin/staff recebem acesso
+	// total (super admin). Refinar quando a nova API expor permissões por cargo.
+	request.effectivePermissions = [];
+	request.isSuperAdminUser = true;
 };
 
 /**
@@ -136,14 +128,8 @@ export const authenticateCustomer = async (
 
 	const user = request.currentUser;
 
-	// Staff (Users table) have unrestricted access
-	const { data: platformUser } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (platformUser) return;
+	// Staff (role admin/staff) têm acesso irrestrito.
+	if (isStaffRole(request.currentRole)) return;
 
 	const { data: customer, error: customerError } = await supabase
 		.from('Customers')
@@ -178,14 +164,8 @@ export const authenticateVectorizacao = async (
 
 	const user = request.currentUser;
 
-	// Platform users (staff) have unrestricted access
-	const { data: platformUser } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (platformUser) return;
+	// Staff (role admin/staff) têm acesso irrestrito.
+	if (isStaffRole(request.currentRole)) return;
 
 	const { data: customer, error: customerError } = await supabase
 		.from('Customers')
@@ -295,14 +275,8 @@ export const authenticateProgress = async (
 
 	const user = request.currentUser;
 
-	// Staff have unrestricted access (pass customerId via query/body)
-	const { data: platformUser } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (platformUser) return;
+	// Staff (role admin/staff) têm acesso irrestrito (passam customerId via query/body).
+	if (isStaffRole(request.currentRole)) return;
 
 	// Customer: set currentCustomer
 	const { data: customer, error } = await supabase
@@ -338,14 +312,8 @@ export const authenticateCommunity = async (
 
 	const user = request.currentUser;
 
-	// Users (staff) have unrestricted community access
-	const { data: platformUser } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (platformUser) return;
+	// Staff (role admin/staff) têm acesso irrestrito à comunidade.
+	if (isStaffRole(request.currentRole)) return;
 
 	// Fetch customer from pl_customer
 	const { data: customer, error: customerError } = await supabase

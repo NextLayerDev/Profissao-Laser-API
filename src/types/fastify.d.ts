@@ -1,13 +1,17 @@
-import type { User } from '@supabase/supabase-js';
+import '@fastify/jwt';
+import type { ExternalUser } from '../lib/external-auth.js';
 
 declare module 'fastify' {
 	interface FastifyRequest {
-		currentUser: User | null;
-		currentCustomer: { id: string; name: string; image: string | null } | null;
-		/** Permissões efetivas do staff (preenchidas por authenticateAdmin). */
+		currentUser?: ExternalUser | null;
+		currentRole?: string | null;
+		currentCustomer?: {
+			id: string;
+			name: string;
+			image: string | null;
+		} | null;
+		isUnlimitedCustomer?: boolean;
 		effectivePermissions?: string[];
 		isSuperAdminUser?: boolean;
-		/** Customer marcado como teste ilimitado (preenchido pelos middlewares de customer). */
-		isUnlimitedCustomer?: boolean;
 	}
 }
