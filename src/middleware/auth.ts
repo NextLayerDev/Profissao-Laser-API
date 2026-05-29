@@ -7,6 +7,31 @@ export const authenticate = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
+	// Preferred path: identity already validated and injected by the gateway.
+	const headerId = request.headers['x-user-id'];
+	if (typeof headerId === 'string' && headerId.length > 0) {
+		if (request.headers['x-user-blocked'] === 'true') {
+			return reply.status(403).send({
+				statusCode: 403,
+				error: 'Forbidden',
+				message: 'User is blocked',
+			});
+		}
+		const role = String(request.headers['x-user-role'] ?? '');
+		request.currentUser = {
+			id: headerId,
+			email: String(request.headers['x-user-email'] ?? ''),
+			phone: (request.headers['x-user-phone'] as string) ?? null,
+			name: (request.headers['x-user-name'] as string) ?? null,
+			role,
+			blocked: false,
+		};
+		request.currentRole = role;
+		request.currentCustomer = null;
+		return;
+	}
+
+	// Transition fallback: validate the Bearer token against Supabase.
 	const authHeader = request.headers.authorization;
 	const token = authHeader?.replace('Bearer ', '');
 

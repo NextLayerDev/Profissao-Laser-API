@@ -5,7 +5,6 @@ import {
 	generatePreviaController,
 	getPreviaHistoryController,
 	getPreviaOptionsController,
-	getPreviaQuotaController,
 	getPreviaUsageStatsController,
 	getPreviaUsageUsersController,
 	updatePreviaController,
@@ -17,8 +16,6 @@ import {
 	previaHistoryQuerySchema,
 	previaHistoryResponseSchema,
 	previaOptionsResponseSchema,
-	previaQuotaErrorSchema,
-	previaQuotaSchema,
 	previaSchema,
 	previaUsageStatsSchema,
 	previaUsageUsersQuerySchema,
@@ -39,7 +36,6 @@ export async function previaRoute(server: FastifyInstance) {
 					201: previaSchema,
 					400: ErrorSchema,
 					403: ErrorSchema,
-					429: previaQuotaErrorSchema,
 					500: ErrorSchema,
 				},
 				tags: ['Previas'],
@@ -47,25 +43,6 @@ export async function previaRoute(server: FastifyInstance) {
 			},
 		},
 		generatePreviaController,
-	);
-
-	server.get(
-		'/previas/quota',
-		{
-			preHandler: [authenticateCustomer],
-			schema: {
-				description:
-					'Retorna o uso diário de prévias do customer logado: limite, usados, restantes e quando reseta. Útil para o front mostrar o contador antes do usuário tentar gerar.',
-				response: {
-					200: previaQuotaSchema,
-					403: ErrorSchema,
-					500: ErrorSchema,
-				},
-				tags: ['Previas'],
-				security: [{ bearerAuth: [] }],
-			},
-		},
-		getPreviaQuotaController,
 	);
 
 	server.get(

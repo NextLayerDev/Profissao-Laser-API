@@ -1,4 +1,3 @@
-import '@fastify/jwt';
 import type { ExternalUser } from '../lib/external-auth.js';
 
 declare module 'fastify' {

@@ -1,12 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { appointmentRoute } from './routes/appointment.js';
 import { appointmentConfigRoute } from './routes/appointment-config.js';
-import { authRoute } from './routes/auth.js';
-import { classRoute } from './routes/class.js';
 import { communityRoute } from './routes/community.js';
 import { couponRoute } from './routes/coupon.js';
-import { courseRoute } from './routes/course.js';
-import { creditRoute } from './routes/credit.js';
 import { customerRoute } from './routes/customer.js';
 import { customerMachineRoute } from './routes/customer-machine.js';
 import { designRoute } from './routes/design.js';
@@ -37,7 +33,6 @@ import { quizRoute } from './routes/quiz.js';
 import { roleRoute } from './routes/role.js';
 import { savedLessonRoute } from './routes/saved-lesson.js';
 import { supportChatRoute } from './routes/support-chat.js';
-import { systemClassRoute } from './routes/system-class.js';
 import { templateRoute } from './routes/template.js';
 import { userRoute } from './routes/user.js';
 import { vectorRoute } from './routes/vector.js';
@@ -50,15 +45,10 @@ import { mercadoLivreWebhookRoute } from './routes/webhooks/mercado-livre.js';
 
 export const routes = async (app: FastifyInstance) => {
 	app.register(webhookRoute);
-	app.register(authRoute);
 	app.register(appointmentRoute);
 	app.register(appointmentConfigRoute);
-	app.register(classRoute);
-	app.register(systemClassRoute);
 	app.register(communityRoute);
 	app.register(couponRoute);
-	app.register(courseRoute);
-	app.register(creditRoute);
 	app.register(customerRoute);
 	app.register(doubtChatRoute);
 	app.register(supportChatRoute);

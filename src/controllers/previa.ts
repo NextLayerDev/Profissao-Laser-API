@@ -1,17 +1,11 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
-	CreditConfirmationRequiredError,
-	InsufficientCreditsError,
-} from '../lib/credit-errors.js';
-import { FreeTierQuotaError } from '../lib/free-tier-quota.js';
-import {
 	FONT_OPTIONS,
 	LASER_OPTIONS,
 	LASER_RANGES,
 } from '../lib/previa-options.js';
 import { previaService } from '../services/previa.js';
 import { generatePreviaSchema, updatePreviaSchema } from '../types/previa.js';
-import { mapCreditError } from './credit.js';
 
 const VALIDATION_MESSAGES = new Set([
 	'Imagens base e produto são obrigatórias',
@@ -37,40 +31,11 @@ export const generatePreviaController = async (
 			return reply.status(403).send({ message: 'Customer not found' });
 		}
 		const body = generatePreviaSchema.parse(request.body);
-		const previa = await previaService.generate(
-			customerId,
-			body,
-			request.isUnlimitedCustomer,
-		);
+		const previa = await previaService.generate(customerId, body);
 		return reply.status(201).send(previa);
 	} catch (err) {
-		// Free-tier / créditos / confirmação → 402/429 estruturados
-		if (
-			err instanceof FreeTierQuotaError ||
-			err instanceof CreditConfirmationRequiredError ||
-			err instanceof InsufficientCreditsError
-		) {
-			return mapCreditError(err, reply);
-		}
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(statusFor(message)).send({ message });
-	}
-};
-
-export const getPreviaQuotaController = async (
-	request: FastifyRequest,
-	reply: FastifyReply,
-) => {
-	try {
-		const customerId = request.currentCustomer?.id;
-		if (!customerId) {
-			return reply.status(403).send({ message: 'Customer not found' });
-		}
-		const quota = await previaService.getQuota(customerId);
-		return reply.send(quota);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error';
-		return reply.status(500).send({ message });
 	}
 };
 

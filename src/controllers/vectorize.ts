@@ -1,8 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { reserveToolUsage } from '../lib/tool-usage-guard.js';
 import { parseVectorizeParams } from '../lib/vectorize.js';
 import { vectorizeService } from '../services/vectorize.js';
-import { mapCreditError } from './credit.js';
 
 export const vectorizeController = async (
 	request: FastifyRequest,
@@ -33,41 +31,18 @@ export const vectorizeController = async (
 			return reply.status(400).send({ message: 'File is required' });
 		}
 
-		// useCredits arrives as a multipart form field string
-		const confirmed = fields.useCredits === 'true';
-		let usage: Awaited<ReturnType<typeof reserveToolUsage>>;
-		try {
-			usage = await reserveToolUsage({
-				customerId,
-				feature: 'vectorize',
-				confirmed,
-				unlimited: request.isUnlimitedCustomer,
-			});
-		} catch (err) {
-			return mapCreditError(err, reply);
-		}
+		const params = parseVectorizeParams(fields);
+		const { data: result, error } = await vectorizeService.vectorize(
+			customerId,
+			{ buffer: fileBuffer, filename, mimetype, params },
+		);
 
-		try {
-			const params = parseVectorizeParams(fields);
-			const { data: result, error } = await vectorizeService.vectorize(
-				customerId,
-				{ buffer: fileBuffer, filename, mimetype, params },
-			);
-
-			if (error) {
-				await usage.rollback();
-				const message =
-					error instanceof Error ? error.message : 'Unknown error';
-				return reply.status(500).send({ message });
-			}
-
-			await usage.commit();
-			return reply.status(201).send(result);
-		} catch (err) {
-			await usage.rollback();
-			const message = err instanceof Error ? err.message : 'Unknown error';
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(500).send({ message });
 		}
+
+		return reply.status(201).send(result);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
@@ -110,43 +85,20 @@ export const vectorizeBatchController = async (
 				.send({ message: 'At least one file is required' });
 		}
 
-		// useCredits arrives as a multipart form field string
-		const confirmed = fields.useCredits === 'true';
-		let usage: Awaited<ReturnType<typeof reserveToolUsage>>;
-		try {
-			usage = await reserveToolUsage({
-				customerId,
-				feature: 'vectorize',
-				confirmed,
-				unlimited: request.isUnlimitedCustomer,
-			});
-		} catch (err) {
-			return mapCreditError(err, reply);
-		}
+		const params = parseVectorizeParams(fields);
+		const inputs = fileParts.map((f) => ({ ...f, params }));
 
-		try {
-			const params = parseVectorizeParams(fields);
-			const inputs = fileParts.map((f) => ({ ...f, params }));
+		const { data: result, error } = await vectorizeService.vectorizeBatch(
+			customerId,
+			inputs,
+		);
 
-			const { data: result, error } = await vectorizeService.vectorizeBatch(
-				customerId,
-				inputs,
-			);
-
-			if (error) {
-				await usage.rollback();
-				const message =
-					error instanceof Error ? error.message : 'Unknown error';
-				return reply.status(500).send({ message });
-			}
-
-			await usage.commit();
-			return reply.status(201).send(result);
-		} catch (err) {
-			await usage.rollback();
-			const message = err instanceof Error ? err.message : 'Unknown error';
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(500).send({ message });
 		}
+
+		return reply.status(201).send(result);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });

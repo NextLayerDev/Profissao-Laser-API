@@ -29,6 +29,33 @@ export const isAdminRole = (role: string | null | undefined): boolean =>
 	role === 'admin';
 
 /**
+ * Cria um novo customer na upvox-api (POST /v1/auth/signup).
+ * Ignora conflito silenciosamente (email já registado).
+ */
+export async function registerExternalCustomer(data: {
+	email: string;
+	password: string;
+	name: string;
+	phone?: string | null;
+}): Promise<void> {
+	let res: Response;
+	try {
+		res = await fetch(`${externalApiUrl}/v1/auth/signup`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(data),
+		});
+	} catch (err) {
+		throw new Error(`Failed to reach upvox-api: ${err}`);
+	}
+	if (res.status === 409) return; // already registered — ok
+	if (!res.ok) {
+		const body = await res.text().catch(() => '');
+		throw new Error(`Account creation failed (${res.status}): ${body}`);
+	}
+}
+
+/**
  * Valida o token contra a nova API e retorna o usuário (com role/blocked),
  * ou `null` se o token for inválido/expirado.
  */
