@@ -4,7 +4,7 @@ import {
 	editorApplyColorController,
 	editorRemoveBackgroundController,
 } from '../controllers/editor-ai.js';
-import { authenticateCustomer } from '../middleware/auth.js';
+import { authenticateToolCustomer } from '../middleware/auth.js';
 import {
 	applyColorRequestSchema,
 	applyColorResponseSchema,
@@ -20,7 +20,7 @@ export async function editorAiRoute(server: FastifyInstance) {
 	server.post(
 		'/editor/ai',
 		{
-			preHandler: [authenticateCustomer],
+			preHandler: [authenticateToolCustomer],
 			schema: {
 				description: [
 					'Proxy para o modelo de imagem (Gemini 3 Pro Image / Nano Banana 2) via OpenRouter.',
@@ -48,7 +48,7 @@ export async function editorAiRoute(server: FastifyInstance) {
 	server.post(
 		'/editor/remove-background',
 		{
-			preHandler: [authenticateCustomer],
+			preHandler: [authenticateToolCustomer],
 			schema: {
 				description:
 					'Remove o fundo da imagem usando o mesmo modelo Gemini 3 Pro Image (Nano Banana 2) já configurado pra /previas/generate e /editor/ai. Reusa OPENROUTER_API_KEY, sem deps nativas. Retorna PNG com fundo transparente.',
@@ -71,7 +71,7 @@ export async function editorAiRoute(server: FastifyInstance) {
 	server.post(
 		'/editor/apply-color',
 		{
-			preHandler: [authenticateCustomer],
+			preHandler: [authenticateToolCustomer],
 			schema: {
 				description:
 					'Aplica cor sólida (targetColor hex) em todos os pixels não-transparentes. Substitui o Jimp do porteira por Sharp (mais leve, comportamento idêntico).',

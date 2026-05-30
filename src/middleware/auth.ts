@@ -4,7 +4,6 @@ import {
 	isKnownAppRole,
 	isStaffRole,
 } from '../lib/external-auth.js';
-import { stripe } from '../lib/stripe.js';
 import { supabase } from '../lib/supabase.js';
 
 export const authenticate = async (
@@ -191,117 +190,32 @@ export const authenticateCustomer = async (
 		(customer as { isTestUnlimited?: boolean }).isTestUnlimited === true;
 };
 
-export const authenticateVectorizacao = async (
+/**
+ * Resolve the acting customer for billed laser tooling (vetorização, ai_canvas).
+ *
+ * Entitlement is enforced UPSTREAM: the front `SubscriptionGate` gates page entry
+ * (active plan required) and upvox's tool invoke gates usage (free quota / voxxys
+ * / upgrade). Here we only resolve the customer identity — the upvox auth id,
+ * which equals the legacy `Customers.id` for migrated customers (the migration
+ * preserved ids) and works for upvox-native signups too (no legacy-row lookup).
+ * The engine uses this id to match the invocation owner and to scope storage.
+ */
+export const authenticateToolCustomer = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
 	await authenticate(request, reply);
-
-	if (!request.currentUser) return;
-
-	const user = request.currentUser;
-
-	// Staff (role admin/staff) têm acesso irrestrito.
-	if (isStaffRole(request.currentRole)) return;
-
-	const { data: customer, error: customerError } = await supabase
-		.from('Customers')
-		.select('id, name, email, isTestUnlimited')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (customerError || !customer) {
-		return reply.status(403).send({
-			statusCode: 403,
-			error: 'Forbidden',
-			message: 'Customer not found',
-		});
-	}
-
-	// Conta de teste ilimitada: libera sem checar assinatura.
-	if ((customer as { isTestUnlimited?: boolean }).isTestUnlimited === true) {
-		request.currentCustomer = {
-			id: customer.id,
-			name: customer.name,
-			image: null,
-		};
-		request.isUnlimitedCustomer = true;
-		return;
-	}
-
-	const customerEmail =
-		(customer as unknown as { email: string }).email ?? user.email;
-
-	// Fetch active/trialing Stripe subscriptions for this customer
-	const stripeCustomers = await stripe.customers.list({
-		email: customerEmail,
-		limit: 1,
-	});
-	let hasVectorizacaoAccess = false;
-
-	if (stripeCustomers.data.length > 0) {
-		const stripeCustomerId = stripeCustomers.data[0].id;
-
-		const [activeSubs, trialingSubs] = await Promise.all([
-			stripe.subscriptions.list({
-				customer: stripeCustomerId,
-				status: 'active',
-			}),
-			stripe.subscriptions.list({
-				customer: stripeCustomerId,
-				status: 'trialing',
-			}),
-		]);
-
-		const stripeProductIds = [...activeSubs.data, ...trialingSubs.data]
-			.flatMap((sub) =>
-				sub.items.data.map((item) => {
-					const productRef = item.price?.product;
-					return typeof productRef === 'string'
-						? productRef
-						: ((productRef as { id: string } | null)?.id ?? null);
-				}),
-			)
-			.filter(Boolean) as string[];
-
-		if (stripeProductIds.length > 0) {
-			const { data: classData } = await supabase
-				.from('pl_product')
-				.select(`
-					pl_class_product!inner (
-						pl_class!inner (
-							vetorizacao
-						)
-					)
-				`)
-				.in('stripeProductId', stripeProductIds);
-
-			hasVectorizacaoAccess = (classData ?? []).some((product) => {
-				// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-				const classProducts = (product as any).pl_class_product;
-				if (!Array.isArray(classProducts)) return false;
-				return classProducts.some(
-					// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-					(cp: any) => cp.pl_class?.vetorizacao === true,
-				);
-			});
-		}
-	}
-
-	if (!hasVectorizacaoAccess) {
-		return reply.status(403).send({
-			statusCode: 403,
-			error: 'Forbidden',
-			message: 'Vectorization access required',
-		});
-	}
+	if (reply.sent || !request.currentUser) return;
 
 	request.currentCustomer = {
-		id: customer.id,
-		name: customer.name,
+		id: request.currentUser.id,
+		name: request.currentUser.name ?? null,
 		image: null,
 	};
 };
+
+/** @deprecated nome histórico — use `authenticateToolCustomer`. */
+export const authenticateVectorizacao = authenticateToolCustomer;
 
 export const authenticateProgress = async (
 	request: FastifyRequest,

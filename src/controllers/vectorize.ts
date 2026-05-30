@@ -1,4 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import {
+	getInvocation,
+	refundInvocation,
+	settleInvocation,
+} from '../lib/upvox-tools.js';
 import { parseVectorizeParams } from '../lib/vectorize.js';
 import { vectorizeService } from '../services/vectorize.js';
 
@@ -6,6 +11,16 @@ export const vectorizeController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
+	// Billing is owned by upvox: the front calls /v1/tool/vectorize/invoke first
+	// (which debits/quota and returns an invocation_id), then sends it here. We
+	// validate it, run the engine, and settle (success) or refund (failure) —
+	// forwarding the customer's Bearer so upvox scopes every call to the owner.
+	const token = (request.headers.authorization ?? '').replace(
+		/^Bearer\s+/i,
+		'',
+	);
+	let invocationId: string | null = null;
+
 	try {
 		const customerId = request.currentCustomer?.id;
 		if (!customerId) {
@@ -31,6 +46,24 @@ export const vectorizeController = async (
 			return reply.status(400).send({ message: 'File is required' });
 		}
 
+		invocationId = fields.invocation_id ?? null;
+		if (!invocationId) {
+			return reply.status(400).send({ message: 'invocation_id is required' });
+		}
+
+		// Authorize: a pending `vectorize` invocation owned by this customer.
+		// Prevents calling the engine for free (no valid paid invocation = reject).
+		const inv = await getInvocation(token, invocationId);
+		if (
+			!inv ||
+			inv.status !== 'pending' ||
+			inv.tool_key !== 'vectorize' ||
+			inv.customer_id !== customerId
+		) {
+			invocationId = null; // not ours to refund
+			return reply.status(403).send({ message: 'invalid_invocation' });
+		}
+
 		const params = parseVectorizeParams(fields);
 		const { data: result, error } = await vectorizeService.vectorize(
 			customerId,
@@ -38,12 +71,15 @@ export const vectorizeController = async (
 		);
 
 		if (error) {
+			await refundInvocation(token, invocationId);
 			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(500).send({ message });
 		}
 
+		await settleInvocation(token, invocationId);
 		return reply.status(201).send(result);
 	} catch (err) {
+		if (invocationId) await refundInvocation(token, invocationId);
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
