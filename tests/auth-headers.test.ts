@@ -8,8 +8,11 @@ vi.mock('../src/lib/supabase.js', () => ({
 vi.mock('../src/lib/external-auth.js', () => ({
 	fetchExternalUser: vi.fn(),
 	isStaffRole: vi.fn(),
+	isKnownAppRole: (role: string | null | undefined) =>
+		role != null && ['customer', 'staff', 'admin'].includes(role),
 }));
 
+import { fetchExternalUser } from '../src/lib/external-auth.js';
 import { authenticate } from '../src/middleware/auth.js';
 
 async function buildApp(): Promise<FastifyInstance> {
@@ -56,6 +59,35 @@ describe('authenticate (header-based)', () => {
 			},
 		});
 		expect(res.statusCode).toBe(403);
+		await app.close();
+	});
+
+	it('falls back to /v1/me when the gateway role is not an app role', async () => {
+		// O gateway pode injetar o role do JWT ("authenticated"), que não é um
+		// role de app — nesse caso revalidamos o token e usamos o role real.
+		vi.mocked(fetchExternalUser).mockResolvedValue({
+			id: 'u-9',
+			email: 'admin@x.com',
+			phone: null,
+			name: 'Admin',
+			role: 'admin',
+			blocked: false,
+		});
+		const app = await buildApp();
+		const res = await app.inject({
+			method: 'GET',
+			url: '/whoami',
+			headers: {
+				'x-user-id': 'u-9',
+				'x-user-email': 'admin@x.com',
+				'x-user-role': 'authenticated',
+				'x-user-blocked': 'false',
+				authorization: 'Bearer tok-123',
+			},
+		});
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toMatchObject({ role: 'admin' });
+		expect(fetchExternalUser).toHaveBeenCalledWith('tok-123');
 		await app.close();
 	});
 

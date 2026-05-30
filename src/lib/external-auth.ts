@@ -22,11 +22,23 @@ export interface ExternalUser {
 /** Roles com acesso ao painel administrativo. */
 const STAFF_ROLES = new Set(['admin', 'staff']);
 
+/** Roles de app reconhecidos (vindos de `public.users.role` na upvox). */
+const APP_ROLES = new Set(['customer', 'staff', 'admin']);
+
 export const isStaffRole = (role: string | null | undefined): boolean =>
 	role != null && STAFF_ROLES.has(role);
 
 export const isAdminRole = (role: string | null | undefined): boolean =>
 	role === 'admin';
+
+/**
+ * `true` se `role` é um role de app conhecido. Usado para decidir se o
+ * `x-user-role` injetado pelo gateway é confiável: o JWT do Supabase carrega
+ * `role:"authenticated"` (role do Postgres), que NÃO é um role de app — nesse
+ * caso revalidamos o token via `/v1/me` para obter o role real.
+ */
+export const isKnownAppRole = (role: string | null | undefined): boolean =>
+	role != null && APP_ROLES.has(role);
 
 /**
  * Cria um novo customer na upvox-api (POST /v1/auth/signup).
