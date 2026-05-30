@@ -16,7 +16,9 @@ export const editorAiRequestSchema = z.object({
 	image: z.string().optional(), // data URL ou base64 puro
 	mask: z.string().optional(), // data URL ou base64 puro (white=editar, black=manter)
 	regionInfo: editorAiRegionSchema.optional(),
-	useCredits: z.boolean().optional().default(false),
+	// Billing autorizado pelo upvox: o front chama /v1/tool/ai_canvas/invoke antes
+	// e manda o id aqui. Sem invocation válida o motor não roda (anti-bypass).
+	invocation_id: z.string().min(1),
 });
 
 export type EditorAiRequest = z.infer<typeof editorAiRequestSchema>;
@@ -29,7 +31,7 @@ export const editorAiResponseSchema = z.object({
 
 export const removeBackgroundRequestSchema = z.object({
 	image: z.string().min(1), // data URL ou base64
-	useCredits: z.boolean().optional().default(false),
+	invocation_id: z.string().min(1),
 });
 
 export type RemoveBackgroundRequest = z.infer<

@@ -191,15 +191,16 @@ export const authenticateCustomer = async (
 };
 
 /**
- * Resolve the acting customer for the laser tooling (vetorização etc.).
+ * Resolve the acting customer for billed laser tooling (vetorização, ai_canvas).
  *
- * Entitlement is now enforced UPSTREAM: the front `SubscriptionGate` gates page
- * entry (active plan required) and upvox's tool invoke gates usage (free quota /
- * voxxys / upgrade). So here we only resolve the customer identity (the upvox
- * auth id) for ownership/storage — no Stripe/`pl_class` gating, and no dependency
- * on a legacy `Customers` row (works for upvox-native signups too).
+ * Entitlement is enforced UPSTREAM: the front `SubscriptionGate` gates page entry
+ * (active plan required) and upvox's tool invoke gates usage (free quota / voxxys
+ * / upgrade). Here we only resolve the customer identity — the upvox auth id,
+ * which equals the legacy `Customers.id` for migrated customers (the migration
+ * preserved ids) and works for upvox-native signups too (no legacy-row lookup).
+ * The engine uses this id to match the invocation owner and to scope storage.
  */
-export const authenticateVectorizacao = async (
+export const authenticateToolCustomer = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
@@ -212,6 +213,9 @@ export const authenticateVectorizacao = async (
 		image: null,
 	};
 };
+
+/** @deprecated nome histórico — use `authenticateToolCustomer`. */
+export const authenticateVectorizacao = authenticateToolCustomer;
 
 export const authenticateProgress = async (
 	request: FastifyRequest,
