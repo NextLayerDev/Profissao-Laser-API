@@ -1,5 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { fetchExternalUser, isStaffRole } from '../lib/external-auth.js';
+import {
+	fetchExternalUser,
+	isKnownAppRole,
+	isStaffRole,
+} from '../lib/external-auth.js';
 import { stripe } from '../lib/stripe.js';
 import { supabase } from '../lib/supabase.js';
 
@@ -18,17 +22,25 @@ export const authenticate = async (
 			});
 		}
 		const role = String(request.headers['x-user-role'] ?? '');
-		request.currentUser = {
-			id: headerId,
-			email: String(request.headers['x-user-email'] ?? ''),
-			phone: (request.headers['x-user-phone'] as string) ?? null,
-			name: (request.headers['x-user-name'] as string) ?? null,
-			role,
-			blocked: false,
-		};
-		request.currentRole = role;
-		request.currentCustomer = null;
-		return;
+		const hasToken = Boolean(request.headers.authorization);
+		// O gateway nem sempre injeta um role de app válido: o JWT do Supabase
+		// carrega `role:"authenticated"`, não o role real (que vive em
+		// public.users.role). Se o header trouxer um role conhecido — ou se não
+		// houver token p/ revalidar — confiamos nele; senão caímos no fallback
+		// `/v1/me` abaixo, que resolve o role correto.
+		if (isKnownAppRole(role) || !hasToken) {
+			request.currentUser = {
+				id: headerId,
+				email: String(request.headers['x-user-email'] ?? ''),
+				phone: (request.headers['x-user-phone'] as string) ?? null,
+				name: (request.headers['x-user-name'] as string) ?? null,
+				role,
+				blocked: false,
+			};
+			request.currentRole = role;
+			request.currentCustomer = null;
+			return;
+		}
 	}
 
 	// Transition fallback: validate the Bearer token against Supabase.
