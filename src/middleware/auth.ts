@@ -250,19 +250,24 @@ export const authenticateCommunity = async (
 		/^Bearer\s+/i,
 		'',
 	);
-	const ent = await fetchEntitlements(token);
-	const status = ent?.subscription?.status;
-	const allowed =
-		ent?.is_test_unlimited === true ||
-		status === 'active' ||
-		status === 'trialing';
-
-	if (!allowed) {
-		return reply.status(403).send({
-			statusCode: 403,
-			error: 'Forbidden',
-			message: 'subscription_required',
-		});
+	// Best-effort: só dá pra validar no upvox se o gateway repassar o Bearer. Se
+	// conseguimos os entitlements e NÃO há assinatura ativa → barra. Se não
+	// conseguimos (token não repassado / upvox indisponível) → libera e confia no
+	// SubscriptionGate do front (não barra cliente legítimo).
+	const ent = token ? await fetchEntitlements(token) : null;
+	if (ent) {
+		const status = ent.subscription?.status;
+		const allowed =
+			ent.is_test_unlimited === true ||
+			status === 'active' ||
+			status === 'trialing';
+		if (!allowed) {
+			return reply.status(403).send({
+				statusCode: 403,
+				error: 'Forbidden',
+				message: 'subscription_required',
+			});
+		}
 	}
 
 	grant(ent?.is_test_unlimited === true);
