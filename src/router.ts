@@ -11,6 +11,7 @@ import { doubtChatRoute } from './routes/doubt-chat.js';
 import { editorAiRoute } from './routes/editor-ai.js';
 import { faqRoute } from './routes/faq.js';
 import { forumRoute } from './routes/forum.js';
+import { gamificationRoute } from './routes/gamification.js';
 import { globalPromoLinkRoute } from './routes/global-promo-link.js';
 import { mlSellerRoute } from './routes/internal/ml-seller.js';
 import { knowledgeBaseRoute } from './routes/knowledge-base.js';
@@ -74,6 +75,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(vectorSupportRoute);
 	app.register(faqRoute);
 	app.register(forumRoute);
+	app.register(gamificationRoute);
 	app.register(templateRoute);
 	app.register(designRoute);
 	app.register(laserProductRoute);

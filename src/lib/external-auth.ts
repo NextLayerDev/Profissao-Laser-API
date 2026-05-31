@@ -89,3 +89,31 @@ export async function fetchExternalUser(
 
 	return (await res.json()) as ExternalUser;
 }
+
+/**
+ * Entitlements do cliente em GET {EXTERNAL_API_URL}/v1/me/entitlements.
+ * Fonte-de-verdade da assinatura ativa pós-migração (a main API legada não
+ * guarda mais a assinatura). Só tipamos o que a auth precisa.
+ */
+export interface ExternalEntitlements {
+	is_test_unlimited: boolean;
+	subscription: { status: string } | null;
+}
+
+/**
+ * Busca os entitlements do cliente no upvox repassando o mesmo Bearer da
+ * request (mesmo padrão de `fetchExternalUser`). `null` em qualquer falha.
+ */
+export async function fetchEntitlements(
+	token: string,
+): Promise<ExternalEntitlements | null> {
+	try {
+		const res = await fetch(`${externalApiUrl}/v1/me/entitlements`, {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		if (!res.ok) return null;
+		return (await res.json()) as ExternalEntitlements;
+	} catch {
+		return null;
+	}
+}
