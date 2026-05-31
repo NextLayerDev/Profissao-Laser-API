@@ -14,15 +14,21 @@ export interface MyProfile {
 }
 
 export const profileService = {
-	async getMyProfile(customerId: string, fallbackEmail: string) {
+	async getMyProfile(
+		customerId: string,
+		fallbackName: string | null,
+		fallbackEmail: string,
+	) {
 		return withCapture(async (): Promise<MyProfile> => {
-			const { data: customer, error } =
+			// name/email são do upvox (fonte de verdade pós-migração); nickname/bio/
+			// avatar vêm do pl_community_profile. Tolera ausência de linha legada em
+			// `Customers` (clientes nativos do upvox não têm → `.single()` daria erro).
+			const { data: customer } =
 				await customerRepository.getCustomerById(customerId);
-			if (error) throw new Error(error.message);
 			const prof = await profileRepository.getByCustomerId(customerId);
 			return {
 				id: customerId,
-				name: customer?.name ?? null,
+				name: customer?.name ?? fallbackName ?? null,
 				email: customer?.email ?? fallbackEmail ?? null,
 				nickname: prof?.nickname ?? null,
 				bio: prof?.bio ?? null,
@@ -36,11 +42,16 @@ export const profileService = {
 		input: { name?: string; nickname?: string | null; bio?: string | null },
 	) {
 		return withCapture(async (): Promise<MyProfile> => {
-			const { data: customer, error } =
+			const { data: customer } =
 				await customerRepository.getCustomerById(customerId);
-			if (error) throw new Error(error.message);
 
-			if (input.name !== undefined && input.name !== customer?.name) {
+			// Só atualiza o nome na tabela legada se houver linha (clientes migrados).
+			// Nativos do upvox não têm linha em `Customers` (nome vive no upvox).
+			if (
+				customer &&
+				input.name !== undefined &&
+				input.name !== customer.name
+			) {
 				const { error: updError } = await customerRepository.updateCustomer(
 					customerId,
 					{ name: input.name },

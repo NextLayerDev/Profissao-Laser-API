@@ -21,6 +21,7 @@ class ProfileController {
 		if (!id) return reply.status(401).send({ message: 'Unauthorized' });
 		const { data, error } = await profileService.getMyProfile(
 			id,
+			request.currentUser?.name ?? null,
 			request.currentUser?.email ?? '',
 		);
 		if (error) {
