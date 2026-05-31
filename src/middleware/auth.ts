@@ -1,10 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
+	fetchEntitlements,
 	fetchExternalUser,
 	isKnownAppRole,
 	isStaffRole,
 } from '../lib/external-auth.js';
-import { supabase } from '../lib/supabase.js';
 
 export const authenticate = async (
 	request: FastifyRequest,
@@ -159,35 +159,20 @@ export const authenticateCustomer = async (
 	reply: FastifyReply,
 ) => {
 	await authenticate(request, reply);
+	if (reply.sent || !request.currentUser) return;
 
-	if (!request.currentUser) return;
-
-	const user = request.currentUser;
-
-	// Staff (role admin/staff) têm acesso irrestrito.
+	// Staff: acesso irrestrito (controllers tratam staff via currentUser/query).
 	if (isStaffRole(request.currentRole)) return;
 
-	const { data: customer, error: customerError } = await supabase
-		.from('Customers')
-		.select('id, name, isTestUnlimited')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (customerError || !customer) {
-		return reply.status(403).send({
-			statusCode: 403,
-			error: 'Forbidden',
-			message: 'Customer not found',
-		});
-	}
-
+	// Identidade apenas: o id do upvox == `Customers.id` (a migração preservou) e
+	// funciona p/ signups nativos do upvox — sem lookup legado em `Customers` (que
+	// dava 403 em clientes migrados). Onde precisa de assinatura ativa, o gate é no
+	// front (SubscriptionGate). NÃO sub-gatear aqui: `purchase`/conta usam isto.
 	request.currentCustomer = {
-		id: customer.id,
-		name: customer.name,
+		id: request.currentUser.id,
+		name: request.currentUser.name ?? null,
 		image: null,
 	};
-	request.isUnlimitedCustomer =
-		(customer as { isTestUnlimited?: boolean }).isTestUnlimited === true;
 };
 
 /**
@@ -222,35 +207,17 @@ export const authenticateProgress = async (
 	reply: FastifyReply,
 ) => {
 	await authenticate(request, reply);
-	if (!request.currentUser) return;
+	if (reply.sent || !request.currentUser) return;
 
-	const user = request.currentUser;
-
-	// Staff (role admin/staff) têm acesso irrestrito (passam customerId via query/body).
+	// Staff passa customerId via query/body — não fixa currentCustomer.
 	if (isStaffRole(request.currentRole)) return;
 
-	// Customer: set currentCustomer
-	const { data: customer, error } = await supabase
-		.from('Customers')
-		.select('id, name, isTestUnlimited')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (error || !customer) {
-		return reply.status(403).send({
-			statusCode: 403,
-			error: 'Forbidden',
-			message: 'Customer not found',
-		});
-	}
-
+	// Customer: identidade pelo id do upvox (sem lookup legado em `Customers`).
 	request.currentCustomer = {
-		id: customer.id,
-		name: customer.name,
+		id: request.currentUser.id,
+		name: request.currentUser.name ?? null,
 		image: null,
 	};
-	request.isUnlimitedCustomer =
-		(customer as { isTestUnlimited?: boolean }).isTestUnlimited === true;
 };
 
 export const authenticateCommunity = async (
@@ -258,103 +225,45 @@ export const authenticateCommunity = async (
 	reply: FastifyReply,
 ) => {
 	await authenticate(request, reply);
-
-	if (!request.currentUser) return;
+	if (reply.sent || !request.currentUser) return;
 
 	const user = request.currentUser;
-
-	// Staff (role admin/staff) têm acesso irrestrito à comunidade.
-	if (isStaffRole(request.currentRole)) return;
-
-	// Fetch customer from pl_customer
-	const { data: customer, error: customerError } = await supabase
-		.from('Customers')
-		.select(`
-			id,
-			name,
-			isTestUnlimited,
-			pl_community_profile (
-				image
-			)
-		`)
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (customerError || !customer) {
-		return reply.status(403).send({
-			statusCode: 403,
-			error: 'Forbidden',
-			message: 'Customer not found',
-		});
-	}
-
-	// Conta de teste ilimitada: libera sem checar assinatura.
-	if ((customer as { isTestUnlimited?: boolean }).isTestUnlimited === true) {
+	const grant = (unlimited: boolean) => {
 		request.currentCustomer = {
-			id: customer.id,
-			name: customer.name,
+			id: user.id,
+			name: user.name ?? null,
 			image: null,
 		};
-		request.isUnlimitedCustomer = true;
+		request.isUnlimitedCustomer = unlimited;
+	};
+
+	// Staff: acesso irrestrito à comunidade.
+	if (isStaffRole(request.currentRole)) {
+		grant(false);
 		return;
 	}
 
-	// Verify active subscription in a class with comunidade: true
-	const { data: subscriptions } = await supabase
-		.from('pl_subscription')
-		.select(`
-			status,
-			pl_product!inner (
-				pl_class_product!inner (
-					pl_class!inner (
-						comunidade
-					)
-				)
-			)
-		`)
-		.eq('userId', customer.id)
-		.eq('status', 'active');
+	// Comunidade exige ASSINATURA ATIVA — validada no upvox (fonte de verdade
+	// pós-migração; a checagem antiga por `pl_subscription`/classe `comunidade`
+	// não vale mais p/ clientes migrados). Conta de teste ilimitada também passa.
+	const token = (request.headers.authorization ?? '').replace(
+		/^Bearer\s+/i,
+		'',
+	);
+	const ent = await fetchEntitlements(token);
+	const status = ent?.subscription?.status;
+	const allowed =
+		ent?.is_test_unlimited === true ||
+		status === 'active' ||
+		status === 'trialing';
 
-	const hasCommunityAccess = (subscriptions ?? []).some((subscription) => {
-		// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-		const productRaw = (subscription as any).pl_product;
-		if (!productRaw) return false;
-
-		// Supabase may return pl_product as object or array depending on FK naming
-		// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-		const products: any[] = Array.isArray(productRaw)
-			? productRaw
-			: [productRaw];
-
-		return products.some((product) => {
-			// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-			const classProducts = (product as any).pl_class_product;
-			if (!Array.isArray(classProducts)) return false;
-			return classProducts.some(
-				// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-				(cp: any) => cp.pl_class?.comunidade === true,
-			);
-		});
-	});
-
-	if (!hasCommunityAccess) {
+	if (!allowed) {
 		return reply.status(403).send({
 			statusCode: 403,
 			error: 'Forbidden',
-			message: 'Community access required',
+			message: 'subscription_required',
 		});
 	}
 
-	const profileList = (
-		customer as unknown as {
-			pl_community_profile: { image: string | null }[];
-		}
-	).pl_community_profile;
-	const profile = profileList?.[0] ?? null;
-
-	request.currentCustomer = {
-		id: customer.id,
-		name: customer.name,
-		image: profile?.image ?? null,
-	};
+	grant(ent?.is_test_unlimited === true);
 };
