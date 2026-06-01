@@ -88,6 +88,19 @@ export const parameterService = {
 		});
 	},
 
+	async getWithPasses(id: string, customerId: string | null) {
+		return withCapture(async () => {
+			const result = await parameterRepository.getWithPasses(id);
+			if (!result) return null;
+			const { passes, ...parent } = result;
+			const [enriched] = await enrichWithCounts(
+				[parent as ParameterRow],
+				customerId,
+			);
+			return { ...enriched, passes };
+		});
+	},
+
 	async create(
 		data: CreateParameter,
 		createdBy: string,
@@ -108,6 +121,10 @@ export const parameterService = {
 
 	async stats() {
 		return withCapture(() => parameterRepository.stats());
+	},
+
+	async sidebar() {
+		return withCapture(() => parameterRepository.sidebar());
 	},
 
 	async listMachines() {

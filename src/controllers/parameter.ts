@@ -48,6 +48,23 @@ export const getParameterController = async (
 	return reply.send(data);
 };
 
+export const getParameterPassesController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = getCurrentId(request);
+	const { data, error } = await parameterService.getWithPasses(
+		request.params.id,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	if (!data) return reply.status(404).send({ message: 'Parameter not found' });
+	return reply.send(data);
+};
+
 export const createParameterController = async (
 	request: FastifyRequest<{ Body: CreateParameter }>,
 	reply: FastifyReply,
@@ -102,6 +119,18 @@ export const parameterStatsController = async (
 	reply: FastifyReply,
 ) => {
 	const { data, error } = await parameterService.stats();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
+};
+
+export const parameterSidebarController = async (
+	_request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const { data, error } = await parameterService.sidebar();
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });

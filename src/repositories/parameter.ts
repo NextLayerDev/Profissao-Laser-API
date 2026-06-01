@@ -3,6 +3,8 @@ import type {
 	CommunityListQuery,
 	CreateParameter,
 	ListParametersQuery,
+	ParameterSidebar,
+	PassRecipe,
 	UpdateParameter,
 } from '../types/parameter.js';
 
@@ -21,6 +23,7 @@ class ParameterRepository {
 		if (filters.thickness) q = q.eq('thickness', filters.thickness) as T;
 		if (filters.mode) q = q.eq('mode', filters.mode) as T;
 		if (filters.software) q = q.eq('software', filters.software) as T;
+		if (filters.category) q = q.eq('category', filters.category) as T;
 		if (filters.search) {
 			q = q.or(
 				`material.ilike.%${filters.search}%,materialType.ilike.%${filters.search}%,machine.ilike.%${filters.search}%`,
@@ -34,6 +37,7 @@ class ParameterRepository {
 		let query = supabase
 			.from('pl_parameter')
 			.select('*', { count: 'exact' })
+			.is('parentId', null) // não lista passadas-filhas, só pais/avulsos
 			.order('createdAt', { ascending: false })
 			.range(offset, offset + filters.limit - 1);
 
@@ -56,6 +60,7 @@ class ParameterRepository {
 			.from('pl_parameter')
 			.select('*', { count: 'exact' })
 			.eq('isPublic', true)
+			.is('parentId', null) // não lista passadas-filhas, só pais/avulsos
 			.order('createdAt', { ascending: false })
 			.limit(500);
 
@@ -76,48 +81,100 @@ class ParameterRepository {
 		return data;
 	}
 
+	/** Parâmetro + suas passadas em ordem (pai = passada 1, depois os filhos). */
+	async getWithPasses(id: string) {
+		const parent = await this.findById(id);
+		if (!parent) return null;
+		if (!parent.isParent) return { ...parent, passes: [parent] };
+		const { data: children, error } = await supabase
+			.from('pl_parameter')
+			.select('*')
+			.eq('parentId', id)
+			.order('passOrder', { ascending: true });
+		if (error) throw new Error(error.message);
+		return { ...parent, passes: [parent, ...(children ?? [])] };
+	}
+
+	/** Mapeia os campos de recipe de uma passada p/ uma linha de pl_parameter. */
+	private recipeRow(data: CreateParameter | PassRecipe) {
+		return {
+			machine: data.machine,
+			powerWatts: data.powerWatts,
+			lens: data.lens,
+			software: data.software,
+			mode: data.mode,
+			speed: data.speed,
+			power: data.power,
+			frequency: data.frequency,
+			line: data.line,
+			crossHatch: data.crossHatch ?? false,
+			angle: data.angle,
+			passes: data.passes ?? 1,
+			passesFill: data.passesFill ?? 1,
+			defocus: data.defocus ?? null,
+			gas: data.gas ?? false,
+			notes: data.notes ?? null,
+			tamanhoLinha: data.tamanhoLinha ?? null,
+			tamanhoDivisao: data.tamanhoDivisao ?? null,
+			sobreposicao: data.sobreposicao ?? null,
+			forcarSeparacao: data.forcarSeparacao ?? null,
+			axisRotative: data.axisRotative ?? null,
+			lineTypeId: data.lineTypeId ?? null,
+		};
+	}
+
 	async create(
 		data: CreateParameter,
 		createdBy: string,
 		createdByName: string | null,
 	) {
-		const { data: row, error } = await supabase
+		const hasPasses = (data.extraPasses?.length ?? 0) > 0;
+		// Linha "pai" (= passada 1) com os metadados (material/imagem/categoria).
+		const { data: parent, error } = await supabase
 			.from('pl_parameter')
 			.insert({
-				machine: data.machine,
-				powerWatts: data.powerWatts,
-				lens: data.lens,
-				software: data.software,
+				...this.recipeRow(data),
 				material: data.material,
-				mode: data.mode,
-				speed: data.speed,
-				power: data.power,
-				frequency: data.frequency,
-				line: data.line,
-				crossHatch: data.crossHatch ?? false,
-				angle: data.angle,
-				passes: data.passes ?? 1,
-				passesFill: data.passesFill ?? 1,
-				defocus: data.defocus ?? null,
-				gas: data.gas ?? false,
-				notes: data.notes ?? null,
 				materialType: data.materialType ?? null,
 				thickness: data.thickness ?? null,
-				// Campos software-specific
-				tamanhoLinha: data.tamanhoLinha ?? null,
-				tamanhoDivisao: data.tamanhoDivisao ?? null,
-				sobreposicao: data.sobreposicao ?? null,
-				forcarSeparacao: data.forcarSeparacao ?? null,
-				axisRotative: data.axisRotative ?? null,
-				lineTypeId: data.lineTypeId ?? null,
+				imageUrl: data.imageUrl ?? null,
+				category: data.category ?? null,
 				isPublic: data.isPublic ?? false,
+				isParent: hasPasses,
+				parentId: null,
+				passOrder: hasPasses ? 1 : null,
 				createdBy,
 				createdByName,
 			})
 			.select()
 			.single();
 		if (error) throw new Error(error.message);
-		return row;
+
+		// Passadas extras (2..N): linhas-filhas com recipe próprio, herdando o
+		// material/visibilidade do pai. A passada 1 é o próprio pai.
+		if (hasPasses && data.extraPasses) {
+			const children = data.extraPasses.map((p, i) => ({
+				...this.recipeRow(p),
+				material: data.material,
+				imageUrl: null,
+				category: null,
+				isPublic: data.isPublic ?? false,
+				isParent: false,
+				parentId: parent.id,
+				passOrder: i + 2,
+				createdBy,
+				createdByName,
+			}));
+			const { error: childErr } = await supabase
+				.from('pl_parameter')
+				.insert(children);
+			if (childErr) {
+				// Rollback do pai p/ não deixar parâmetro órfão sem passadas.
+				await supabase.from('pl_parameter').delete().eq('id', parent.id);
+				throw new Error(childErr.message);
+			}
+		}
+		return parent;
 	}
 
 	async update(id: string, data: UpdateParameter) {
@@ -140,7 +197,8 @@ class ParameterRepository {
 		const [params, machines, materials] = await Promise.all([
 			supabase
 				.from('pl_parameter')
-				.select('createdBy', { count: 'exact', head: false }),
+				.select('createdBy', { count: 'exact', head: false })
+				.is('parentId', null),
 			supabase
 				.from('pl_parameter_machine')
 				.select('id', { count: 'exact', head: true }),
@@ -159,6 +217,80 @@ class ParameterRepository {
 			totalMachines: machines.count ?? 0,
 			totalMaterials: materials.count ?? 0,
 			totalContributors: contributors.size,
+		};
+	}
+
+	/** Sidebar do redesign: top contribuidores, atividade recente, mais usados. */
+	async sidebar(): Promise<ParameterSidebar> {
+		const [contribRes, recentRes, likeRes] = await Promise.all([
+			supabase
+				.from('pl_parameter')
+				.select('createdBy, createdByName')
+				.is('parentId', null),
+			supabase
+				.from('pl_parameter')
+				.select('id, material, createdByName, createdAt')
+				.is('parentId', null)
+				.order('createdAt', { ascending: false })
+				.limit(5),
+			supabase.from('pl_parameter_like').select('parameterId'),
+		]);
+		if (contribRes.error) throw new Error(contribRes.error.message);
+
+		// Top contribuidores por nº de parâmetros.
+		const byContrib = new Map<string, { name: string | null; count: number }>();
+		for (const p of contribRes.data ?? []) {
+			const e = byContrib.get(p.createdBy) ?? {
+				name: p.createdByName ?? null,
+				count: 0,
+			};
+			e.count++;
+			byContrib.set(p.createdBy, e);
+		}
+		const topContributors = [...byContrib.entries()]
+			.map(([createdBy, v]) => ({ createdBy, name: v.name, count: v.count }))
+			.sort((a, b) => b.count - a.count)
+			.slice(0, 5);
+
+		// Mais usados = mais curtidos (top 5).
+		const likeCount = new Map<string, number>();
+		for (const l of likeRes.data ?? []) {
+			likeCount.set(l.parameterId, (likeCount.get(l.parameterId) ?? 0) + 1);
+		}
+		const topIds = [...likeCount.entries()]
+			.sort((a, b) => b[1] - a[1])
+			.slice(0, 5)
+			.map(([id]) => id);
+		let mostUsed: ParameterSidebar['mostUsed'] = [];
+		if (topIds.length > 0) {
+			const { data: rows } = await supabase
+				.from('pl_parameter')
+				.select('id, material, imageUrl')
+				.in('id', topIds);
+			mostUsed = topIds
+				.map((id) => {
+					const r = (rows ?? []).find((x) => x.id === id);
+					return r
+						? {
+								id,
+								material: r.material,
+								imageUrl: r.imageUrl ?? null,
+								likesCount: likeCount.get(id) ?? 0,
+							}
+						: null;
+				})
+				.filter((x): x is NonNullable<typeof x> => x !== null);
+		}
+
+		return {
+			topContributors,
+			recentActivity: (recentRes.data ?? []).map((r) => ({
+				id: r.id,
+				material: r.material,
+				createdByName: r.createdByName ?? null,
+				createdAt: r.createdAt,
+			})),
+			mostUsed,
 		};
 	}
 
