@@ -6,11 +6,13 @@ import {
 	deleteParameterController,
 	exportParametersController,
 	getParameterController,
+	getParameterPassesController,
 	likeParameterController,
 	listCommunityController,
 	listMachinesController,
 	listMaterialsController,
 	listParametersController,
+	parameterSidebarController,
 	parameterStatsController,
 	rateParameterController,
 	saveParameterController,
@@ -26,7 +28,9 @@ import {
 	machineSchema,
 	materialSchema,
 	parameterSchema,
+	parameterSidebarSchema,
 	parameterStatsSchema,
+	parameterWithPassesSchema,
 	rateParameterSchema,
 	updateParameterSchema,
 } from '../types/parameter.js';
@@ -66,6 +70,21 @@ export async function parameterRoute(server: FastifyInstance) {
 			},
 		},
 		parameterStatsController,
+	);
+
+	server.get(
+		'/parameters/sidebar',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Sidebar: top contributors, recent activity, most used parameters.',
+				response: { 200: parameterSidebarSchema, 500: ErrorSchema },
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		parameterSidebarController,
 	);
 
 	server.get(
@@ -144,6 +163,26 @@ export async function parameterRoute(server: FastifyInstance) {
 			},
 		},
 		getParameterController,
+	);
+
+	server.get(
+		'/parameters/:id/passes',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Get a parameter with its ordered passes (parent = pass 1).',
+				params: z.object({ id: z.string() }),
+				response: {
+					200: parameterWithPassesSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getParameterPassesController,
 	);
 
 	server.post(

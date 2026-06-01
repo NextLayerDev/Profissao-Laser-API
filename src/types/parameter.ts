@@ -43,6 +43,14 @@ export const parameterSchema = z.object({
 	lineTypeId: z.string().nullable().optional(),
 	// 15. Notas
 	notes: z.string().nullable().optional(),
+	// Imagem + categoria (redesign da página)
+	imageUrl: z.string().nullable().optional(),
+	category: z.string().nullable().optional(),
+	// Multi-passada: parâmetro "pai" com N passadas (cada passada = um parâmetro).
+	parentId: z.string().nullable().optional(),
+	passOrder: z.number().nullable().optional(),
+	isParent: z.boolean().optional(),
+	passCount: z.number().optional(),
 	// Legado — fora do formulário novo, mantidos opcionais
 	materialType: z.string().nullable().optional(),
 	thickness: z.string().nullable().optional(),
@@ -58,6 +66,32 @@ export const parameterSchema = z.object({
 	userRating: z.number().nullable().optional(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
+});
+
+/** Recipe de UMA passada (sem metadados — material/imagem/categoria vêm do pai). */
+export const passRecipeSchema = z.object({
+	machine: z.string().min(1),
+	powerWatts: z.number().int().min(0),
+	lens: z.string().min(1),
+	software: z.string().min(1),
+	mode: z.string().min(1),
+	speed: z.number().int().min(0),
+	power: z.number().int().min(0).max(100),
+	frequency: z.number().int().min(0),
+	line: z.number().min(0),
+	crossHatch: z.boolean().default(false),
+	angle: z.number().int().min(0).max(360),
+	passes: z.number().int().min(1).default(1),
+	passesFill: z.number().int().min(1).default(1),
+	defocus: z.number().int().min(-20).max(20).nullable().optional(),
+	gas: z.boolean().default(false),
+	tamanhoLinha: z.number().nullable().optional(),
+	tamanhoDivisao: z.number().nullable().optional(),
+	sobreposicao: z.number().nullable().optional(),
+	forcarSeparacao: z.boolean().nullable().optional(),
+	axisRotative: z.boolean().nullable().optional(),
+	lineTypeId: z.string().uuid().nullable().optional(),
+	notes: z.string().nullable().optional(),
 });
 
 export const createParameterSchema = z.object({
@@ -107,9 +141,46 @@ export const createParameterSchema = z.object({
 	thickness: z.string().nullable().optional(),
 	// Público (visível para alunos)
 	isPublic: z.boolean().default(false),
+	// Imagem (URL no storage) + categoria (Copos/Metais/Madeira/Acrílico/Brindes/Outros)
+	imageUrl: z.string().nullable().optional(),
+	category: z.string().nullable().optional(),
+	// Multi-passada: passadas extras (2..N). A passada 1 é o recipe principal acima.
+	extraPasses: z.array(passRecipeSchema).optional(),
 });
 
 export const updateParameterSchema = createParameterSchema.partial();
+
+/** Parâmetro + suas passadas (pai = passada 1, depois os filhos em ordem). */
+export const parameterWithPassesSchema = parameterSchema.extend({
+	passes: z.array(parameterSchema),
+});
+
+/** Dados da sidebar da página de parâmetros (redesign). */
+export const parameterSidebarSchema = z.object({
+	topContributors: z.array(
+		z.object({
+			createdBy: z.string(),
+			name: z.string().nullable(),
+			count: z.number(),
+		}),
+	),
+	recentActivity: z.array(
+		z.object({
+			id: z.string(),
+			material: z.string(),
+			createdByName: z.string().nullable(),
+			createdAt: z.string(),
+		}),
+	),
+	mostUsed: z.array(
+		z.object({
+			id: z.string(),
+			material: z.string(),
+			imageUrl: z.string().nullable(),
+			likesCount: z.number(),
+		}),
+	),
+});
 
 export const listParametersQuery = z.object({
 	page: z.coerce.number().int().positive().default(1),
@@ -121,6 +192,7 @@ export const listParametersQuery = z.object({
 	search: z.string().optional(),
 	mode: z.string().optional(),
 	software: z.string().optional(),
+	category: z.string().optional(),
 });
 
 export const communityListQuery = listParametersQuery.extend({
@@ -157,6 +229,9 @@ export const exportQuery = listParametersQuery.extend({
 });
 
 export type Parameter = z.infer<typeof parameterSchema>;
+export type PassRecipe = z.infer<typeof passRecipeSchema>;
+export type ParameterWithPasses = z.infer<typeof parameterWithPassesSchema>;
+export type ParameterSidebar = z.infer<typeof parameterSidebarSchema>;
 export type CreateParameter = z.infer<typeof createParameterSchema>;
 export type UpdateParameter = z.infer<typeof updateParameterSchema>;
 export type ListParametersQuery = z.infer<typeof listParametersQuery>;
