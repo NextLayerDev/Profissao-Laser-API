@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { supabase } from '../lib/supabase.js';
+import { isStaffRole } from '../lib/external-auth.js';
 import { forumRepository } from '../repositories/forum.js';
 import {
 	createForumCategorySchema,
@@ -12,22 +12,15 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function requireAdmin(
-	request: FastifyRequest,
-	reply: FastifyReply,
-): Promise<boolean> {
+function requireAdmin(request: FastifyRequest, reply: FastifyReply): boolean {
 	const user = request.currentUser;
 	if (!user) {
 		reply.status(401).send({ message: 'Not authenticated' });
 		return false;
 	}
-	const { data: platformUser } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (!platformUser) {
+	// Admin = role do upvox (admin/staff). Antes fazia lookup na tabela legada
+	// `Users`, que dava 403 pro admin migrado (id agora é o do upvox).
+	if (!isStaffRole(request.currentRole)) {
 		reply.status(403).send({ message: 'Admin access required' });
 		return false;
 	}
@@ -42,21 +35,16 @@ function getAuthor(request: FastifyRequest) {
 	return { id: userId, name, isInstructor };
 }
 
-async function requireOwnerOrAdmin(
+function requireOwnerOrAdmin(
 	request: FastifyRequest,
 	reply: FastifyReply,
 	ownerId: string,
-): Promise<boolean> {
+): boolean {
 	const userId = request.currentUser?.id ?? '';
 	if (userId === ownerId) return true;
 
-	const { data: platformUser } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${userId},email.eq.${request.currentUser?.email}`)
-		.maybeSingle();
-
-	if (!platformUser) {
+	// Dono OU admin/staff (role do upvox) — sem lookup na tabela legada `Users`.
+	if (!isStaffRole(request.currentRole)) {
 		reply.status(403).send({ message: 'Not authorized' });
 		return false;
 	}
