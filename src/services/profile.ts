@@ -1,5 +1,6 @@
 import { withCapture } from '@/lib/sentry.js';
 import { encrypt } from '../lib/crypto.js';
+import { updateExternalUser } from '../lib/external-auth.js';
 import { supabase } from '../lib/supabase.js';
 import { customerRepository } from '../repositories/customer.js';
 import { profileRepository } from '../repositories/profile.js';
@@ -40,23 +41,32 @@ export const profileService = {
 	async updateMyProfile(
 		customerId: string,
 		input: { name?: string; nickname?: string | null; bio?: string | null },
+		ctx: {
+			token?: string;
+			fallbackName?: string | null;
+			fallbackEmail?: string | null;
+		} = {},
 	) {
 		return withCapture(async (): Promise<MyProfile> => {
 			const { data: customer } =
 				await customerRepository.getCustomerById(customerId);
 
-			// Só atualiza o nome na tabela legada se houver linha (clientes migrados).
-			// Nativos do upvox não têm linha em `Customers` (nome vive no upvox).
-			if (
-				customer &&
-				input.name !== undefined &&
-				input.name !== customer.name
-			) {
-				const { error: updError } = await customerRepository.updateCustomer(
-					customerId,
-					{ name: input.name },
-				);
-				if (updError) throw new Error(updError.message);
+			if (input.name !== undefined) {
+				// Nome = fonte de verdade no upvox pós-migração. Encaminha p/ o upvox
+				// (PATCH /v1/me) repassando o Bearer — clientes nativos do upvox não
+				// têm linha em `Customers`, então gravar só na tabela legada não valia.
+				if (ctx.token) {
+					await updateExternalUser(ctx.token, { name: input.name });
+				}
+				// Mantém `Customers.name` em sincronia quando a linha existe (migrados):
+				// joins de comunidade/membros ainda leem o nome da tabela legada.
+				if (customer && input.name !== customer.name) {
+					const { error: updError } = await customerRepository.updateCustomer(
+						customerId,
+						{ name: input.name },
+					);
+					if (updError) throw new Error(updError.message);
+				}
 			}
 
 			const profFields: Partial<{
@@ -72,8 +82,8 @@ export const profileService = {
 			const prof = await profileRepository.getByCustomerId(customerId);
 			return {
 				id: customerId,
-				name: input.name ?? customer?.name ?? null,
-				email: customer?.email ?? null,
+				name: input.name ?? customer?.name ?? ctx.fallbackName ?? null,
+				email: customer?.email ?? ctx.fallbackEmail ?? null,
 				nickname: prof?.nickname ?? null,
 				bio: prof?.bio ?? null,
 				avatar: prof?.image ?? null,

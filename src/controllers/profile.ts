@@ -36,7 +36,15 @@ class ProfileController {
 		const id = request.currentCustomer?.id;
 		if (!id) return reply.status(401).send({ message: 'Unauthorized' });
 		const body = updateProfileSchema.parse(request.body);
-		const { data, error } = await profileService.updateMyProfile(id, body);
+		const token = (request.headers.authorization ?? '').replace(
+			/^Bearer\s+/i,
+			'',
+		);
+		const { data, error } = await profileService.updateMyProfile(id, body, {
+			token: token || undefined,
+			fallbackName: request.currentUser?.name ?? null,
+			fallbackEmail: request.currentUser?.email ?? null,
+		});
 		if (error) {
 			return reply.status(500).send({
 				message: error instanceof Error ? error.message : 'Unknown error',
