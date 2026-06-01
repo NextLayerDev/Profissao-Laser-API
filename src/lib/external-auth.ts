@@ -117,3 +117,31 @@ export async function fetchEntitlements(
 		return null;
 	}
 }
+
+/**
+ * Atualiza o usuário no upvox (PATCH /v1/me) repassando o Bearer do cliente.
+ * O nome é a fonte de verdade no upvox pós-migração. Lança em falha.
+ */
+export async function updateExternalUser(
+	token: string,
+	input: { name?: string },
+): Promise<ExternalUser | null> {
+	let res: Response;
+	try {
+		res = await fetch(`${externalApiUrl}/v1/me`, {
+			method: 'PATCH',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${token}`,
+			},
+			body: JSON.stringify(input),
+		});
+	} catch (err) {
+		throw new Error(`Failed to reach upvox-api: ${err}`);
+	}
+	if (!res.ok) {
+		const body = await res.text().catch(() => '');
+		throw new Error(`Profile update failed (${res.status}): ${body}`);
+	}
+	return (await res.json()) as ExternalUser;
+}
