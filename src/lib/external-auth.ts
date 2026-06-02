@@ -5,6 +5,39 @@ if (!externalApiUrl) {
 }
 
 /**
+ * Cache curto + dedup de chamadas in-flight por token. A auth (e a da comunidade)
+ * chama o upvox em TODA request — e cada página dispara várias em paralelo. Sem
+ * isto, cada uma fazia um round-trip ao upvox (a causa da "demora no 1º load").
+ * Só cacheia sucesso (não-nulo); erro não fica preso. TTL curto mantém correto.
+ */
+function tokenCache<T>(ttlMs: number) {
+	const store = new Map<string, { at: number; data: T }>();
+	const inflight = new Map<string, Promise<T>>();
+	return (token: string, loader: () => Promise<T>): Promise<T> => {
+		const hit = store.get(token);
+		if (hit && Date.now() - hit.at < ttlMs) return Promise.resolve(hit.data);
+		const pending = inflight.get(token);
+		if (pending) return pending;
+		const p = (async () => {
+			try {
+				const data = await loader();
+				if (data != null) {
+					if (store.size > 2000) store.clear();
+					store.set(token, { at: Date.now(), data });
+				}
+				return data;
+			} finally {
+				inflight.delete(token);
+			}
+		})();
+		inflight.set(token, p);
+		return p;
+	};
+}
+
+const AUTH_CACHE_TTL = 30_000;
+
+/**
  * Usuário retornado por GET {EXTERNAL_API_URL}/v1/me na nova API.
  * O endpoint valida o Bearer token e devolve o usuário com `role`/`blocked`.
  */
@@ -71,23 +104,23 @@ export async function registerExternalCustomer(data: {
  * Valida o token contra a nova API e retorna o usuário (com role/blocked),
  * ou `null` se o token for inválido/expirado.
  */
+const externalUserCache = tokenCache<ExternalUser | null>(AUTH_CACHE_TTL);
+
 export async function fetchExternalUser(
 	token: string,
 ): Promise<ExternalUser | null> {
-	let res: Response;
-	try {
-		res = await fetch(`${externalApiUrl}/v1/me`, {
-			headers: { Authorization: `Bearer ${token}` },
-		});
-	} catch {
-		return null;
-	}
-
-	if (!res.ok) {
-		return null;
-	}
-
-	return (await res.json()) as ExternalUser;
+	return externalUserCache(token, async () => {
+		let res: Response;
+		try {
+			res = await fetch(`${externalApiUrl}/v1/me`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+		} catch {
+			return null;
+		}
+		if (!res.ok) return null;
+		return (await res.json()) as ExternalUser;
+	});
 }
 
 /**
@@ -104,18 +137,24 @@ export interface ExternalEntitlements {
  * Busca os entitlements do cliente no upvox repassando o mesmo Bearer da
  * request (mesmo padrão de `fetchExternalUser`). `null` em qualquer falha.
  */
+const entitlementsCache = tokenCache<ExternalEntitlements | null>(
+	AUTH_CACHE_TTL,
+);
+
 export async function fetchEntitlements(
 	token: string,
 ): Promise<ExternalEntitlements | null> {
-	try {
-		const res = await fetch(`${externalApiUrl}/v1/me/entitlements`, {
-			headers: { Authorization: `Bearer ${token}` },
-		});
-		if (!res.ok) return null;
-		return (await res.json()) as ExternalEntitlements;
-	} catch {
-		return null;
-	}
+	return entitlementsCache(token, async () => {
+		try {
+			const res = await fetch(`${externalApiUrl}/v1/me/entitlements`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			if (!res.ok) return null;
+			return (await res.json()) as ExternalEntitlements;
+		} catch {
+			return null;
+		}
+	});
 }
 
 /**

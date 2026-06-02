@@ -286,11 +286,21 @@ class CommunityRepository {
 		category?: string,
 		featured?: boolean,
 		online?: boolean,
+		limit = 200,
+		offset = 0,
 	) {
+		const onlineThreshold = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+		// Filtros (online/featured/category) sao do perfil -> inner join + SQL +
+		// paginacao, pra NAO puxar todos os Customers e filtrar em JS (a 'demora
+		// ao abrir' de membros/chat/online).
+		const needsInner = !!(category || featured || online);
+		const join = needsInner
+			? 'pl_community_profile!inner'
+			: 'pl_community_profile';
 		let query = supabase.from('Customers').select(`
 				id,
 				name,
-				pl_community_profile (
+				${join} (
 					specialty,
 					badges,
 					badge,
@@ -302,39 +312,39 @@ class CommunityRepository {
 				)
 			`);
 
-		if (search) {
-			query = query.ilike('name', `%${search}%`);
-		}
+		if (search) query = query.ilike('name', `%${search}%`);
+		if (category) query = query.eq('pl_community_profile.category', category);
+		if (featured) query = query.eq('pl_community_profile.featured', true);
+		if (online)
+			query = query.gte('pl_community_profile.lastSeenAt', onlineThreshold);
+
+		query = query
+			.order('name', { ascending: true })
+			.range(offset, offset + limit - 1);
 
 		const { data, error } = await query;
 		if (error) throw new Error(error.message);
 
-		const onlineThreshold = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-
-		return (data ?? [])
-			.map((m) => {
-				// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
-				const member = m as any;
-				const profile = member.pl_community_profile?.[0] ?? null;
-				const lastSeenAt: string | null = profile?.lastSeenAt ?? null;
-				const isOnline = lastSeenAt ? lastSeenAt >= onlineThreshold : false;
-				return {
-					id: member.id as string,
-					name: member.name as string,
-					specialty: (profile?.specialty ?? null) as string | null,
-					badges: (profile?.badges ?? []) as string[],
-					badge: (profile?.badge ?? null) as string | null,
-					featuredRole: (profile?.featuredRole ?? null) as string | null,
-					featured: (profile?.featured ?? false) as boolean,
-					category: (profile?.category ?? null) as string | null,
-					image: (profile?.image ?? null) as string | null,
-					isOnline,
-					lastSeenAt,
-				};
-			})
-			.filter((m) => !category || m.category === category)
-			.filter((m) => !featured || m.featured === true)
-			.filter((m) => !online || m.isOnline === true);
+		return (data ?? []).map((m) => {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const member = m as any;
+			const profile = member.pl_community_profile?.[0] ?? null;
+			const lastSeenAt: string | null = profile?.lastSeenAt ?? null;
+			const isOnline = lastSeenAt ? lastSeenAt >= onlineThreshold : false;
+			return {
+				id: member.id as string,
+				name: member.name as string,
+				specialty: (profile?.specialty ?? null) as string | null,
+				badges: (profile?.badges ?? []) as string[],
+				badge: (profile?.badge ?? null) as string | null,
+				featuredRole: (profile?.featuredRole ?? null) as string | null,
+				featured: (profile?.featured ?? false) as boolean,
+				category: (profile?.category ?? null) as string | null,
+				image: (profile?.image ?? null) as string | null,
+				isOnline,
+				lastSeenAt,
+			};
+		});
 	}
 
 	async listProjects(
