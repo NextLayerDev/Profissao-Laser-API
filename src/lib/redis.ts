@@ -46,11 +46,14 @@ export function makeCache(client: RedisLike): Cache {
 function build(): Cache {
 	const url = process.env.REDIS_URL;
 	if (!url) return noopCache;
-	// Conexão preguiçosa + fail-fast: não conecta no load do módulo, e comandos
-	// falham rápido (sem fila offline) quando o Redis está fora — casando com o
-	// fail-open do cacheAside, que então cai no fetchFn.
+	// Conexão eager + fail-fast: conecta já no load do módulo (que roda antes do
+	// server.listen) pra estar `ready` quando chega a 1ª request. Com lazyConnect
+	// a conexão só iniciava no 1º comando — e como enableOfflineQueue:false REJEITA
+	// o comando na hora (em vez de enfileirar até conectar), o cacheAside caía no
+	// fail-open e NUNCA gravava na 1ª request após cada (re)start. Os dois flags
+	// abaixo mantêm o fail-fast quando o Redis está fora — casando com o fail-open
+	// do cacheAside, que então cai no fetchFn.
 	const client = new Redis(url, {
-		lazyConnect: true,
 		maxRetriesPerRequest: 1,
 		enableOfflineQueue: false,
 	});
