@@ -302,6 +302,7 @@ class CommunityRepository {
 				name,
 				${join} (
 					specialty,
+					nickname,
 					badges,
 					badge,
 					"featuredRole",
@@ -334,6 +335,7 @@ class CommunityRepository {
 			return {
 				id: member.id as string,
 				name: member.name as string,
+				nickname: (profile?.nickname ?? null) as string | null,
 				specialty: (profile?.specialty ?? null) as string | null,
 				badges: (profile?.badges ?? []) as string[],
 				badge: (profile?.badge ?? null) as string | null,
