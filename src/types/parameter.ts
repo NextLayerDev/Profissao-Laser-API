@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { applicableFields } from '../lib/parameter-field-rules.js';
 
 export const parameterSchema = z.object({
 	id: z.string(),
@@ -108,7 +109,7 @@ export const passRecipeSchema = z.object({
 	notes: z.string().nullable().optional(),
 });
 
-export const createParameterSchema = z.object({
+const createParameterObject = z.object({
 	// 1. Máquina *
 	machine: z.string().min(1),
 	// 2. Potência (W) *
@@ -125,14 +126,14 @@ export const createParameterSchema = z.object({
 	speed: z.number().int().min(0),
 	// 8. Potência (%) *
 	power: z.number().int().min(0).max(100),
-	// 9. Frequência (kHz) *
-	frequency: z.number().int().min(0),
+	// 9. Frequência (kHz) — exigida só p/ Fiber/UV (ver superRefine)
+	frequency: z.number().int().min(0).nullable().optional(),
 	// 10. Linha (mm) *
 	line: z.number().min(0),
 	// 11. Preenchimento Cruzado — caixa liga/desliga
 	crossHatch: z.boolean().default(false),
-	// 12. Ângulo (°) *
-	angle: z.number().int().min(0).max(360),
+	// 12. Ângulo (°) — exigido só fora do Corte (ver superRefine)
+	angle: z.number().int().min(0).max(360).nullable().optional(),
 	// 13. Passadas (Contorno) *
 	passes: z.number().int().min(1).default(1),
 	// 14. Passadas (Preenchimento) *
@@ -166,7 +167,38 @@ export const createParameterSchema = z.object({
 	extraPasses: z.array(passRecipeSchema).optional(),
 });
 
-export const updateParameterSchema = createParameterSchema.partial();
+/**
+ * Criação com validação condicional por máquina/modo (A4/A5): frequency/qPulse/
+ * angle só são exigidos quando aplicáveis à máquina selecionada.
+ */
+export const createParameterSchema = createParameterObject.superRefine(
+	(data, ctx) => {
+		const ap = applicableFields(data.machine, data.mode);
+		if (ap.frequency && data.frequency == null) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['frequency'],
+				message: 'Frequência é obrigatória para esta máquina.',
+			});
+		}
+		if (ap.qPulse && data.qPulse == null) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['qPulse'],
+				message: 'Q-pulse é obrigatório para máquina UV.',
+			});
+		}
+		if (ap.angle && data.angle == null) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['angle'],
+				message: 'Ângulo é obrigatório para esta máquina/modo.',
+			});
+		}
+	},
+);
+
+export const updateParameterSchema = createParameterObject.partial();
 
 /** Parâmetro + suas passadas (pai = passada 1, depois os filhos em ordem). */
 export const parameterWithPassesSchema = parameterSchema.extend({

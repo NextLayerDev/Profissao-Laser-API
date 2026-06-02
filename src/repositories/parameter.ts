@@ -181,10 +181,11 @@ class ParameterRepository {
 			mode: data.mode,
 			speed: data.speed,
 			power: data.power,
-			frequency: data.frequency,
+			// frequency é NOT NULL: máquinas sem frequência (CO2/Diodo) gravam 0.
+			frequency: data.frequency ?? 0,
 			line: data.line,
 			crossHatch: data.crossHatch ?? false,
-			angle: data.angle,
+			angle: data.angle ?? null,
 			passes: data.passes ?? 1,
 			passesFill: data.passesFill ?? 1,
 			defocus: data.defocus ?? null,
