@@ -57,8 +57,13 @@ function build(): Cache {
 		maxRetriesPerRequest: 1,
 		enableOfflineQueue: false,
 	});
-	client.on('error', () => {
-		// fail-open: silencia erros de conexão; cada chamada já trata
+	// host:porta pro log (sem expor a senha da URL).
+	const target = `${client.options.host}:${client.options.port}`;
+	client.on('connect', () => console.log(`[redis] conectando em ${target}…`));
+	client.on('ready', () => console.log(`[redis] pronto (${target})`));
+	client.on('error', (err) => {
+		// fail-open: cada chamada já trata; só logamos pra ter visibilidade.
+		console.error(`[redis] erro de conexão (${target}):`, err.message);
 	});
 	return makeCache(client as unknown as RedisLike);
 }
