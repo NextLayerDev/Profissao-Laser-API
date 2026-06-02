@@ -22,11 +22,10 @@ export const authenticate = async (
 		}
 		const role = String(request.headers['x-user-role'] ?? '');
 		const hasToken = Boolean(request.headers.authorization);
-		// O gateway nem sempre injeta um role de app válido: o JWT do Supabase
-		// carrega `role:"authenticated"`, não o role real (que vive em
-		// public.users.role). Se o header trouxer um role conhecido — ou se não
-		// houver token p/ revalidar — confiamos nele; senão caímos no fallback
-		// `/v1/me` abaixo, que resolve o role correto.
+		// O gateway injeta o role REAL do app (customer/staff/admin), resolvido da
+		// tabela users — confiamos nele (fast path, SEM round-trip). O fallback
+		// `/v1/me` abaixo é só rede de segurança p/ requests sem header de role
+		// válido (ex.: chamadas que não passam pelo gateway).
 		if (isKnownAppRole(role) || !hasToken) {
 			request.currentUser = {
 				id: headerId,

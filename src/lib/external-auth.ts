@@ -35,7 +35,10 @@ function tokenCache<T>(ttlMs: number) {
 	};
 }
 
-const AUTH_CACHE_TTL = 30_000;
+// 5 min: a identidade/assinatura do cliente quase não muda no meio da sessão.
+// Depois da 1ª request, toda página da sessão reaproveita (sem round-trip ao
+// upvox em authenticate/authenticateCommunity).
+const AUTH_CACHE_TTL = 5 * 60_000;
 
 /**
  * Usuário retornado por GET {EXTERNAL_API_URL}/v1/me na nova API.
