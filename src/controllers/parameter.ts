@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { uploadParameterImage } from '../lib/storage.js';
 import { parameterService } from '../services/parameter.js';
 import {
 	type CommunityListQuery,
@@ -112,6 +114,39 @@ export const deleteParameterController = async (
 		return reply.status(400).send({ message });
 	}
 	return reply.status(204).send();
+};
+
+const ALLOWED_IMAGE_MIMETYPES = [
+	'image/jpeg',
+	'image/png',
+	'image/webp',
+	'image/gif',
+];
+
+export const uploadParameterImageController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const file = await request.file();
+	if (!file) return reply.status(400).send({ message: 'No file provided' });
+	if (!ALLOWED_IMAGE_MIMETYPES.includes(file.mimetype)) {
+		return reply
+			.status(400)
+			.send({ message: 'Invalid file type. Allowed: jpeg, png, webp, gif' });
+	}
+	const buffer = await file.toBuffer();
+	if (buffer.byteLength > 5 * 1024 * 1024) {
+		return reply
+			.status(400)
+			.send({ message: 'File too large. Maximum size is 5MB' });
+	}
+	const ext = file.mimetype.split('/')[1];
+	const url = await uploadParameterImage(
+		buffer,
+		`${crypto.randomUUID()}.${ext}`,
+		file.mimetype,
+	);
+	return reply.status(200).send({ url });
 };
 
 export const parameterStatsController = async (
