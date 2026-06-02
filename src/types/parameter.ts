@@ -34,6 +34,8 @@ export const parameterSchema = z.object({
 	defocus: z.number().nullable().optional(),
 	// Gás — caixa liga/desliga
 	gas: z.boolean(),
+	// Q-pulse (UV) — largura/frequência do pulso Q-switch (recipe)
+	qPulse: z.number().nullable().optional(),
 	// Software-specific (Ezcad: tamanhoDivisao + sobreposicao; Lightburn: tamanhoLinha + forcarSeparacao)
 	tamanhoLinha: z.number().nullable().optional(),
 	tamanhoDivisao: z.number().nullable().optional(),
@@ -46,6 +48,8 @@ export const parameterSchema = z.object({
 	// Imagem + categoria (redesign da página)
 	imageUrl: z.string().nullable().optional(),
 	category: z.string().nullable().optional(),
+	// Cor (nova dimensão de filtro/metadado)
+	color: z.string().nullable().optional(),
 	// Multi-passada: parâmetro "pai" com N passadas (cada passada = um parâmetro).
 	parentId: z.string().nullable().optional(),
 	passOrder: z.number().nullable().optional(),
@@ -58,6 +62,12 @@ export const parameterSchema = z.object({
 	createdBy: z.string(),
 	createdByName: z.string().nullable().optional(),
 	isPublic: z.boolean(),
+	// Workflow de revisão (envio do membro): pending → approved/rejected.
+	status: z.enum(['pending', 'approved', 'rejected']).optional(),
+	reviewNote: z.string().nullable().optional(),
+	reviewedBy: z.string().nullable().optional(),
+	reviewedAt: z.string().nullable().optional(),
+	submittedBy: z.string().nullable().optional(),
 	rating: z.number().nullable().optional(),
 	likesCount: z.number().optional(),
 	savesCount: z.number().optional(),
@@ -88,6 +98,7 @@ export const passRecipeSchema = z.object({
 	passesFill: z.number().int().min(1).default(1),
 	defocus: z.number().int().min(-20).max(20).nullable().optional(),
 	gas: z.boolean().default(false),
+	qPulse: z.number().nullable().optional(),
 	tamanhoLinha: z.number().nullable().optional(),
 	tamanhoDivisao: z.number().nullable().optional(),
 	sobreposicao: z.number().nullable().optional(),
@@ -132,6 +143,8 @@ export const createParameterSchema = z.object({
 	defocus: z.number().int().min(-20).max(20).nullable().optional(),
 	// Gás — caixa liga/desliga
 	gas: z.boolean().default(false),
+	// Q-pulse (UV) — recipe
+	qPulse: z.number().nullable().optional(),
 	// Software-specific opcionais
 	tamanhoLinha: z.number().nullable().optional(), // Lightburn
 	tamanhoDivisao: z.number().nullable().optional(), // Ezcad
@@ -147,6 +160,8 @@ export const createParameterSchema = z.object({
 	// Imagem (URL no storage) + categoria (Copos/Metais/Madeira/Acrílico/Brindes/Outros)
 	imageUrl: z.string().nullable().optional(),
 	category: z.string().nullable().optional(),
+	// Cor (nova dimensão)
+	color: z.string().nullable().optional(),
 	// Multi-passada: passadas extras (2..N). A passada 1 é o recipe principal acima.
 	extraPasses: z.array(passRecipeSchema).optional(),
 });
