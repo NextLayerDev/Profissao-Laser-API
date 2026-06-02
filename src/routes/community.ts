@@ -301,6 +301,8 @@ export async function communityRoute(server: FastifyInstance) {
 					category: z.string().optional(),
 					featured: z.enum(['true', 'false']).optional(),
 					online: z.enum(['true', 'false']).optional(),
+					limit: z.string().optional(),
+					offset: z.string().optional(),
 				}),
 				response: {
 					200: z.array(communityMemberSchema),

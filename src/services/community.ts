@@ -92,9 +92,18 @@ export const communityService = {
 		category?: string,
 		featured?: boolean,
 		online?: boolean,
+		limit?: number,
+		offset?: number,
 	) {
 		return withCapture(() =>
-			communityRepository.listMembers(search, category, featured, online),
+			communityRepository.listMembers(
+				search,
+				category,
+				featured,
+				online,
+				limit,
+				offset,
+			),
 		);
 	},
 

@@ -299,16 +299,20 @@ export const getMembersController = async (
 			category?: string;
 			featured?: string;
 			online?: string;
+			limit?: string;
+			offset?: string;
 		};
 	}>,
 	reply: FastifyReply,
 ) => {
-	const { search, category, featured, online } = request.query;
+	const { search, category, featured, online, limit, offset } = request.query;
 	const { data: members, error } = await communityService.listMembers(
 		search,
 		category,
 		featured === 'true',
 		online === 'true',
+		limit ? Number(limit) : undefined,
+		offset ? Number(offset) : undefined,
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
