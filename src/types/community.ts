@@ -60,6 +60,7 @@ export const sendMessageSchema = z.object({
 export const communityMemberSchema = z.object({
 	id: z.string(),
 	name: z.string(),
+	nickname: z.string().nullable(),
 	specialty: z.string().nullable(),
 	badges: z.array(z.string()),
 	badge: z.string().nullable(),
