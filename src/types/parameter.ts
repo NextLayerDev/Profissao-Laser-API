@@ -70,11 +70,14 @@ export const parameterSchema = z.object({
 
 /** Recipe de UMA passada (sem metadados — material/imagem/categoria vêm do pai). */
 export const passRecipeSchema = z.object({
-	machine: z.string().min(1),
-	powerWatts: z.number().int().min(0),
-	lens: z.string().min(1),
-	software: z.string().min(1),
-	mode: z.string().min(1),
+	// Herdados do parâmetro pai (máquina/lente/software/modo/potência-W são o
+	// mesmo setup para todas as passadas). Opcionais: o repositório sempre
+	// sobrescreve estes campos com os valores do pai ao persistir as filhas.
+	machine: z.string().min(1).optional(),
+	powerWatts: z.number().int().min(0).optional(),
+	lens: z.string().min(1).optional(),
+	software: z.string().min(1).optional(),
+	mode: z.string().min(1).optional(),
 	speed: z.number().int().min(0),
 	power: z.number().int().min(0).max(100),
 	frequency: z.number().int().min(0),
