@@ -61,8 +61,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
       - run: npm ci
-      - name: 🔒 Run NPM Audit
-        run: npm audit --audit-level=critical
+      - name: 🔒 Run NPM Audit (apenas deps de produção)
+        # --omit=dev: audita só o que vai pra produção. Vulns de ferramentas de
+        # dev/teste (vitest/esbuild — não rodam no servidor) não barram o deploy.
+        run: npm audit --omit=dev --audit-level=critical
 
   deploy:
     name: 🚀 Deploy
