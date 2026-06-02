@@ -5,11 +5,17 @@ import { parameterService } from '../services/parameter.js';
 import {
 	type CommunityListQuery,
 	type CreateParameter,
+	type CreateParameterOption,
+	createParameterOptionSchema,
 	createParameterSchema,
 	type ExportQuery,
 	type ListParametersQuery,
 	type RateParameter,
+	type ReviewParameter,
+	reviewParameterSchema,
 	type UpdateParameter,
+	type UpdateParameterOption,
+	updateParameterOptionSchema,
 	updateParameterSchema,
 } from '../types/parameter.js';
 
@@ -301,4 +307,135 @@ export const exportParametersController = async (
 	reply.header('Content-Type', 'text/csv');
 	reply.header('Content-Disposition', 'attachment; filename="parameters.csv"');
 	return reply.send(data);
+};
+
+// ── Envio do membro / revisão do admin ──────────────────────────────────────
+
+export const submitParameterController = async (
+	request: FastifyRequest<{ Body: CreateParameter }>,
+	reply: FastifyReply,
+) => {
+	const userId = request.currentUser?.id;
+	if (!userId) return reply.status(401).send({ message: 'Not authenticated' });
+
+	const body = createParameterSchema.parse(request.body);
+	const name =
+		request.currentCustomer?.name ??
+		(request.currentUser?.user_metadata?.name as string | undefined) ??
+		null;
+	const { data, error } = await parameterService.submit(body, userId, name);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.status(201).send(data);
+};
+
+export const listPendingParametersController = async (
+	request: FastifyRequest<{ Querystring: ListParametersQuery }>,
+	reply: FastifyReply,
+) => {
+	const { data, error } = await parameterService.listPending(request.query);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
+};
+
+export const reviewParameterController = async (
+	request: FastifyRequest<{ Params: { id: string }; Body: ReviewParameter }>,
+	reply: FastifyReply,
+) => {
+	const reviewerId = request.currentUser?.id;
+	if (!reviewerId)
+		return reply.status(401).send({ message: 'Not authenticated' });
+
+	const body = reviewParameterSchema.parse(request.body);
+	const { data, error } = await parameterService.review(
+		request.params.id,
+		body,
+		reviewerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	if (!data) return reply.status(404).send({ message: 'Parameter not found' });
+	return reply.send(data);
+};
+
+export const listMySubmissionsController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const userId = getCurrentId(request);
+	if (!userId) return reply.status(401).send({ message: 'Not authenticated' });
+	const { data, error } = await parameterService.listMySubmissions(userId);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
+};
+
+// ── Vocabulário de opções de filtro ─────────────────────────────────────────
+
+export const listParameterOptionsController = async (
+	request: FastifyRequest<{ Querystring: { dimension?: string } }>,
+	reply: FastifyReply,
+) => {
+	const { data, error } = await parameterService.listOptions(
+		request.query.dimension,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
+};
+
+export const createParameterOptionController = async (
+	request: FastifyRequest<{ Body: CreateParameterOption }>,
+	reply: FastifyReply,
+) => {
+	const body = createParameterOptionSchema.parse(request.body);
+	const { data, error } = await parameterService.createOption(body);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.status(201).send(data);
+};
+
+export const updateParameterOptionController = async (
+	request: FastifyRequest<{
+		Params: { id: string };
+		Body: UpdateParameterOption;
+	}>,
+	reply: FastifyReply,
+) => {
+	const body = updateParameterOptionSchema.parse(request.body);
+	const { data, error } = await parameterService.updateOption(
+		request.params.id,
+		body,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	if (!data) return reply.status(404).send({ message: 'Option not found' });
+	return reply.send(data);
+};
+
+export const deleteParameterOptionController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	const { error } = await parameterService.deleteOption(request.params.id);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.status(204).send();
 };

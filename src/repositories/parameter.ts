@@ -6,6 +6,7 @@ import type {
 	ParameterSidebar,
 	PassRecipe,
 	UpdateParameter,
+	UpdateParameterOption,
 } from '../types/parameter.js';
 
 class ParameterRepository {
@@ -24,6 +25,8 @@ class ParameterRepository {
 		if (filters.mode) q = q.eq('mode', filters.mode) as T;
 		if (filters.software) q = q.eq('software', filters.software) as T;
 		if (filters.category) q = q.eq('category', filters.category) as T;
+		if (filters.lens) q = q.eq('lens', filters.lens) as T;
+		if (filters.color) q = q.eq('color', filters.color) as T;
 		if (filters.search) {
 			q = q.or(
 				`material.ilike.%${filters.search}%,materialType.ilike.%${filters.search}%,machine.ilike.%${filters.search}%`,
@@ -60,6 +63,7 @@ class ParameterRepository {
 			.from('pl_parameter')
 			.select('*', { count: 'exact' })
 			.eq('isPublic', true)
+			.eq('status', 'approved') // só aprovados (envios pendentes/rejeitados ficam fora)
 			.is('parentId', null) // não lista passadas-filhas, só pais/avulsos
 			.order('createdAt', { ascending: false })
 			.limit(500);
@@ -69,6 +73,78 @@ class ParameterRepository {
 		const { data, error, count } = await query;
 		if (error) throw new Error(error.message);
 		return { data: data ?? [], total: count ?? 0 };
+	}
+
+	/** Fila de revisão: envios de membros aguardando aprovação (mais antigos 1º). */
+	async listPending(filters: ListParametersQuery) {
+		const offset = (filters.page - 1) * filters.limit;
+		let query = supabase
+			.from('pl_parameter')
+			.select('*', { count: 'exact' })
+			.eq('status', 'pending')
+			.is('parentId', null) // só pais/avulsos, não passadas-filhas
+			.order('createdAt', { ascending: true })
+			.range(offset, offset + filters.limit - 1);
+
+		query = this.applyFilters(query, filters);
+
+		const { data, error, count } = await query;
+		if (error) throw new Error(error.message);
+		return { data: data ?? [], total: count ?? 0 };
+	}
+
+	/** Envios do próprio membro (qualquer status), mais recentes primeiro. */
+	async listMySubmissions(userId: string) {
+		const { data, error } = await supabase
+			.from('pl_parameter')
+			.select('*')
+			.eq('submittedBy', userId)
+			.is('parentId', null) // só pais/avulsos, não passadas-filhas
+			.order('createdAt', { ascending: false });
+		if (error) throw new Error(error.message);
+		return data ?? [];
+	}
+
+	/**
+	 * Revisa um envio: aprovar publica (isPublic=true, status=approved), rejeitar
+	 * fecha (isPublic=false, status=rejected). O mesmo status/visibilidade desce
+	 * pras passadas-filhas (que não guardam reviewNote). Retorna o pai atualizado.
+	 */
+	async review(
+		id: string,
+		action: 'approve' | 'reject',
+		reviewNote: string | null,
+		reviewerId: string,
+	) {
+		const approved = action === 'approve';
+		const now = new Date().toISOString();
+		const patch = {
+			status: approved ? 'approved' : 'rejected',
+			isPublic: approved,
+			reviewedBy: reviewerId,
+			reviewedAt: now,
+			reviewNote: reviewNote ?? null,
+			updatedAt: now,
+		};
+		const { error } = await supabase
+			.from('pl_parameter')
+			.update(patch)
+			.eq('id', id);
+		if (error) throw new Error(error.message);
+
+		// Passadas-filhas seguem o status/visibilidade do pai (sem reviewNote).
+		const { error: childErr } = await supabase
+			.from('pl_parameter')
+			.update({
+				status: patch.status,
+				isPublic: patch.isPublic,
+				reviewedAt: now,
+				updatedAt: now,
+			})
+			.eq('parentId', id);
+		if (childErr) throw new Error(childErr.message);
+
+		return this.findById(id);
 	}
 
 	async findById(id: string) {
@@ -128,8 +204,13 @@ class ParameterRepository {
 		data: CreateParameter,
 		createdBy: string,
 		createdByName: string | null,
+		opts?: { asSubmission?: boolean },
 	) {
 		const hasPasses = (data.extraPasses?.length ?? 0) > 0;
+		// Envio de membro: entra como pending (vai pra fila de revisão) e NUNCA
+		// público até ser aprovado. Criação admin (padrão): approved.
+		const status = opts?.asSubmission ? 'pending' : 'approved';
+		const isPublic = opts?.asSubmission ? false : (data.isPublic ?? false);
 		// Linha "pai" (= passada 1) com os metadados (material/imagem/categoria).
 		const { data: parent, error } = await supabase
 			.from('pl_parameter')
@@ -141,7 +222,9 @@ class ParameterRepository {
 				imageUrl: data.imageUrl ?? null,
 				category: data.category ?? null,
 				color: data.color ?? null,
-				isPublic: data.isPublic ?? false,
+				isPublic,
+				status,
+				submittedBy: opts?.asSubmission ? createdBy : null,
 				isParent: hasPasses,
 				parentId: null,
 				passOrder: hasPasses ? 1 : null,
@@ -153,7 +236,9 @@ class ParameterRepository {
 		if (error) throw new Error(error.message);
 
 		// Passadas extras (2..N): linhas-filhas com recipe próprio, herdando o
-		// material/visibilidade do pai. A passada 1 é o próprio pai.
+		// material/status do pai. A passada 1 é o próprio pai. Filhas nunca são
+		// públicas por si só (a visibilidade é do pai), e herdam o status pra não
+		// ficarem 'approved' soltas quando o pai está pending.
 		if (hasPasses && data.extraPasses) {
 			const children = data.extraPasses.map((p, i) => ({
 				...this.recipeRow(p),
@@ -166,7 +251,8 @@ class ParameterRepository {
 				material: data.material,
 				imageUrl: null,
 				category: null,
-				isPublic: data.isPublic ?? false,
+				isPublic: false,
+				status,
 				isParent: false,
 				parentId: parent.id,
 				passOrder: i + 2,
@@ -505,6 +591,50 @@ class ParameterRepository {
 			if (e) e.userRating = r.rating;
 		}
 		return map;
+	}
+
+	// ── Vocabulário de opções de filtro (pl_parameter_option) ───────────────
+
+	/** Lista as opções (todas as dimensões ou só uma), por dimensão e ordem. */
+	async listOptions(dimension?: string) {
+		let query = supabase
+			.from('pl_parameter_option')
+			.select('*')
+			.order('dimension', { ascending: true })
+			.order('order', { ascending: true });
+		if (dimension) query = query.eq('dimension', dimension);
+		const { data, error } = await query;
+		if (error) throw new Error(error.message);
+		return data ?? [];
+	}
+
+	async createOption(dimension: string, value: string, order: number) {
+		const { data, error } = await supabase
+			.from('pl_parameter_option')
+			.insert({ dimension, value, order })
+			.select()
+			.single();
+		if (error) throw new Error(error.message);
+		return data;
+	}
+
+	async updateOption(id: string, patch: UpdateParameterOption) {
+		const { data, error } = await supabase
+			.from('pl_parameter_option')
+			.update({ ...patch, updatedAt: new Date().toISOString() })
+			.eq('id', id)
+			.select()
+			.single();
+		if (error) throw new Error(error.message);
+		return data;
+	}
+
+	async deleteOption(id: string) {
+		const { error } = await supabase
+			.from('pl_parameter_option')
+			.delete()
+			.eq('id', id);
+		if (error) throw new Error(error.message);
 	}
 }
 

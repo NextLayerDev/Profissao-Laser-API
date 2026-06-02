@@ -3,8 +3,11 @@ import { parameterRepository } from '../repositories/parameter.js';
 import type {
 	CommunityListQuery,
 	CreateParameter,
+	CreateParameterOption,
 	ListParametersQuery,
+	ReviewParameter,
 	UpdateParameter,
+	UpdateParameterOption,
 } from '../types/parameter.js';
 
 type ParameterRow = {
@@ -111,6 +114,47 @@ export const parameterService = {
 		);
 	},
 
+	/** Envio de membro: cria como pending (fila de revisão) e devolve enriquecido. */
+	async submit(data: CreateParameter, userId: string, name: string | null) {
+		return withCapture(async () => {
+			const row = await parameterRepository.create(data, userId, name, {
+				asSubmission: true,
+			});
+			const [enriched] = await enrichWithCounts([row as ParameterRow], userId);
+			return enriched;
+		});
+	},
+
+	/** Fila de revisão (admin): envios pendentes, mais antigos primeiro. */
+	async listPending(filters: ListParametersQuery) {
+		return withCapture(async () => {
+			const { data, total } = await parameterRepository.listPending(filters);
+			const enriched = await enrichWithCounts(data, null);
+			return { data: enriched, total };
+		});
+	},
+
+	/** Revisa (aprova/rejeita) um envio; devolve o pai atualizado. */
+	async review(id: string, body: ReviewParameter, reviewerId: string) {
+		return withCapture(() =>
+			parameterRepository.review(
+				id,
+				body.action,
+				body.reviewNote ?? null,
+				reviewerId,
+			),
+		);
+	},
+
+	/** Envios do próprio membro (qualquer status), enriquecidos pros cards. */
+	async listMySubmissions(userId: string) {
+		return withCapture(async () => {
+			const rows = await parameterRepository.listMySubmissions(userId);
+			const enriched = await enrichWithCounts(rows, userId);
+			return { data: enriched, total: enriched.length };
+		});
+	},
+
 	async update(id: string, data: UpdateParameter) {
 		return withCapture(() => parameterRepository.update(id, data));
 	},
@@ -194,5 +238,25 @@ export const parameterService = {
 				.join('\n');
 			return header + rows;
 		});
+	},
+
+	// ── Vocabulário de opções de filtro ─────────────────────────────────────
+
+	async listOptions(dimension?: string) {
+		return withCapture(() => parameterRepository.listOptions(dimension));
+	},
+
+	async createOption(body: CreateParameterOption) {
+		return withCapture(() =>
+			parameterRepository.createOption(body.dimension, body.value, body.order),
+		);
+	},
+
+	async updateOption(id: string, body: UpdateParameterOption) {
+		return withCapture(() => parameterRepository.updateOption(id, body));
+	},
+
+	async deleteOption(id: string) {
+		return withCapture(() => parameterRepository.deleteOption(id));
 	},
 };
