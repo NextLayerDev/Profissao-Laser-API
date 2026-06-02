@@ -40,7 +40,12 @@ export const profileService = {
 
 	async updateMyProfile(
 		customerId: string,
-		input: { name?: string; nickname?: string | null; bio?: string | null },
+		input: {
+			name?: string;
+			nickname?: string | null;
+			bio?: string | null;
+			image?: string | null;
+		},
 		ctx: {
 			token?: string;
 			fallbackName?: string | null;
@@ -72,9 +77,13 @@ export const profileService = {
 			const profFields: Partial<{
 				nickname: string | null;
 				bio: string | null;
+				image: string | null;
 			}> = {};
 			if (input.nickname !== undefined) profFields.nickname = input.nickname;
 			if (input.bio !== undefined) profFields.bio = input.bio;
+			// Troca de ícone/foto pelo perfil (picker estilo Netflix) grava o mesmo
+			// campo `image` que o upload de foto usa.
+			if (input.image !== undefined) profFields.image = input.image;
 			if (Object.keys(profFields).length > 0) {
 				await profileRepository.upsertByCustomerId(customerId, profFields);
 			}

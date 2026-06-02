@@ -31,6 +31,8 @@ export const updateProfileSchema = z.object({
 	name: z.string().min(2).optional(),
 	nickname: z.string().max(40).nullish(),
 	bio: z.string().max(500).nullish(),
+	// URL do avatar: ícone-preset (/avatars/*.png) ou foto enviada (Bunny).
+	image: z.string().max(500).nullish(),
 });
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 
