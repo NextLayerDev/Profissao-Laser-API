@@ -400,8 +400,22 @@ class CommunityRepository {
 		);
 	}
 
+	/** Versão cacheável da lista (sem o flag de like por usuário). */
+	async listProjectsBase(
+		page: number,
+		limit: number,
+		filters?: {
+			material?: string;
+			technique?: string;
+			search?: string;
+			sort?: string;
+		},
+	) {
+		return this.listProjects(page, limit, filters);
+	}
+
 	/** Projetos curtidos pelo customer atual (entre os ids dados) — 1 query. */
-	private async getLikedProjectIds(
+	async getLikedProjectIds(
 		projectIds: string[],
 		customerId?: string,
 	): Promise<Set<string>> {
@@ -531,6 +545,11 @@ class CommunityRepository {
 			),
 			commentList: comments,
 		};
+	}
+
+	/** Versão cacheável do detalhe (sem o flag de like por usuário). */
+	async getProjectBase(id: string) {
+		return this.getProject(id);
 	}
 
 	async updateProject(id: string, data: UpdateProject) {

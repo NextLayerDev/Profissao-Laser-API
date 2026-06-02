@@ -1,3 +1,4 @@
+import { cache } from '@/lib/redis.js';
 import { withCapture } from '@/lib/sentry.js';
 import { communityRepository } from '../repositories/community.js';
 import type {
@@ -11,6 +12,16 @@ import type {
 	UpdateEvent,
 	UpdateProject,
 } from '../types/community.js';
+
+// Cache-aside com TTL curto, sem invalidação manual: mutações (criar/editar/
+// curtir/comentar) só refletem após o TTL expirar. Aceitável aqui — a community
+// muda o tempo todo e invalidar em cada mutação seria invasivo. O flag `liked`
+// nunca é cacheado: é reaplicado por request sobre a base (ver listProjects).
+const STATS_TTL = 60;
+const RANKING_TTL = 120;
+const MEMBERS_TTL = 60;
+const ACTIVITY_TTL = 30;
+const PROJECTS_TTL = 60;
 
 export const communityService = {
 	async listPosts(page: number, limit: number, currentUserId: string) {
@@ -95,14 +106,17 @@ export const communityService = {
 		limit?: number,
 		offset?: number,
 	) {
+		const key = `community:members:${JSON.stringify({ search, category, featured, online, limit, offset })}`;
 		return withCapture(() =>
-			communityRepository.listMembers(
-				search,
-				category,
-				featured,
-				online,
-				limit,
-				offset,
+			cache.cacheAside(key, MEMBERS_TTL, () =>
+				communityRepository.listMembers(
+					search,
+					category,
+					featured,
+					online,
+					limit,
+					offset,
+				),
 			),
 		);
 	},
@@ -118,15 +132,35 @@ export const communityService = {
 		},
 		currentCustomerId?: string,
 	) {
-		return withCapture(() =>
-			communityRepository.listProjects(page, limit, filters, currentCustomerId),
-		);
+		return withCapture(async () => {
+			const base = (await cache.cacheAside(
+				`community:projects:${JSON.stringify({ page, limit, filters })}`,
+				PROJECTS_TTL,
+				() => communityRepository.listProjectsBase(page, limit, filters),
+			)) as Array<{ id: string; liked: boolean }>;
+			if (!currentCustomerId) return base;
+			const liked = await communityRepository.getLikedProjectIds(
+				base.map((p) => p.id),
+				currentCustomerId,
+			);
+			return base.map((p) => ({ ...p, liked: liked.has(p.id) }));
+		});
 	},
 
 	async getProject(id: string, currentCustomerId?: string) {
-		return withCapture(() =>
-			communityRepository.getProject(id, currentCustomerId),
-		);
+		return withCapture(async () => {
+			const base = (await cache.cacheAside(
+				`community:project:${id}`,
+				PROJECTS_TTL,
+				() => communityRepository.getProjectBase(id),
+			)) as { id: string; liked: boolean } | null;
+			if (!base || !currentCustomerId) return base;
+			const liked = await communityRepository.getLikedProjectIds(
+				[base.id],
+				currentCustomerId,
+			);
+			return { ...base, liked: liked.has(base.id) };
+		});
 	},
 
 	async toggleProjectLike(projectId: string, customerId: string) {
@@ -273,20 +307,33 @@ export const communityService = {
 	},
 
 	async getRanking(period?: string) {
-		return withCapture(async () => {
-			const ranked = await communityRepository.getRanking(period);
-			return {
-				top: ranked.slice(0, 3),
-				rest: ranked.slice(3),
-			};
-		});
+		return withCapture(() =>
+			cache.cacheAside(
+				`community:ranking:${period ?? 'all'}`,
+				RANKING_TTL,
+				async () => {
+					const ranked = await communityRepository.getRanking(period);
+					return { top: ranked.slice(0, 3), rest: ranked.slice(3) };
+				},
+			),
+		);
 	},
 
 	async listActivity(page: number, limit: number) {
-		return withCapture(() => communityRepository.listActivity(page, limit));
+		return withCapture(() =>
+			cache.cacheAside(
+				`community:activity:${page}:${limit}`,
+				ACTIVITY_TTL,
+				() => communityRepository.listActivity(page, limit),
+			),
+		);
 	},
 
 	async getStats() {
-		return withCapture(() => communityRepository.getStats());
+		return withCapture(() =>
+			cache.cacheAside('community:stats', STATS_TTL, () =>
+				communityRepository.getStats(),
+			),
+		);
 	},
 };
