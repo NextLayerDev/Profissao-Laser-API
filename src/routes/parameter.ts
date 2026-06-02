@@ -18,6 +18,7 @@ import {
 	saveParameterController,
 	unsaveParameterController,
 	updateParameterController,
+	uploadParameterImageController,
 } from '../controllers/parameter.js';
 import { ErrorSchema } from '../types/error.js';
 import {
@@ -198,6 +199,24 @@ export async function parameterRoute(server: FastifyInstance) {
 			},
 		},
 		createParameterController,
+	);
+
+	server.post(
+		'/parameters/image',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Upload a parameter image; returns its URL.',
+				consumes: ['multipart/form-data'],
+				response: {
+					200: z.object({ url: z.string() }),
+					400: ErrorSchema,
+				},
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		uploadParameterImageController,
 	);
 
 	server.put(
