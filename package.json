@@ -33,6 +33,7 @@
 		"fastify-raw-body": "^5.0.0",
 		"fastify-type-provider-zod": "^6.1.0",
 		"husky": "^9.1.7",
+		"ioredis": "^5.11.0",
 		"nodemailer": "^8.0.2",
 		"openai": "^6.36.0",
 		"pg": "^8.20.0",
