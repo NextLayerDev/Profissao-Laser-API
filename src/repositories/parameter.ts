@@ -155,6 +155,12 @@ class ParameterRepository {
 		if (hasPasses && data.extraPasses) {
 			const children = data.extraPasses.map((p, i) => ({
 				...this.recipeRow(p),
+				// passadas herdam máquina/lente/software/modo/material do pai
+				machine: data.machine,
+				powerWatts: data.powerWatts,
+				lens: data.lens,
+				software: data.software,
+				mode: data.mode,
 				material: data.material,
 				imageUrl: null,
 				category: null,
@@ -178,13 +184,54 @@ class ParameterRepository {
 	}
 
 	async update(id: string, data: UpdateParameter) {
+		// `extraPasses` nao e coluna: separamos. Quando vier (mesmo []), o
+		// parametro vira/deixa de ser pai e reconstruimos as passadas-filhas.
+		const { extraPasses, ...rest } = data;
+		const patch = {
+			...rest,
+			updatedAt: new Date().toISOString(),
+			...(extraPasses !== undefined
+				? {
+						isParent: extraPasses.length > 0,
+						passOrder: extraPasses.length > 0 ? 1 : null,
+					}
+				: {}),
+		};
 		const { data: row, error } = await supabase
 			.from('pl_parameter')
-			.update({ ...data, updatedAt: new Date().toISOString() })
+			.update(patch)
 			.eq('id', id)
 			.select()
 			.single();
 		if (error) throw new Error(error.message);
+
+		if (extraPasses !== undefined) {
+			// substitui as passadas: apaga as antigas e recria 2..N
+			await supabase.from('pl_parameter').delete().eq('parentId', id);
+			if (extraPasses.length > 0) {
+				const children = extraPasses.map((p, i) => ({
+					...this.recipeRow(p),
+					machine: row.machine,
+					powerWatts: row.powerWatts,
+					lens: row.lens,
+					software: row.software,
+					mode: row.mode,
+					material: row.material,
+					imageUrl: null,
+					category: null,
+					isPublic: row.isPublic ?? false,
+					isParent: false,
+					parentId: id,
+					passOrder: i + 2,
+					createdBy: row.createdBy,
+					createdByName: row.createdByName,
+				}));
+				const { error: childErr } = await supabase
+					.from('pl_parameter')
+					.insert(children);
+				if (childErr) throw new Error(childErr.message);
+			}
+		}
 		return row;
 	}
 
