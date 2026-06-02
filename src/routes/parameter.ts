@@ -1,9 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate, authenticateCustomer } from '@/middleware/auth.js';
+import {
+	authenticate,
+	authenticateCommunity,
+	authenticateCustomer,
+	requireModule,
+} from '@/middleware/auth.js';
 import {
 	createParameterController,
+	createParameterOptionController,
 	deleteParameterController,
+	deleteParameterOptionController,
 	exportParametersController,
 	getParameterController,
 	getParameterPassesController,
@@ -11,28 +18,39 @@ import {
 	listCommunityController,
 	listMachinesController,
 	listMaterialsController,
+	listMySubmissionsController,
+	listParameterOptionsController,
 	listParametersController,
+	listPendingParametersController,
 	parameterSidebarController,
 	parameterStatsController,
 	rateParameterController,
+	reviewParameterController,
 	saveParameterController,
+	submitParameterController,
 	unsaveParameterController,
 	updateParameterController,
+	updateParameterOptionController,
 	uploadParameterImageController,
 } from '../controllers/parameter.js';
 import { ErrorSchema } from '../types/error.js';
 import {
 	communityListQuery,
+	createParameterOptionSchema,
 	createParameterSchema,
 	exportQuery,
 	listParametersQuery,
 	machineSchema,
 	materialSchema,
+	parameterOptionDimension,
+	parameterOptionSchema,
 	parameterSchema,
 	parameterSidebarSchema,
 	parameterStatsSchema,
 	parameterWithPassesSchema,
 	rateParameterSchema,
+	reviewParameterSchema,
+	updateParameterOptionSchema,
 	updateParameterSchema,
 } from '../types/parameter.js';
 
@@ -151,6 +169,145 @@ export async function parameterRoute(server: FastifyInstance) {
 		exportParametersController,
 	);
 
+	// ── Envio do membro / fila de revisão / vocabulário ─────────────────────
+	// Rotas literais declaradas ANTES de /parameters/:id (Fastify resolve
+	// literal antes de param, mas mantemos juntas com as outras literais).
+
+	server.get(
+		'/parameters/mine',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description: "Member's own parameter submissions (any status).",
+				response: {
+					200: z.object({
+						data: z.array(parameterSchema),
+						total: z.number(),
+					}),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		listMySubmissionsController,
+	);
+
+	server.get(
+		'/parameters/pending',
+		{
+			preHandler: [requireModule('parametros')],
+			schema: {
+				description: 'Review queue: pending member submissions (admin).',
+				querystring: listParametersQuery,
+				response: {
+					200: z.object({
+						data: z.array(parameterSchema),
+						total: z.number(),
+					}),
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		listPendingParametersController,
+	);
+
+	server.get(
+		'/parameters/options',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Filter-option vocabulary (lens/category/color/mode). Optional `dimension` filter.',
+				querystring: z.object({
+					dimension: parameterOptionDimension.optional(),
+				}),
+				response: {
+					200: z.array(parameterOptionSchema),
+					500: ErrorSchema,
+				},
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		listParameterOptionsController,
+	);
+
+	server.post(
+		'/parameters/submit',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Submit a parameter for review (member). Created as pending, not public.',
+				body: createParameterSchema,
+				response: { 201: parameterSchema, 400: ErrorSchema, 401: ErrorSchema },
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		submitParameterController,
+	);
+
+	server.post(
+		'/parameters/options',
+		{
+			preHandler: [requireModule('parametros')],
+			schema: {
+				description: 'Create a filter-option (admin).',
+				body: createParameterOptionSchema,
+				response: {
+					201: parameterOptionSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+				},
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		createParameterOptionController,
+	);
+
+	server.put(
+		'/parameters/options/:id',
+		{
+			preHandler: [requireModule('parametros')],
+			schema: {
+				description: 'Update a filter-option (admin).',
+				params: z.object({ id: z.string() }),
+				body: updateParameterOptionSchema,
+				response: {
+					200: parameterOptionSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+				},
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		updateParameterOptionController,
+	);
+
+	server.delete(
+		'/parameters/options/:id',
+		{
+			preHandler: [requireModule('parametros')],
+			schema: {
+				description: 'Delete a filter-option (admin).',
+				params: z.object({ id: z.string() }),
+				response: { 204: z.null(), 400: ErrorSchema, 403: ErrorSchema },
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		deleteParameterOptionController,
+	);
+
 	server.get(
 		'/parameters/:id',
 		{
@@ -184,6 +341,28 @@ export async function parameterRoute(server: FastifyInstance) {
 			},
 		},
 		getParameterPassesController,
+	);
+
+	server.post(
+		'/parameters/:id/review',
+		{
+			preHandler: [requireModule('parametros')],
+			schema: {
+				description:
+					'Review a member submission: approve (publishes) or reject (admin).',
+				params: z.object({ id: z.string() }),
+				body: reviewParameterSchema,
+				response: {
+					200: parameterSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+				},
+				tags: ['Parameters'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		reviewParameterController,
 	);
 
 	server.post(

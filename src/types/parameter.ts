@@ -211,6 +211,8 @@ export const listParametersQuery = z.object({
 	mode: z.string().optional(),
 	software: z.string().optional(),
 	category: z.string().optional(),
+	lens: z.string().optional(),
+	color: z.string().optional(),
 });
 
 export const communityListQuery = listParametersQuery.extend({
@@ -246,6 +248,42 @@ export const exportQuery = listParametersQuery.extend({
 	format: z.enum(['csv', 'pdf']).default('csv'),
 });
 
+/** Dimensões de filtro com vocabulário gerido pelo admin. */
+export const parameterOptionDimension = z.enum([
+	'lens',
+	'category',
+	'color',
+	'mode',
+]);
+
+export const parameterOptionSchema = z.object({
+	id: z.string(),
+	dimension: parameterOptionDimension,
+	value: z.string(),
+	order: z.number(),
+	status: z.string(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+});
+
+export const createParameterOptionSchema = z.object({
+	dimension: parameterOptionDimension,
+	value: z.string().min(1),
+	order: z.number().int().default(0),
+});
+
+export const updateParameterOptionSchema = z.object({
+	value: z.string().min(1).optional(),
+	order: z.number().int().optional(),
+	status: z.enum(['ativo', 'inativo']).optional(),
+});
+
+/** Revisão de um envio de membro: aprovar (publica) ou rejeitar. */
+export const reviewParameterSchema = z.object({
+	action: z.enum(['approve', 'reject']),
+	reviewNote: z.string().optional(),
+});
+
 export type Parameter = z.infer<typeof parameterSchema>;
 export type PassRecipe = z.infer<typeof passRecipeSchema>;
 export type ParameterWithPasses = z.infer<typeof parameterWithPassesSchema>;
@@ -256,3 +294,7 @@ export type ListParametersQuery = z.infer<typeof listParametersQuery>;
 export type CommunityListQuery = z.infer<typeof communityListQuery>;
 export type RateParameter = z.infer<typeof rateParameterSchema>;
 export type ExportQuery = z.infer<typeof exportQuery>;
+export type ParameterOption = z.infer<typeof parameterOptionSchema>;
+export type CreateParameterOption = z.infer<typeof createParameterOptionSchema>;
+export type UpdateParameterOption = z.infer<typeof updateParameterOptionSchema>;
+export type ReviewParameter = z.infer<typeof reviewParameterSchema>;
