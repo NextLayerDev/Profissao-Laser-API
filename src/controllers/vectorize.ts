@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
-	getInvocation,
 	refundInvocation,
+	resolveToolBilling,
 	settleInvocation,
 } from '../lib/upvox-tools.js';
 import { parseVectorizeParams } from '../lib/vectorize.js';
@@ -11,11 +11,10 @@ export const vectorizeController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	// Billing is owned by upvox: the front calls /v1/tool/vectorize/invoke first
-	// (which debits/quota and returns an invocation_id), then sends it here. We
-	// validate it, run the engine, and settle (success) or refund (failure) —
-	// authenticating to upvox with the gateway-validated customer id (x-user-id)
-	// so upvox scopes every call to the owner.
+	// Billing is OPTIONAL and owned by upvox: if the tool has a funcionalidade the
+	// front invokes first (debits) and sends an invocation_id → we validate, run,
+	// and settle/refund. If it's not billed for this customer → run free. A request
+	// without an id for a *billed* tool is rejected (no free bypass).
 	const customerId = request.currentCustomer?.id;
 	let invocationId: string | null = null;
 
@@ -43,23 +42,15 @@ export const vectorizeController = async (
 			return reply.status(400).send({ message: 'File is required' });
 		}
 
-		invocationId = fields.invocation_id ?? null;
-		if (!invocationId) {
-			return reply.status(400).send({ message: 'invocation_id is required' });
+		const gate = await resolveToolBilling(
+			customerId,
+			'vectorize',
+			fields.invocation_id ?? null,
+		);
+		if (gate.mode === 'reject') {
+			return reply.status(gate.status).send({ message: gate.message });
 		}
-
-		// Authorize: a pending `vectorize` invocation owned by this customer.
-		// Prevents calling the engine for free (no valid paid invocation = reject).
-		const inv = await getInvocation(customerId, invocationId);
-		if (
-			!inv ||
-			inv.status !== 'pending' ||
-			inv.tool_key !== 'vectorize' ||
-			inv.customer_id !== customerId
-		) {
-			invocationId = null; // not ours to refund
-			return reply.status(403).send({ message: 'invalid_invocation' });
-		}
+		invocationId = gate.mode === 'paid' ? gate.invocationId : null;
 
 		const params = parseVectorizeParams(fields);
 		const { data: result, error } = await vectorizeService.vectorize(
@@ -68,12 +59,12 @@ export const vectorizeController = async (
 		);
 
 		if (error) {
-			await refundInvocation(customerId, invocationId);
+			if (invocationId) await refundInvocation(customerId, invocationId);
 			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(500).send({ message });
 		}
 
-		await settleInvocation(customerId, invocationId);
+		if (invocationId) await settleInvocation(customerId, invocationId);
 		return reply.status(201).send(result);
 	} catch (err) {
 		if (invocationId && customerId)

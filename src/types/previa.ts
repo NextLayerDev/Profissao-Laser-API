@@ -97,6 +97,8 @@ export const generatePreviaSchema = z.object({
 	name: z.string().optional(),
 	notes: z.string().optional(),
 	useCredits: z.boolean().optional().default(false),
+	// Billing opcional (tool `previa`): invocation paga do upvox. Ausente = grátis.
+	invocation_id: z.string().optional(),
 });
 
 export type GeneratePreviaInput = z.infer<typeof generatePreviaSchema>;

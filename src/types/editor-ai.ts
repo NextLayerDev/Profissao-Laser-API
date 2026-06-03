@@ -16,9 +16,9 @@ export const editorAiRequestSchema = z.object({
 	image: z.string().optional(), // data URL ou base64 puro
 	mask: z.string().optional(), // data URL ou base64 puro (white=editar, black=manter)
 	regionInfo: editorAiRegionSchema.optional(),
-	// Billing autorizado pelo upvox: o front chama /v1/tool/ai_canvas/invoke antes
-	// e manda o id aqui. Sem invocation válida o motor não roda (anti-bypass).
-	invocation_id: z.string().min(1),
+	// Billing OPCIONAL via upvox (tool `ai_canvas`): se cobrada, o front invoca
+	// antes e manda o id. Ausente = grátis (quando não cobrada); cobrada sem id → 402.
+	invocation_id: z.string().min(1).optional(),
 });
 
 export type EditorAiRequest = z.infer<typeof editorAiRequestSchema>;
@@ -31,7 +31,7 @@ export const editorAiResponseSchema = z.object({
 
 export const removeBackgroundRequestSchema = z.object({
 	image: z.string().min(1), // data URL ou base64
-	invocation_id: z.string().min(1),
+	invocation_id: z.string().min(1).optional(),
 });
 
 export type RemoveBackgroundRequest = z.infer<
