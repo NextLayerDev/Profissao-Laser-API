@@ -144,6 +144,21 @@ export function generatePrompt(
 			'Brushed aluminum - lighter metallic tone, directional brush strokes visible, lightweight',
 		tecido:
 			'Fabric/textile - soft woven surface, visible thread texture, embroidered or heat-transferred appearance',
+		mdf: 'MDF / engineered wood - smooth uniform light-brown surface, matte; laser engraving shows darker burned contrast',
+		bambu:
+			'Bamboo - light golden wood with fine vertical grain, eco/natural aesthetic, warm matte tone',
+		cristal:
+			'Crystal glass - ultra-clear brilliant glass, sharp refractive edges, premium sparkle, delicate frosted etching',
+		ceramica:
+			'Ceramic - smooth glazed surface (mug/plate), subtle sheen; laser mark appears as a matte etched tone on the glaze',
+		porcelana:
+			'Porcelain - fine white glossy glazed surface, premium and delicate, refined etched marking',
+		ardosia:
+			'Slate - dark gray natural stone with matte cleft texture; engraving exposes lighter gray marks',
+		pedra:
+			'Stone - natural stone surface (granite-like), engraving reveals lighter etched marks, solid premium feel',
+		plastico:
+			'Plastic/ABS - smooth solid colored surface, matte or semi-gloss, clean precise laser marking',
 	};
 
 	const styleMap: Record<string, string> = {
@@ -163,6 +178,14 @@ export function generatePrompt(
 		fosco: 'Matte finish - no reflections, flat diffused surface appearance',
 		brilhante: 'Glossy finish - reflective polished surface, mirror-like shine',
 		escovado: 'Brushed finish - directional lines, satin metallic appearance',
+		acetinado:
+			'Satin finish - soft low-sheen surface, gentle diffuse reflection between matte and glossy',
+		polido:
+			'Polished finish - smooth clear reflective surface with clean highlights (typical of glass/crystal/stone)',
+		espelhado:
+			'Mirror finish - highly reflective chrome-like surface, sharp mirror reflections',
+		texturizado:
+			'Textured finish - tactile patterned surface with micro-relief that catches light',
 	};
 
 	const frameMap: Record<string, string> = {
@@ -261,6 +284,8 @@ export function generatePrompt(
 			'MATTE BLACK BACKGROUND — Deep solid black (#111111), premium and elegant aesthetic, strong contrast with product, luxury brand feel',
 		madeira:
 			'NATURAL WOOD SURFACE — Warm brown wood grain texture (oak, walnut, or pine tones), horizontal grain lines, natural organic aesthetic, rustic or artisan feel',
+		'mesa-ambiente':
+			'WOODEN TABLE WITH COZY HOME AMBIENCE — Product standing on a warm natural wood table surface, with a softly BLURRED (shallow depth-of-field / bokeh) cozy home interior behind it: out-of-focus green potted plants, soft daylight from a window, warm neutral kitchen/living-room tones. Lifestyle product photography — product in sharp focus while the background stays gently defocused, inviting and aspirational.',
 		marmore:
 			'MARBLE SURFACE — White or black marble with natural veining pattern, elegant and premium, cool stone texture, luxury product photography aesthetic',
 		'tecido-linho':
@@ -740,6 +765,25 @@ export function generatePrompt(
 		lines.push('│ → Visible thread/weave texture around marking           │');
 		lines.push('│ → Subtle pressed/imprinted appearance on soft surface   │');
 		lines.push('│ → Clean contrast between mark and fabric background     │');
+	} else if (materialType === 'mdf' || materialType === 'bambu') {
+		lines.push('│ → Wood/bamboo: darker burned/charred engraved tone      │');
+		lines.push('│ → Natural grain visible through the engraving           │');
+		lines.push('│ → Warm brown-black burned contrast (not metallic)       │');
+	} else if (materialType === 'cristal') {
+		lines.push('│ → Crystal etching: bright frosted refractive mark       │');
+		lines.push('│ → Delicate sandblasted appearance, premium sparkle      │');
+		lines.push('│ → Subtle opacity change where engraved                  │');
+	} else if (materialType === 'ceramica' || materialType === 'porcelana') {
+		lines.push('│ → Ceramic/porcelain: matte etched mark on the glaze     │');
+		lines.push('│ → Subtle tonal contrast against the glossy glaze        │');
+		lines.push('│ → Clean precise marking, refined and delicate           │');
+	} else if (materialType === 'ardosia' || materialType === 'pedra') {
+		lines.push('│ → Stone/slate: light engraved mark on dark stone        │');
+		lines.push('│ → Engraving exposes lighter gray beneath the surface    │');
+		lines.push('│ → Natural cleft/stone texture around the mark           │');
+	} else if (materialType === 'plastico') {
+		lines.push('│ → Plastic: clean precise etched/marked surface          │');
+		lines.push('│ → Subtle contrast mark, smooth modern appearance        │');
 	} else {
 		lines.push('│ → Metal engraving: metallic silver/gray/black tones     │');
 		lines.push('│ → Stainless steel (inox) reflective appearance          │');
