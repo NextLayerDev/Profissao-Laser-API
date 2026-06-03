@@ -21,6 +21,8 @@ class ParameterRepository {
 		if (filters.machine) q = q.ilike('machine', `%${filters.machine}%`) as T;
 		if (filters.model) q = q.ilike('machine', `%${filters.model}%`) as T;
 		if (filters.material) q = q.eq('material', filters.material) as T;
+		if (filters.materialType)
+			q = q.eq('materialType', filters.materialType) as T;
 		if (filters.thickness) q = q.eq('thickness', filters.thickness) as T;
 		if (filters.mode) q = q.eq('mode', filters.mode) as T;
 		if (filters.software) q = q.eq('software', filters.software) as T;

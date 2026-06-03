@@ -238,6 +238,7 @@ export const listParametersQuery = z.object({
 	machine: z.string().optional(),
 	model: z.string().optional(),
 	material: z.string().optional(),
+	materialType: z.string().optional(),
 	thickness: z.string().optional(),
 	search: z.string().optional(),
 	mode: z.string().optional(),
@@ -286,6 +287,8 @@ export const parameterOptionDimension = z.enum([
 	'category',
 	'color',
 	'mode',
+	'machine',
+	'material',
 ]);
 
 export const parameterOptionSchema = z.object({
