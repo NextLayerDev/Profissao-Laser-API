@@ -4,6 +4,11 @@ import {
 	LASER_OPTIONS,
 	LASER_RANGES,
 } from '../lib/previa-options.js';
+import {
+	refundInvocation,
+	resolveToolBilling,
+	settleInvocation,
+} from '../lib/upvox-tools.js';
 import { previaService } from '../services/previa.js';
 import { generatePreviaSchema, updatePreviaSchema } from '../types/previa.js';
 
@@ -25,15 +30,33 @@ export const generatePreviaController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
+	const customerId = request.currentCustomer?.id;
+	let invocationId: string | null = null;
 	try {
-		const customerId = request.currentCustomer?.id;
 		if (!customerId) {
 			return reply.status(403).send({ message: 'Customer not found' });
 		}
 		const body = generatePreviaSchema.parse(request.body);
+
+		// Billing OPCIONAL (tool `previa`): com invocation paga → valida + settle;
+		// não cobrada → roda grátis; cobrada sem id → 402 (sem bypass).
+		const gate = await resolveToolBilling(
+			customerId,
+			'previa',
+			body.invocation_id ?? null,
+		);
+		if (gate.mode === 'reject') {
+			return reply.status(gate.status).send({ message: gate.message });
+		}
+		invocationId = gate.mode === 'paid' ? gate.invocationId : null;
+
 		const previa = await previaService.generate(customerId, body);
+		if (invocationId) await settleInvocation(customerId, invocationId);
 		return reply.status(201).send(previa);
 	} catch (err) {
+		if (invocationId && customerId) {
+			await refundInvocation(customerId, invocationId);
+		}
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(statusFor(message)).send({ message });
 	}

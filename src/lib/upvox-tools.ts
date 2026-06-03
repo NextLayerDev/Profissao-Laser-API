@@ -70,3 +70,67 @@ export async function refundInvocation(
 		headers: asCustomer(customerId),
 	}).catch(() => {});
 }
+
+interface EntitlementsResponse {
+	tools?: Array<{ key: string }>;
+}
+
+/** Customer entitlements via upvox (x-user-id auth). null on any failure. */
+async function fetchEntitlementsAsCustomer(
+	customerId: string,
+): Promise<EntitlementsResponse | null> {
+	try {
+		const res = await fetch(`${externalApiUrl}/v1/me/entitlements`, {
+			headers: asCustomer(customerId),
+		});
+		if (!res.ok) return null;
+		return (await res.json()) as EntitlementsResponse;
+	} catch {
+		return null;
+	}
+}
+
+/** `true` if `toolKey` is a billed tool for this customer (entitled in their plan). */
+export async function isToolBilled(
+	customerId: string,
+	toolKey: string,
+): Promise<boolean> {
+	const ent = await fetchEntitlementsAsCustomer(customerId);
+	return Boolean(ent?.tools?.some((t) => t.key === toolKey));
+}
+
+/** How an engine run should be billed (see `resolveToolBilling`). */
+export type BillingGate =
+	| { mode: 'paid'; invocationId: string }
+	| { mode: 'free' }
+	| { mode: 'reject'; status: number; message: string };
+
+/**
+ * Decide how to bill an engine tool run (optional billing):
+ * - `invocationId` present → validate the paid invocation (pending/tool_key/owner);
+ *   the caller settles on success or refunds on failure.
+ * - `invocationId` absent → run FREE only if the tool isn't billed for this
+ *   customer; otherwise reject 402 (so billing can't be bypassed by omitting the id).
+ */
+export async function resolveToolBilling(
+	customerId: string,
+	toolKey: string,
+	invocationId: string | null,
+): Promise<BillingGate> {
+	if (invocationId) {
+		const inv = await getInvocation(customerId, invocationId);
+		if (
+			!inv ||
+			inv.status !== 'pending' ||
+			inv.tool_key !== toolKey ||
+			inv.customer_id !== customerId
+		) {
+			return { mode: 'reject', status: 403, message: 'invalid_invocation' };
+		}
+		return { mode: 'paid', invocationId };
+	}
+	if (await isToolBilled(customerId, toolKey)) {
+		return { mode: 'reject', status: 402, message: 'billing_required' };
+	}
+	return { mode: 'free' };
+}
