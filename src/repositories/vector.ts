@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase.js';
+import { supabaseUpvox as supabase } from '../lib/supabase-upvox.js';
 
 interface ListOptions {
 	page: number;
