@@ -10,13 +10,18 @@ if (!externalApiUrl) {
  * success or refunds it on failure — making billing authoritative and the
  * engine impossible to use for free.
  *
- * We authenticate to upvox the SAME way the gateway does: forwarding the
- * already-validated identity as `x-user-*` headers (upvox's requireAuth trusts
- * them). We use the gateway-injected customer id (`currentCustomer.id`), which
- * the main API reliably has — NOT the customer Bearer, which the gateway does
- * not reliably forward to the main API (the cause of `invalid_invocation`).
- * upvox still scopes every call to the owner, so an invocation can only be
- * touched by its own customer.
+ * Autenticamos de DOIS jeitos ao mesmo tempo (robusto pro valor de
+ * `EXTERNAL_API_URL`): mandamos o `x-user-id` (confiado quando a chamada vai
+ * DIRETO ao upvox) E repassamos o Bearer original do cliente — que o gateway
+ * exige (ele valida o JWT, injeta a identidade e SANITIZA/ignora `x-user-*` do
+ * cliente). Apontando pro gateway, vale o Bearer; direto no upvox, vale o
+ * `x-user-id`. É o mesmo Bearer que autenticou a requisição do motor, então é
+ * válido. upvox ainda escopa toda chamada ao dono, então uma invocation só
+ * pode ser tocada pelo próprio customer.
+ *
+ * Sem repassar o Bearer, com `EXTERNAL_API_URL` no gateway, o upvox respondia
+ * 401 → `getInvocation` virava null → `resolveToolBilling` devolvia
+ * `invalid_invocation` (403) e o motor nunca rodava nem liquidava.
  */
 export interface ToolInvocation {
 	id: string;
@@ -28,23 +33,45 @@ export interface ToolInvocation {
 	voxes_spent: number;
 }
 
-/** Authenticate a server-to-server call as the acting customer (gateway-style). */
-function asCustomer(customerId: string): Record<string, string> {
-	return { 'x-user-id': customerId, 'x-user-role': 'customer' };
+/**
+ * Headers da chamada server-to-server ao upvox. Manda `x-user-id` (confiado
+ * quando a chamada vai DIRETO ao upvox) E repassa o Bearer original do request,
+ * quando houver — necessário se `EXTERNAL_API_URL` for o gateway, que valida o
+ * token, injeta a identidade e IGNORA/sanitiza `x-user-*` do cliente. Com os
+ * dois headers, funciona apontando pro gateway OU direto pro upvox.
+ */
+function asCustomer(
+	customerId: string,
+	authHeader?: string,
+): Record<string, string> {
+	const headers: Record<string, string> = {
+		'x-user-id': customerId,
+		'x-user-role': 'customer',
+	};
+	if (authHeader) headers.authorization = authHeader;
+	return headers;
 }
 
 /** GET /v1/tool/invocation/:id — returns the invocation or null on any failure. */
 export async function getInvocation(
 	customerId: string,
 	id: string,
+	authHeader?: string,
 ): Promise<ToolInvocation | null> {
 	try {
 		const res = await fetch(`${externalApiUrl}/v1/tool/invocation/${id}`, {
-			headers: asCustomer(customerId),
+			headers: asCustomer(customerId, authHeader),
 		});
-		if (!res.ok) return null;
+		if (!res.ok) {
+			// Não engole em silêncio: 401 aqui = EXTERNAL_API_URL no gateway sem Bearer.
+			console.error(
+				`[upvox-tools] getInvocation ${id} → HTTP ${res.status} (EXTERNAL_API_URL=${externalApiUrl})`,
+			);
+			return null;
+		}
 		return (await res.json()) as ToolInvocation;
-	} catch {
+	} catch (err) {
+		console.error(`[upvox-tools] getInvocation ${id} falhou:`, err);
 		return null;
 	}
 }
@@ -53,22 +80,24 @@ export async function getInvocation(
 export async function settleInvocation(
 	customerId: string,
 	id: string,
+	authHeader?: string,
 ): Promise<void> {
 	await fetch(`${externalApiUrl}/v1/tool/invocation/${id}/settle`, {
 		method: 'POST',
-		headers: asCustomer(customerId),
-	}).catch(() => {});
+		headers: asCustomer(customerId, authHeader),
+	}).catch((err) => console.error(`[upvox-tools] settle ${id} falhou:`, err));
 }
 
 /** POST /v1/tool/invocation/:id/refund — reverse the charge on engine failure. */
 export async function refundInvocation(
 	customerId: string,
 	id: string,
+	authHeader?: string,
 ): Promise<void> {
 	await fetch(`${externalApiUrl}/v1/tool/invocation/${id}/refund`, {
 		method: 'POST',
-		headers: asCustomer(customerId),
-	}).catch(() => {});
+		headers: asCustomer(customerId, authHeader),
+	}).catch((err) => console.error(`[upvox-tools] refund ${id} falhou:`, err));
 }
 
 interface EntitlementsResponse {
@@ -78,10 +107,11 @@ interface EntitlementsResponse {
 /** Customer entitlements via upvox (x-user-id auth). null on any failure. */
 async function fetchEntitlementsAsCustomer(
 	customerId: string,
+	authHeader?: string,
 ): Promise<EntitlementsResponse | null> {
 	try {
 		const res = await fetch(`${externalApiUrl}/v1/me/entitlements`, {
-			headers: asCustomer(customerId),
+			headers: asCustomer(customerId, authHeader),
 		});
 		if (!res.ok) return null;
 		return (await res.json()) as EntitlementsResponse;
@@ -94,8 +124,9 @@ async function fetchEntitlementsAsCustomer(
 export async function isToolBilled(
 	customerId: string,
 	toolKey: string,
+	authHeader?: string,
 ): Promise<boolean> {
-	const ent = await fetchEntitlementsAsCustomer(customerId);
+	const ent = await fetchEntitlementsAsCustomer(customerId, authHeader);
 	return Boolean(ent?.tools?.some((t) => t.key === toolKey));
 }
 
@@ -116,9 +147,10 @@ export async function resolveToolBilling(
 	customerId: string,
 	toolKey: string,
 	invocationId: string | null,
+	authHeader?: string,
 ): Promise<BillingGate> {
 	if (invocationId) {
-		const inv = await getInvocation(customerId, invocationId);
+		const inv = await getInvocation(customerId, invocationId, authHeader);
 		if (
 			!inv ||
 			inv.status !== 'pending' ||
@@ -129,7 +161,7 @@ export async function resolveToolBilling(
 		}
 		return { mode: 'paid', invocationId };
 	}
-	if (await isToolBilled(customerId, toolKey)) {
+	if (await isToolBilled(customerId, toolKey, authHeader)) {
 		return { mode: 'reject', status: 402, message: 'billing_required' };
 	}
 	return { mode: 'free' };
