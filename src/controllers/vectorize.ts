@@ -14,15 +14,12 @@ export const vectorizeController = async (
 	// Billing is owned by upvox: the front calls /v1/tool/vectorize/invoke first
 	// (which debits/quota and returns an invocation_id), then sends it here. We
 	// validate it, run the engine, and settle (success) or refund (failure) —
-	// forwarding the customer's Bearer so upvox scopes every call to the owner.
-	const token = (request.headers.authorization ?? '').replace(
-		/^Bearer\s+/i,
-		'',
-	);
+	// authenticating to upvox with the gateway-validated customer id (x-user-id)
+	// so upvox scopes every call to the owner.
+	const customerId = request.currentCustomer?.id;
 	let invocationId: string | null = null;
 
 	try {
-		const customerId = request.currentCustomer?.id;
 		if (!customerId) {
 			return reply.status(403).send({ message: 'Customer not found' });
 		}
@@ -53,7 +50,7 @@ export const vectorizeController = async (
 
 		// Authorize: a pending `vectorize` invocation owned by this customer.
 		// Prevents calling the engine for free (no valid paid invocation = reject).
-		const inv = await getInvocation(token, invocationId);
+		const inv = await getInvocation(customerId, invocationId);
 		if (
 			!inv ||
 			inv.status !== 'pending' ||
@@ -71,15 +68,16 @@ export const vectorizeController = async (
 		);
 
 		if (error) {
-			await refundInvocation(token, invocationId);
+			await refundInvocation(customerId, invocationId);
 			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(500).send({ message });
 		}
 
-		await settleInvocation(token, invocationId);
+		await settleInvocation(customerId, invocationId);
 		return reply.status(201).send(result);
 	} catch (err) {
-		if (invocationId) await refundInvocation(token, invocationId);
+		if (invocationId && customerId)
+			await refundInvocation(customerId, invocationId);
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
