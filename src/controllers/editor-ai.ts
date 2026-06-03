@@ -28,6 +28,7 @@ export const editorAiController = async (
 	reply: FastifyReply,
 ) => {
 	const customerId = request.currentCustomer?.id;
+	const authHeader = request.headers.authorization;
 	if (!customerId) {
 		return reply.status(403).send({ message: 'Customer not found' });
 	}
@@ -40,16 +41,19 @@ export const editorAiController = async (
 			customerId,
 			AI_CANVAS_TOOL_KEY,
 			body.invocation_id ?? null,
+			authHeader,
 		);
 		if (gate.mode === 'reject') {
 			return reply.status(gate.status).send({ message: gate.message });
 		}
 		invocationId = gate.mode === 'paid' ? gate.invocationId : null;
 		const result = await editorAiService.generateOrEdit(body);
-		if (invocationId) await settleInvocation(customerId, invocationId);
+		if (invocationId)
+			await settleInvocation(customerId, invocationId, authHeader);
 		return reply.send(result);
 	} catch (err) {
-		if (invocationId) await refundInvocation(customerId, invocationId);
+		if (invocationId)
+			await refundInvocation(customerId, invocationId, authHeader);
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(statusFor(message)).send({ message });
 	}
@@ -60,6 +64,7 @@ export const editorRemoveBackgroundController = async (
 	reply: FastifyReply,
 ) => {
 	const customerId = request.currentCustomer?.id;
+	const authHeader = request.headers.authorization;
 	if (!customerId) {
 		return reply.status(403).send({ message: 'Customer not found' });
 	}
@@ -70,16 +75,19 @@ export const editorRemoveBackgroundController = async (
 			customerId,
 			AI_CANVAS_TOOL_KEY,
 			body.invocation_id ?? null,
+			authHeader,
 		);
 		if (gate.mode === 'reject') {
 			return reply.status(gate.status).send({ message: gate.message });
 		}
 		invocationId = gate.mode === 'paid' ? gate.invocationId : null;
 		const result = await editorAiService.removeBackground(body);
-		if (invocationId) await settleInvocation(customerId, invocationId);
+		if (invocationId)
+			await settleInvocation(customerId, invocationId, authHeader);
 		return reply.send(result);
 	} catch (err) {
-		if (invocationId) await refundInvocation(customerId, invocationId);
+		if (invocationId)
+			await refundInvocation(customerId, invocationId, authHeader);
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(statusFor(message)).send({ message });
 	}

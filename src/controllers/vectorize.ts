@@ -16,6 +16,7 @@ export const vectorizeController = async (
 	// and settle/refund. If it's not billed for this customer → run free. A request
 	// without an id for a *billed* tool is rejected (no free bypass).
 	const customerId = request.currentCustomer?.id;
+	const authHeader = request.headers.authorization;
 	let invocationId: string | null = null;
 
 	try {
@@ -46,6 +47,7 @@ export const vectorizeController = async (
 			customerId,
 			'vectorize',
 			fields.invocation_id ?? null,
+			authHeader,
 		);
 		if (gate.mode === 'reject') {
 			return reply.status(gate.status).send({ message: gate.message });
@@ -59,16 +61,18 @@ export const vectorizeController = async (
 		);
 
 		if (error) {
-			if (invocationId) await refundInvocation(customerId, invocationId);
+			if (invocationId)
+				await refundInvocation(customerId, invocationId, authHeader);
 			const message = error instanceof Error ? error.message : 'Unknown error';
 			return reply.status(500).send({ message });
 		}
 
-		if (invocationId) await settleInvocation(customerId, invocationId);
+		if (invocationId)
+			await settleInvocation(customerId, invocationId, authHeader);
 		return reply.status(201).send(result);
 	} catch (err) {
 		if (invocationId && customerId)
-			await refundInvocation(customerId, invocationId);
+			await refundInvocation(customerId, invocationId, authHeader);
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
