@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { supabase } from '../lib/supabase.js';
+import { isStaffRole } from '../lib/external-auth.js';
 import { machineService } from '../services/machine.js';
 import {
 	createMachineOptionSchema,
@@ -14,18 +14,6 @@ function statusFor(message: string): number {
 	return 500;
 }
 
-async function isStaff(
-	userId: string,
-	email?: string | null,
-): Promise<boolean> {
-	const { data } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${userId},email.eq.${email ?? ''}`)
-		.maybeSingle();
-	return !!data;
-}
-
 // ── Machines ────────────────────────────────────────────────────────────────
 
 export const listMachinesController = async (
@@ -33,8 +21,7 @@ export const listMachinesController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const user = request.currentUser;
-		const staff = user ? await isStaff(user.id, user.email) : false;
+		const staff = isStaffRole(request.currentRole);
 		const machines = await machineService.list(staff);
 		return reply.send(machines);
 	} catch (err) {
@@ -48,8 +35,7 @@ export const getMachineController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const user = request.currentUser;
-		const staff = user ? await isStaff(user.id, user.email) : false;
+		const staff = isStaffRole(request.currentRole);
 		const machine = await machineService.findById(request.params.id, staff);
 		if (machine.status !== 'ativo' && !staff) {
 			return reply.status(404).send({ message: 'Machine not found' });

@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { supabase } from '../lib/supabase.js';
+import { isStaffRole } from '../lib/external-auth.js';
 import { appointmentConfigService } from '../services/appointment-config.js';
 import {
 	createDayOffSchema,
@@ -7,16 +7,6 @@ import {
 	updateGlobalConfigSchema,
 	upsertTechnicianScheduleSchema,
 } from '../types/appointment-config.js';
-
-async function isStaff(userId: string | undefined): Promise<boolean> {
-	if (!userId) return false;
-	const { data } = await supabase
-		.from('Users')
-		.select('id')
-		.eq('id', userId)
-		.maybeSingle();
-	return !!data;
-}
 
 // ─── Global config ───────────────────────────────────────────────────────
 
@@ -38,7 +28,7 @@ export const updateGlobalConfigController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		if (!(await isStaff(request.currentUser?.id))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 		const patch = updateGlobalConfigSchema.parse(request.body);
@@ -73,7 +63,7 @@ export const addHolidayController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		if (!(await isStaff(request.currentUser?.id))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 		const data = createHolidaySchema.parse(request.body);
@@ -93,7 +83,7 @@ export const deleteHolidayController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		if (!(await isStaff(request.currentUser?.id))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 		await appointmentConfigService.deleteHoliday(request.params.id);
@@ -134,7 +124,7 @@ export const addDayOffController = async (
 		// Folga GLOBAL (technicianId null) → só staff
 		// Folga PRA OUTRO técnico → só staff
 		// Folga PRA SI MESMO → técnico autorizado
-		const staff = await isStaff(userId);
+		const staff = isStaffRole(request.currentRole);
 		const targetTech = data.technicianId ?? null;
 		if (!staff && targetTech !== userId) {
 			return reply.status(403).send({
@@ -155,7 +145,7 @@ export const deleteDayOffController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		if (!(await isStaff(request.currentUser?.id))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 		await appointmentConfigService.deleteDayOff(request.params.id);
@@ -192,7 +182,7 @@ export const upsertTechScheduleController = async (
 		if (!userId) return reply.status(403).send({ message: 'Forbidden' });
 
 		// Staff pode editar qualquer técnico; técnico só pode editar si mesmo.
-		const staff = await isStaff(userId);
+		const staff = isStaffRole(request.currentRole);
 		if (!staff && request.params.id !== userId) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}

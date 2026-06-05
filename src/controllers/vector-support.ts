@@ -1,18 +1,9 @@
 import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { isStaffRole } from '../lib/external-auth.js';
 import { uploadVectorSupportFile } from '../lib/storage.js';
-import { supabase } from '../lib/supabase.js';
 import { vectorSupportService } from '../services/vector-support.js';
 import { createTicketSchema } from '../types/vector-support.js';
-
-async function isStaff(userId: string): Promise<boolean> {
-	const { data } = await supabase
-		.from('Users')
-		.select('id')
-		.eq('id', userId)
-		.maybeSingle();
-	return !!data;
-}
 
 export const listTicketsController = async (
 	request: FastifyRequest<{ Querystring: { status?: string } }>,
@@ -60,8 +51,7 @@ export const getTicketController = async (
 			return reply.status(404).send({ message: 'Ticket not found' });
 		}
 
-		const userId = request.currentUser?.id ?? '';
-		const staff = await isStaff(userId);
+		const staff = isStaffRole(request.currentRole);
 		if (!staff && ticket.customerId !== request.currentCustomer?.id) {
 			return reply.status(403).send({ message: 'Access denied' });
 		}
@@ -176,19 +166,14 @@ export const sendMessageController = async (
 		}
 
 		const userId = request.currentUser?.id ?? '';
-		const staff = await isStaff(userId);
+		const staff = isStaffRole(request.currentRole);
 
 		let authorId: string;
 		let authorName: string;
 
 		if (staff) {
 			authorId = userId;
-			const { data: user } = await supabase
-				.from('Users')
-				.select('name')
-				.eq('id', userId)
-				.maybeSingle();
-			authorName = user?.name ?? 'Técnico';
+			authorName = request.currentUser?.name ?? 'Técnico';
 		} else {
 			authorId = request.currentCustomer?.id ?? userId;
 			authorName = request.currentCustomer?.name ?? 'Cliente';

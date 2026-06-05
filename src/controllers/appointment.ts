@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { supabase } from '../lib/supabase.js';
+import { isStaffRole } from '../lib/external-auth.js';
 import { appointmentRepository } from '../repositories/appointment.js';
 import { appointmentConfigService } from '../services/appointment-config.js';
 import {
@@ -13,13 +13,7 @@ export const getAppointmentsController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const { data: staffUser } = await supabase
-			.from('Users')
-			.select('id')
-			.eq('id', request.currentUser.id)
-			.maybeSingle();
-
-		if (staffUser) {
+		if (isStaffRole(request.currentRole)) {
 			const appointments = await appointmentRepository.listAll();
 			return reply.send(appointments);
 		}
@@ -38,13 +32,7 @@ export const getAppointmentsByCustomerController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const { data: staffUser } = await supabase
-			.from('Users')
-			.select('id')
-			.eq('id', request.currentUser.id)
-			.maybeSingle();
-
-		if (!staffUser) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 
@@ -120,13 +108,7 @@ export const updateAppointmentStatusController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const { data: staffUser } = await supabase
-			.from('Users')
-			.select('id')
-			.eq('id', request.currentUser.id)
-			.maybeSingle();
-
-		if (!staffUser) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 
@@ -148,13 +130,7 @@ export const getMyAppointmentsController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const { data: staffUser } = await supabase
-			.from('Users')
-			.select('id')
-			.eq('id', request.currentUser.id)
-			.maybeSingle();
-
-		if (!staffUser) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 
@@ -173,13 +149,7 @@ export const getAppointmentsByTechnicianController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const { data: staffUser } = await supabase
-			.from('Users')
-			.select('id')
-			.eq('id', request.currentUser.id)
-			.maybeSingle();
-
-		if (!staffUser) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 
@@ -198,13 +168,7 @@ export const updateAppointmentTechnicianController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const { data: staffUser } = await supabase
-			.from('Users')
-			.select('id')
-			.eq('id', request.currentUser.id)
-			.maybeSingle();
-
-		if (!staffUser) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 
@@ -255,13 +219,7 @@ export const deleteAppointmentController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const { data: staffUser } = await supabase
-			.from('Users')
-			.select('id')
-			.eq('id', request.currentUser.id)
-			.maybeSingle();
-
-		if (!staffUser) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 

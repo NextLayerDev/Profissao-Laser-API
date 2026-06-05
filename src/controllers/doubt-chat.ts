@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { isStaffRole } from '../lib/external-auth.js';
 import { uploadDoubtFile } from '../lib/storage.js';
-import { supabase } from '../lib/supabase.js';
 import { doubtChatRepository } from '../repositories/doubt-chat.js';
 import {
 	createChatSchema,
@@ -28,15 +28,6 @@ export const doubtChatStatsController = async (
 	}
 };
 
-async function isStaff(userId: string): Promise<boolean> {
-	const { data } = await supabase
-		.from('Users')
-		.select('id')
-		.eq('id', userId)
-		.maybeSingle();
-	return !!data;
-}
-
 export const listCategoriesController = async (
 	_request: FastifyRequest,
 	reply: FastifyReply,
@@ -55,8 +46,7 @@ export const createCategoryController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 
@@ -74,8 +64,7 @@ export const updateCategoryController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 
@@ -94,8 +83,7 @@ export const deleteCategoryController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 
@@ -113,8 +101,7 @@ export const reorderCategoriesController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 
@@ -176,8 +163,7 @@ export const createDefaultQuestionController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 
@@ -196,8 +182,7 @@ export const updateDefaultQuestionController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 
@@ -216,8 +201,7 @@ export const deleteDefaultQuestionController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 
@@ -235,8 +219,7 @@ export const reorderDefaultQuestionsController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 
@@ -272,8 +255,7 @@ export const listAdminChatsController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 
@@ -366,8 +348,7 @@ export const getChatController = async (
 			return reply.status(404).send({ message: 'Chat not found' });
 		}
 
-		const userId = request.currentUser?.id ?? '';
-		const staff = await isStaff(userId);
+		const staff = isStaffRole(request.currentRole);
 		if (!staff && chat.customerId !== request.currentCustomer?.id) {
 			return reply.status(403).send({ message: 'Access denied' });
 		}
@@ -406,19 +387,14 @@ export const sendMessageController = async (
 		}
 
 		const userId = request.currentUser?.id ?? '';
-		const staff = await isStaff(userId);
+		const staff = isStaffRole(request.currentRole);
 
 		let authorId: string;
 		let authorName: string;
 
 		if (staff) {
 			authorId = userId;
-			const { data: user } = await supabase
-				.from('Users')
-				.select('name')
-				.eq('id', userId)
-				.maybeSingle();
-			authorName = user?.name ?? 'Técnico';
+			authorName = request.currentUser?.name ?? 'Técnico';
 		} else {
 			authorId = request.currentCustomer?.id ?? userId;
 			authorName = request.currentCustomer?.name ?? 'Cliente';
