@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { supabase } from '../lib/supabase.js';
+import { isStaffRole } from '../lib/external-auth.js';
 import { vectorLibraryService } from '../services/vector-library.js';
 import {
 	bulkUpdateFilesSchema,
@@ -22,13 +22,7 @@ async function requireAdmin(
 		return false;
 	}
 
-	const { data: platformUser } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (!platformUser) {
+	if (!isStaffRole(request.currentRole)) {
 		reply.status(403).send({
 			statusCode: 403,
 			error: 'Forbidden',

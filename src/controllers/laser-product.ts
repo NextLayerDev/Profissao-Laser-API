@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { supabase } from '../lib/supabase.js';
+import { isStaffRole } from '../lib/external-auth.js';
 import { laserProductService } from '../services/laser-product.js';
 import {
 	createLaserProductSchema,
@@ -13,18 +13,6 @@ function statusFor(message: string): number {
 	if (message === 'Variant not found') return 404;
 	if (message === 'Variant inválido ou indisponível') return 400;
 	return 500;
-}
-
-async function isStaff(
-	userId: string,
-	email?: string | null,
-): Promise<boolean> {
-	const { data } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${userId},email.eq.${email ?? ''}`)
-		.maybeSingle();
-	return !!data;
 }
 
 // ── Products ────────────────────────────────────────────────────────────────
@@ -42,8 +30,7 @@ export const listLaserProductsController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const user = request.currentUser;
-		const staff = user ? await isStaff(user.id, user.email) : false;
+		const staff = isStaffRole(request.currentRole);
 		const page = request.query.page ?? 1;
 		const limit = request.query.limit ?? 20;
 		const result = await laserProductService.list({
@@ -66,8 +53,7 @@ export const getLaserProductController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const user = request.currentUser;
-		const staff = user ? await isStaff(user.id, user.email) : false;
+		const staff = isStaffRole(request.currentRole);
 
 		const product = await laserProductService.findByIdWithVariants(
 			request.params.id,
@@ -155,8 +141,7 @@ export const listVariantsController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const user = request.currentUser;
-		const staff = user ? await isStaff(user.id, user.email) : false;
+		const staff = isStaffRole(request.currentRole);
 		const variants = await laserProductService.listVariants(request.params.id, {
 			includeInactiveVariants: staff,
 		});

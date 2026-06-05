@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { supabase } from '../lib/supabase.js';
+import { isStaffRole } from '../lib/external-auth.js';
 import { templateService } from '../services/template.js';
 import {
 	cloneTemplateSchema,
@@ -12,18 +12,6 @@ function statusFor(message: string): number {
 	if (message === 'Template not found') return 404;
 	if (message === 'Template not available') return 400;
 	return 500;
-}
-
-async function isStaff(
-	userId: string,
-	email?: string | null,
-): Promise<boolean> {
-	const { data } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${userId},email.eq.${email ?? ''}`)
-		.maybeSingle();
-	return !!data;
 }
 
 // ── List ──────────────────────────────────────────────────────────────────
@@ -42,8 +30,7 @@ export const listTemplatesController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const user = request.currentUser;
-		const staff = user ? await isStaff(user.id, user.email) : false;
+		const staff = isStaffRole(request.currentRole);
 
 		const page = request.query.page ?? 1;
 		const limit = request.query.limit ?? 20;
@@ -70,8 +57,7 @@ export const getTemplateController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const user = request.currentUser;
-		const staff = user ? await isStaff(user.id, user.email) : false;
+		const staff = isStaffRole(request.currentRole);
 
 		const template = await templateService.findById(request.params.id);
 		if (template.status !== 'ativo' && !staff) {

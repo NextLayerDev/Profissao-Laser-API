@@ -1,29 +1,11 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { supabase } from '../lib/supabase.js';
+import { isStaffRole } from '../lib/external-auth.js';
 import { supportChatService } from '../services/support-chat.js';
 import {
 	adminListQuerySchema,
 	createSupportChatSchema,
 	sendSupportMessageSchema,
 } from '../types/support-chat.js';
-
-async function isStaff(userId: string): Promise<boolean> {
-	const { data } = await supabase
-		.from('Users')
-		.select('id')
-		.eq('id', userId)
-		.maybeSingle();
-	return !!data;
-}
-
-async function userName(userId: string): Promise<string> {
-	const { data } = await supabase
-		.from('Users')
-		.select('name')
-		.eq('id', userId)
-		.maybeSingle();
-	return data?.name ?? 'Atendente';
-}
 
 // ── Customer ─────────────────────────────────────────────────────────────
 
@@ -70,8 +52,7 @@ export const getSupportChatController = async (
 		const chat = await supportChatService.getById(id);
 		if (!chat) return reply.status(404).send({ message: 'Chat not found' });
 
-		const userId = request.currentUser?.id ?? '';
-		const staff = await isStaff(userId);
+		const staff = isStaffRole(request.currentRole);
 		if (!staff && chat.customerId !== request.currentCustomer?.id) {
 			return reply.status(403).send({ message: 'Access denied' });
 		}
@@ -132,8 +113,7 @@ export const closeSupportChatController = async (
 		const chat = await supportChatService.getById(id);
 		if (!chat) return reply.status(404).send({ message: 'Chat not found' });
 
-		const userId = request.currentUser?.id ?? '';
-		const staff = await isStaff(userId);
+		const staff = isStaffRole(request.currentRole);
 		if (!staff && chat.customerId !== request.currentCustomer?.id) {
 			return reply.status(403).send({ message: 'Access denied' });
 		}
@@ -152,8 +132,7 @@ export const listAdminSupportChatsController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 		const { status } = adminListQuerySchema.parse(request.query);
@@ -170,8 +149,7 @@ export const getAdminSupportChatController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 		const { id } = request.params;
@@ -190,7 +168,7 @@ export const adminSendSupportMessageController = async (
 ) => {
 	try {
 		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 		const { id } = request.params;
@@ -198,7 +176,7 @@ export const adminSendSupportMessageController = async (
 		const chat = await supportChatService.adminSendMessage(
 			id,
 			userId,
-			await userName(userId),
+			request.currentUser?.name ?? 'Atendente',
 			content,
 		);
 		return reply.send(chat);
@@ -214,14 +192,14 @@ export const takeOverSupportChatController = async (
 ) => {
 	try {
 		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 		const { id } = request.params;
 		const chat = await supportChatService.takeOver(
 			id,
 			userId,
-			await userName(userId),
+			request.currentUser?.name ?? 'Atendente',
 		);
 		return reply.send(chat);
 	} catch (err) {
@@ -235,8 +213,7 @@ export const adminCloseSupportChatController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const userId = request.currentUser?.id ?? '';
-		if (!(await isStaff(userId))) {
+		if (!isStaffRole(request.currentRole)) {
 			return reply.status(403).send({ message: 'Staff access required' });
 		}
 		const { id } = request.params;
