@@ -72,6 +72,22 @@ export async function uploadCommunityFile(
 	return upload('community-files', buffer, path, mimetype);
 }
 
+export async function uploadCustomerAvatar(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('customer-avatars', buffer, path, mimetype);
+}
+
+export async function uploadParameterImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('parameter-images', buffer, path, mimetype);
+}
+
 export async function uploadDoubtFile(
 	buffer: Buffer,
 	path: string,
@@ -104,12 +120,101 @@ export async function uploadVectorLibraryFile(
 	return upload('vector-library', buffer, path, mimetype);
 }
 
+export async function uploadPreviaImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('previas', buffer, path, mimetype);
+}
+
+export async function deletePreviaImageByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
+export async function uploadTemplateImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('templates', buffer, path, mimetype);
+}
+
+export async function deleteTemplateImageByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
+export async function uploadDesignThumbnail(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('designs', buffer, path, mimetype);
+}
+
+export async function deleteDesignThumbnailByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
+export async function uploadLaserProductImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('laser-products', buffer, path, mimetype);
+}
+
+export async function deleteLaserProductImageByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
+export async function uploadWatermarkImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('watermarks', buffer, path, mimetype);
+}
+
+export async function deleteWatermarkImageByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
+export async function uploadLaserLineTypeImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('laser-line-types', buffer, path, mimetype);
+}
+
+export async function deleteLaserLineTypeImageByUrl(
+	url: string,
+): Promise<void> {
+	return deleteByUrl(url);
+}
+
 export async function deleteVectorLibraryFileByUrl(url: string): Promise<void> {
 	return deleteByUrl(url);
 }
 
 export async function deleteSvgByUrl(url: string): Promise<void> {
 	return deleteByUrl(url);
+}
+
+export async function uploadVectorOriginalImage(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('vectors-original', buffer, path, mimetype);
+}
+
+export async function uploadVectorPng(
+	buffer: Buffer,
+	path: string,
+): Promise<string> {
+	return upload('vectors-preview', buffer, path, 'image/png');
 }
 
 export async function createBunnyStreamUpload(title: string): Promise<{

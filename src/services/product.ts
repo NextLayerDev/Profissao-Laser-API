@@ -3,7 +3,11 @@ import { stripe } from '../lib/stripe.js';
 import { lessonRepository } from '../repositories/lesson.js';
 import { moduleRepository } from '../repositories/module.js';
 import { productRepository } from '../repositories/product.js';
-import type { ProductCreate, ProductUpdate } from '../types/product.js';
+import type {
+	AddonCreate,
+	ProductCreate,
+	ProductUpdate,
+} from '../types/product.js';
 
 export const productService = {
 	async listProducts() {
@@ -77,6 +81,52 @@ export const productService = {
 				refundDays: data.refundDays,
 				stripeProductId: stripeProduct.id,
 				stripePriceId: stripePrice.id,
+			});
+		});
+	},
+
+	async createAddon(data: AddonCreate) {
+		return withCapture(async () => {
+			const stripeProduct = await stripe.products.create({
+				name: data.name,
+				description: data.description || undefined,
+			});
+
+			const stripePrice = await stripe.prices.create({
+				product: stripeProduct.id,
+				unit_amount: Math.round(data.price * 100),
+				currency: 'brl',
+				recurring:
+					data.interval !== 'one_time'
+						? { interval: data.interval as 'month' | 'year' }
+						: undefined,
+			});
+
+			const id = crypto.randomUUID();
+			const baseSlug = data.name
+				.toLowerCase()
+				.normalize('NFD')
+				.replace(/[̀-ͯ]/g, '')
+				.replace(/\s+/g, '-')
+				.replace(/[^a-z0-9-]/g, '');
+			const slug = `${baseSlug}-${id.split('-')[0]}`;
+
+			return productRepository.create({
+				id,
+				name: data.name,
+				type: 'addon',
+				description: data.description,
+				image: undefined,
+				price: data.price,
+				status: 'ativo',
+				slug,
+				language: 'pt-BR',
+				country: 'BR',
+				category: undefined,
+				refundDays: 7,
+				stripeProductId: stripeProduct.id,
+				stripePriceId: stripePrice.id,
+				isAddon: true,
 			});
 		});
 	},

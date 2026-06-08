@@ -7,12 +7,19 @@ import {
 	listVectorsController,
 	updateVectorController,
 } from '../controllers/vector.js';
+import {
+	exportVectorController,
+	vectorizeBatchController,
+	vectorizeController,
+} from '../controllers/vectorize.js';
 import { authenticateVectorizacao } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import {
+	batchVectorizeResultSchema,
 	createVectorSchema,
 	listVectorsQuery,
 	updateVectorSchema,
+	vectorizeResultSchema,
 	vectorSchema,
 } from '../types/vector.js';
 
@@ -119,5 +126,118 @@ export async function vectorRoute(server: FastifyInstance) {
 			},
 		},
 		deleteVectorController,
+	);
+
+	server.post(
+		'/api/vectorize',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Vetoriza uma imagem com o motor Potrace (trace/posterize).',
+					'Envio via **multipart/form-data**. Resposta traz o SVG inline',
+					'(`svgContent`) + `pngUrl` + `dxfContent` + `id`.',
+					'',
+					'| Field | Type | Default | Description |',
+					'|-------|------|---------|-------------|',
+					'| `file` | **binary** | — | Imagem a vetorizar (obrigatório) |',
+					'| `preset` | string | — | `rapido` / `detalhado` / `svg` (rótulo) |',
+					'| `mode` | string | `trace` | Algoritmo: `trace` ou `posterize` |',
+					'| `threshold` | number | `128` | Limiar P&B (0–255) |',
+					'| `turdSize` | number | `5` | Suprime manchas até este tamanho |',
+					'| `optTolerance` | number | `0.2` | Tolerância de otimização de curva |',
+					'| `alphaMax` | number | `1` | Limiar de canto |',
+					'| `turnPolicy` | string | — | black/white/left/right/minority/majority |',
+					'| `blackOnWhite` | boolean | `true` | Lado do limiar a traçar |',
+					'| `invert` | boolean | `false` | Inverter cores |',
+					'| `blur` | number | — | Desfoque (0.3–20) |',
+					'| `sharpen` | boolean | `false` | Nitidez |',
+					'| `brightness` | number | — | Brilho (0.1–3.0) |',
+					'| `contrast` | number | — | Contraste (0.1–3.0) |',
+					'| `gamma` | number | — | Gamma (1.0–3.0) |',
+					'| `edgeDetection` | string | `none` | none/sobel/canny |',
+					'| `ditherAlgorithm` | string | — | floydSteinberg/atkinson/stucki/jarvis/sierra/ordered/halftone |',
+					'| `posterizeLevels` | number | `4` | Níveis do posterize (2–10) |',
+					'| `posterizeFillStrategy` | string | `dominant` | dominant/mean/median/spread |',
+					'| `posterizeRangeDistribution` | string | `auto` | auto/equal |',
+					'| `drawingStyle` | string | `fill` | fill/stroke/outline |',
+					'| `color` | string | `#000000` | Cor do traço/preenchimento |',
+					'| `strokeWidth` | number | `1` | Largura do traço |',
+					'| `nonScalingStroke` | boolean | `false` | vector-effect non-scaling |',
+					'| `linePattern` | string | `none` | none/horizontal/vertical/diagonal45/diagonal135/crosshatch/diamondHatch |',
+					'| `lineSpacing` | number | `3` | Espaçamento das linhas (0.5–10) |',
+					'| `lineAngle` | number | — | Ângulo das linhas (0–360) |',
+					'| `dpi` | number | — | DPI p/ dimensionar em mm (72–360) |',
+					'| `outputWidth` | number | — | Largura de saída (mm) |',
+					'| `outputHeight` | number | — | Altura de saída (mm) |',
+					'| `svgOptimize` | boolean | `false` | Simplifica os paths |',
+				].join('\n'),
+				consumes: ['multipart/form-data'],
+				response: {
+					201: vectorizeResultSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		vectorizeController,
+	);
+
+	server.post(
+		'/api/vectorize/batch',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Vetoriza múltiplas imagens em lote. Mesmos campos de `POST /api/vectorize`,',
+					'mas o campo `file` pode aparecer múltiplas vezes (um por arquivo).',
+				].join('\n'),
+				consumes: ['multipart/form-data'],
+				response: {
+					201: batchVectorizeResultSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		vectorizeBatchController,
+	);
+
+	server.get(
+		'/api/vectorize/export/:format',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Exporta um vetor salvo em formato alternativo.',
+					'',
+					'| Param | Type | Description |',
+					'|-------|------|-------------|',
+					'| `format` | path | `dxf` ou `png` |',
+					'| `id` | query | UUID do vetor (`customer_vectors.id`) |',
+					'',
+					'PNG redireciona para a URL do preview. DXF retorna o arquivo para download.',
+				].join('\n'),
+				params: z.object({ format: z.enum(['dxf', 'png']) }),
+				querystring: z.object({ id: z.string().uuid() }),
+				response: {
+					302: z.null(),
+					200: z.string(),
+					400: ErrorSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		exportVectorController,
 	);
 }

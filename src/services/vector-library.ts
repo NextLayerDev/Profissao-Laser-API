@@ -11,6 +11,47 @@ export const vectorLibraryService = {
 		return withCapture(() => vectorLibraryRepository.listContents(parentId));
 	},
 
+	async getContentsFiltered(
+		filters: Parameters<typeof vectorLibraryRepository.listContentsFiltered>[0],
+		customerId: string | null,
+	) {
+		return withCapture(() =>
+			vectorLibraryRepository.listContentsFiltered(filters, customerId),
+		);
+	},
+
+	async getStats(customerId: string | null) {
+		return withCapture(() => vectorLibraryRepository.stats(customerId));
+	},
+
+	async listCategories() {
+		return withCapture(() => vectorLibraryRepository.listCategories());
+	},
+
+	async listFormats() {
+		return withCapture(() => vectorLibraryRepository.listFormats());
+	},
+
+	async addFavorite(fileId: string, customerId: string) {
+		return withCapture(() =>
+			vectorLibraryRepository.addFavorite(fileId, customerId),
+		);
+	},
+
+	async removeFavorite(fileId: string, customerId: string) {
+		return withCapture(() =>
+			vectorLibraryRepository.removeFavorite(fileId, customerId),
+		);
+	},
+
+	async listFavorites(customerId: string) {
+		return withCapture(() => vectorLibraryRepository.listFavorites(customerId));
+	},
+
+	async listFeatured() {
+		return withCapture(() => vectorLibraryRepository.listFeatured());
+	},
+
 	async getBreadcrumbs(folderId: string | null) {
 		return withCapture(async () => {
 			const root = { id: null, name: 'Biblioteca' };
@@ -52,6 +93,11 @@ export const vectorLibraryService = {
 		mimetype: string,
 		size: number | null,
 		customName?: string,
+		config?: {
+			category?: string | null;
+			formats?: string[] | null;
+			featured?: boolean;
+		},
 	) {
 		return withCapture(async () => {
 			const ext = filename.split('.').pop() ?? 'bin';
@@ -72,18 +118,64 @@ export const vectorLibraryService = {
 				mimeType: mimetype,
 				size,
 				order,
+				category: config?.category ?? null,
+				formats: config?.formats ?? null,
+				featured: config?.featured ?? false,
 			});
 		});
 	},
 
-	async updateFile(id: string, name: string) {
-		return withCapture(() => vectorLibraryRepository.updateFile(id, name));
+	async updateFile(
+		id: string,
+		data: {
+			name?: string;
+			category?: string | null;
+			formats?: string[] | null;
+			featured?: boolean;
+		},
+	) {
+		return withCapture(() => vectorLibraryRepository.updateFile(id, data));
 	},
 
 	async deleteFile(id: string) {
 		return withCapture(async () => {
 			const fileUrl = await vectorLibraryRepository.deleteFile(id);
 			await deleteVectorLibraryFileByUrl(fileUrl);
+		});
+	},
+
+	async bulkUpdateFiles(input: {
+		fileIds?: string[];
+		folderIds?: string[];
+		category?: string | null;
+		addFormats?: string[];
+		featured?: boolean;
+	}) {
+		return withCapture(async () => {
+			// Resolve os ficheiros das pastas (recursivo) + os selecionados.
+			const folderFileIds = (
+				await Promise.all(
+					(input.folderIds ?? []).map((id) =>
+						vectorLibraryRepository.getAllFileIdsInFolder(id),
+					),
+				)
+			).flat();
+			const ids = [...new Set([...(input.fileIds ?? []), ...folderFileIds])];
+
+			if (ids.length === 0) return { updated: 0 };
+
+			const scalarPatch: { category?: string | null; featured?: boolean } = {};
+			if (input.category !== undefined) scalarPatch.category = input.category;
+			if (input.featured !== undefined) scalarPatch.featured = input.featured;
+			if (Object.keys(scalarPatch).length > 0) {
+				await vectorLibraryRepository.bulkUpdateScalar(ids, scalarPatch);
+			}
+
+			if (input.addFormats && input.addFormats.length > 0) {
+				await vectorLibraryRepository.bulkMergeFormats(ids, input.addFormats);
+			}
+
+			return { updated: ids.length };
 		});
 	},
 };

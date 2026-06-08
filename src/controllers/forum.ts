@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { supabase } from '../lib/supabase.js';
+import { isStaffRole } from '../lib/external-auth.js';
 import { forumRepository } from '../repositories/forum.js';
 import {
 	createForumCategorySchema,
@@ -7,26 +7,20 @@ import {
 	createForumReplySchema,
 	updateForumCategorySchema,
 	updateForumPostSchema,
+	updateForumReplySchema,
 } from '../types/forum.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function requireAdmin(
-	request: FastifyRequest,
-	reply: FastifyReply,
-): Promise<boolean> {
+function requireAdmin(request: FastifyRequest, reply: FastifyReply): boolean {
 	const user = request.currentUser;
 	if (!user) {
 		reply.status(401).send({ message: 'Not authenticated' });
 		return false;
 	}
-	const { data: platformUser } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${user.id},email.eq.${user.email}`)
-		.maybeSingle();
-
-	if (!platformUser) {
+	// Admin = role do upvox (admin/staff). Antes fazia lookup na tabela legada
+	// `Users`, que dava 403 pro admin migrado (id agora é o do upvox).
+	if (!isStaffRole(request.currentRole)) {
 		reply.status(403).send({ message: 'Admin access required' });
 		return false;
 	}
@@ -41,21 +35,16 @@ function getAuthor(request: FastifyRequest) {
 	return { id: userId, name, isInstructor };
 }
 
-async function requireOwnerOrAdmin(
+function requireOwnerOrAdmin(
 	request: FastifyRequest,
 	reply: FastifyReply,
 	ownerId: string,
-): Promise<boolean> {
+): boolean {
 	const userId = request.currentUser?.id ?? '';
 	if (userId === ownerId) return true;
 
-	const { data: platformUser } = await supabase
-		.from('Users')
-		.select('id')
-		.or(`id.eq.${userId},email.eq.${request.currentUser?.email}`)
-		.maybeSingle();
-
-	if (!platformUser) {
+	// Dono OU admin/staff (role do upvox) — sem lookup na tabela legada `Users`.
+	if (!isStaffRole(request.currentRole)) {
 		reply.status(403).send({ message: 'Not authorized' });
 		return false;
 	}
@@ -247,6 +236,35 @@ export const createForumReplyController = async (
 		const author = getAuthor(request);
 		const post = await forumRepository.createReply(postId, data, author);
 		return reply.status(201).send(post);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
+export const updateForumReplyController = async (
+	request: FastifyRequest<{ Params: { id: string; replyId: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		const { id: postId, replyId } = request.params;
+		const currentUserId = request.currentUser?.id ?? '';
+
+		const post = await forumRepository.getPost(postId, currentUserId);
+		const replyObj = post.replies?.find((r) => r.id === replyId);
+		if (!replyObj)
+			return reply.status(404).send({ message: 'Reply not found' });
+
+		if (!(await requireOwnerOrAdmin(request, reply, replyObj.authorId))) return;
+
+		const data = updateForumReplySchema.parse(request.body);
+		const updated = await forumRepository.updateReply(
+			postId,
+			replyId,
+			data.content,
+			currentUserId,
+		);
+		return reply.send(updated);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(400).send({ message });

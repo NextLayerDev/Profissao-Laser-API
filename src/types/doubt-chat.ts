@@ -55,8 +55,10 @@ export const chatMessageSchema = z.object({
 
 export const doubtChatSummarySchema = z.object({
 	id: z.string(),
+	ticketNumber: z.number().nullable().optional(),
 	categoryId: z.string(),
 	categoryName: z.string().nullable().optional(),
+	category: doubtCategorySchema.nullable().optional(),
 	technicianId: z.string().nullable().optional(),
 	technicianName: z.string().nullable().optional(),
 	customerId: z.string(),
@@ -64,6 +66,12 @@ export const doubtChatSummarySchema = z.object({
 	status: z.string(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
+});
+
+export const doubtChatStatsSchema = z.object({
+	pending: z.number(),
+	answered: z.number(),
+	total: z.number(),
 });
 
 export const doubtChatSchema = doubtChatSummarySchema.extend({

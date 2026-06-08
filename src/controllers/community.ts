@@ -294,14 +294,25 @@ export const deleteMessageController = async (
 
 export const getMembersController = async (
 	request: FastifyRequest<{
-		Querystring: { search?: string; category?: string };
+		Querystring: {
+			search?: string;
+			category?: string;
+			featured?: string;
+			online?: string;
+			limit?: string;
+			offset?: string;
+		};
 	}>,
 	reply: FastifyReply,
 ) => {
-	const { search, category } = request.query;
+	const { search, category, featured, online, limit, offset } = request.query;
 	const { data: members, error } = await communityService.listMembers(
 		search,
 		category,
+		featured === 'true',
+		online === 'true',
+		limit ? Number(limit) : undefined,
+		offset ? Number(offset) : undefined,
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
@@ -328,6 +339,7 @@ export const getProjectsController = async (
 		Number(page ?? 1),
 		Number(limit ?? 20),
 		{ material, technique, search, sort },
+		request.currentCustomer?.id ?? request.currentUser?.id,
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
@@ -336,12 +348,33 @@ export const getProjectsController = async (
 	return reply.send(projects);
 };
 
+export const toggleProjectLikeController = async (
+	request: FastifyRequest<{ Params: { projectId: string } }>,
+	reply: FastifyReply,
+) => {
+	const { projectId } = request.params;
+	const customerId =
+		request.currentCustomer?.id ?? request.currentUser?.id ?? '';
+	const { data: result, error } = await communityService.toggleProjectLike(
+		projectId,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.send(result);
+};
+
 export const getProjectController = async (
 	request: FastifyRequest<{ Params: { projectId: string } }>,
 	reply: FastifyReply,
 ) => {
 	const { projectId } = request.params;
-	const { data: project, error } = await communityService.getProject(projectId);
+	const { data: project, error } = await communityService.getProject(
+		projectId,
+		request.currentCustomer?.id ?? request.currentUser?.id,
+	);
 	if (error) {
 		return reply.status(500).send({
 			message: error instanceof Error ? error.message : 'Unknown error',
@@ -534,6 +567,67 @@ export const deleteEventController = async (
 	return reply.status(204).send();
 };
 
+export const joinWaitingRoomController = async (
+	request: FastifyRequest<{ Params: { eventId: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId) {
+		return reply.status(403).send({ message: 'Customer not found' });
+	}
+	const { eventId } = request.params;
+	const { error } = await communityService.joinEventWaitingRoom(
+		eventId,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.status(204).send();
+};
+
+export const leaveWaitingRoomController = async (
+	request: FastifyRequest<{ Params: { eventId: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId) {
+		return reply.status(403).send({ message: 'Customer not found' });
+	}
+	const { eventId } = request.params;
+	const { error } = await communityService.leaveEventWaitingRoom(
+		eventId,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+	return reply.status(204).send();
+};
+
+export const getWaitingRoomController = async (
+	request: FastifyRequest<{ Params: { eventId: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId) {
+		return reply.status(403).send({ message: 'Customer not found' });
+	}
+	const { eventId } = request.params;
+	const { data, error } = await communityService.getWaitingRoomState(
+		eventId,
+		customerId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		const status = message === 'Event not found' ? 404 : 500;
+		return reply.status(status).send({ message });
+	}
+	return reply.send(data);
+};
+
 export const getRankingController = async (
 	request: FastifyRequest<{ Querystring: { period?: string } }>,
 	reply: FastifyReply,
@@ -545,4 +639,33 @@ export const getRankingController = async (
 		return reply.status(500).send({ message });
 	}
 	return reply.send(ranking);
+};
+
+export const getStatsController = async (
+	_request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const { data: stats, error } = await communityService.getStats();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(stats);
+};
+
+export const getActivityController = async (
+	request: FastifyRequest<{ Querystring: { page?: string; limit?: string } }>,
+	reply: FastifyReply,
+) => {
+	const page = Math.max(1, Number(request.query.page ?? 1));
+	const limit = Math.min(50, Math.max(1, Number(request.query.limit ?? 20)));
+	const { data: activity, error } = await communityService.listActivity(
+		page,
+		limit,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(activity);
 };

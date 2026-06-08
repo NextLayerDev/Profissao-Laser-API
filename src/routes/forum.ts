@@ -13,6 +13,7 @@ import {
 	listForumPostsController,
 	updateForumCategoryController,
 	updateForumPostController,
+	updateForumReplyController,
 	upvoteForumPostController,
 	upvoteForumReplyController,
 } from '../controllers/forum.js';
@@ -27,6 +28,7 @@ import {
 	forumPostsResponseSchema,
 	updateForumCategorySchema,
 	updateForumPostSchema,
+	updateForumReplySchema,
 } from '../types/forum.js';
 
 export async function forumRoute(server: FastifyInstance) {
@@ -208,6 +210,27 @@ export async function forumRoute(server: FastifyInstance) {
 			},
 		},
 		createForumReplyController,
+	);
+
+	server.patch(
+		'/forum/post/:id/reply/:replyId',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description: 'Update a forum reply (author or admin).',
+				params: z.object({ id: z.string(), replyId: z.string() }),
+				body: updateForumReplySchema,
+				response: {
+					200: forumPostSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+				},
+				tags: ['Forum'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		updateForumReplyController,
 	);
 
 	server.delete(

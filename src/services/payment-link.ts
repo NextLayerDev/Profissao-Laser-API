@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { withCapture } from '@/lib/sentry.js';
+import { registerExternalCustomer } from '../lib/external-auth.js';
 import { stripe } from '../lib/stripe.js';
 import { supabase } from '../lib/supabase.js';
 import { paymentLinkRepository } from '../repositories/payment-link.js';
@@ -9,7 +10,6 @@ import type {
 	RedeemPaymentLink,
 } from '../types/payment-link.js';
 import { isValidCpf, normalizeDigits } from '../utils/cpf.js';
-import { authService } from './auth.js';
 
 const DISCOUNT_PERCENT = 99;
 
@@ -174,33 +174,13 @@ export const paymentLinkService = {
 				throw new Error('Product is not configured for payments');
 			}
 
-			// Register customer account (Supabase Auth + Customers table)
-			try {
-				const result = await authService.registerCustomer({
-					email: data.email,
-					name: data.customerName.trim(),
-					password: data.password,
-					phone: normalizedPhone,
-				});
-				if (result.error) {
-					const msg = result.error instanceof Error ? result.error.message : '';
-					if (
-						!msg.includes('already been registered') &&
-						!msg.includes('already exists')
-					) {
-						throw new Error(`Account creation failed: ${msg}`);
-					}
-				}
-			} catch (err) {
-				const msg = err instanceof Error ? err.message : '';
-				// If user already exists, continue (they may be re-attempting)
-				if (
-					!msg.includes('already been registered') &&
-					!msg.includes('already exists')
-				) {
-					throw err;
-				}
-			}
+			// Register customer account via upvox-api
+			await registerExternalCustomer({
+				email: data.email,
+				name: data.customerName.trim(),
+				password: data.password,
+				phone: normalizedPhone,
+			});
 
 			// Get or create Stripe customer
 			const existing = await stripe.customers.list({

@@ -16,7 +16,46 @@ export const vectorLibraryFileSchema = z.object({
 	mimeType: z.string(),
 	size: z.number().nullable(),
 	order: z.number(),
+	formats: z.array(z.string()).nullable().optional(),
+	downloadCount: z.number().optional(),
+	category: z.string().nullable().optional(),
+	featured: z.boolean().optional(),
+	isFavorited: z.boolean().optional(),
 	createdAt: z.string(),
+});
+
+export const vectorLibraryStatsSchema = z.object({
+	totalFiles: z.number(),
+	totalCollections: z.number(),
+	totalFavorites: z.number(),
+	totalDownloads: z.number(),
+});
+
+export const vectorLibraryCategorySchema = z.object({
+	name: z.string(),
+	icon: z.string().nullable().optional(),
+	count: z.number(),
+});
+
+export const vectorLibraryFormatSchema = z.object({
+	name: z.string(),
+	count: z.number(),
+});
+
+export const listContentsQuery = z.object({
+	parentId: z.string().optional(),
+	search: z.string().optional(),
+	category: z.string().optional(),
+	format: z.string().optional(),
+	sort: z.enum(['recent', 'popular', 'name']).optional(),
+	page: z.coerce.number().int().positive().default(1),
+	limit: z.coerce.number().int().positive().max(100).default(50),
+});
+
+export const contentsPaginatedSchema = z.object({
+	folders: z.array(vectorLibraryFolderSchema),
+	files: z.array(vectorLibraryFileSchema),
+	total: z.number(),
 });
 
 export const contentsResponseSchema = z.object({
@@ -39,9 +78,26 @@ export const updateFolderSchema = z.object({
 });
 
 export const updateFileSchema = z.object({
-	name: z.string(),
+	name: z.string().min(1).optional(),
+	category: z.string().nullable().optional(),
+	formats: z.array(z.string()).nullable().optional(),
+	featured: z.boolean().optional(),
+});
+
+export const bulkUpdateFilesSchema = z.object({
+	fileIds: z.array(z.string()).default([]),
+	folderIds: z.array(z.string()).default([]),
+	// Presença = aplicar. Ausência = não alterar.
+	category: z.string().nullable().optional(),
+	addFormats: z.array(z.string()).optional(),
+	featured: z.boolean().optional(),
+});
+
+export const bulkUpdateFilesResponseSchema = z.object({
+	updated: z.number(),
 });
 
 export type CreateFolder = z.infer<typeof createFolderSchema>;
 export type UpdateFolder = z.infer<typeof updateFolderSchema>;
 export type UpdateFile = z.infer<typeof updateFileSchema>;
+export type BulkUpdateFiles = z.infer<typeof bulkUpdateFilesSchema>;

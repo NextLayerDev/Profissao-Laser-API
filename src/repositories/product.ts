@@ -8,6 +8,7 @@ type ProductData = Omit<ProductCreate, 'interval'> & {
 	slug: string;
 	stripeProductId: string;
 	stripePriceId: string;
+	isAddon?: boolean;
 };
 
 class ProductRepository {
@@ -193,11 +194,19 @@ class ProductRepository {
 	async findByStripePriceId(stripePriceId: string) {
 		const { data, error } = await supabase
 			.from('pl_product')
-			.select('id, name')
+			.select('id, name, isAddon')
 			.eq('stripePriceId', stripePriceId)
 			.single();
 		if (error || !data) throw new Error('Product not found');
 		return data;
+	}
+
+	async findAddonById(id: string) {
+		const product = await this.findById(id);
+		if (!product.isAddon) throw new Error('Product is not an addon');
+		if (!product.stripePriceId)
+			throw new Error('Addon not configured for payments');
+		return product;
 	}
 
 	async findBySlug(slug: string) {

@@ -2,8 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
 	authenticate,
-	authenticateAdmin,
 	authenticateCustomer,
+	requireModule,
 } from '@/middleware/auth.js';
 import {
 	assignRandomController,
@@ -12,6 +12,7 @@ import {
 	createDefaultQuestionController,
 	deleteCategoryController,
 	deleteDefaultQuestionController,
+	doubtChatStatsController,
 	getChatController,
 	getTechnicianController,
 	listAdminChatsController,
@@ -32,6 +33,7 @@ import {
 	defaultQuestionSchema,
 	doubtCategorySchema,
 	doubtChatSchema,
+	doubtChatStatsSchema,
 	doubtChatSummarySchema,
 	reorderSchema,
 	technicianSchema,
@@ -58,7 +60,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.post(
 		'/doubt-categories',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Create a doubt category (staff only).',
 				body: createDoubtCategorySchema,
@@ -77,7 +79,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.post(
 		'/doubt-categories/reorder',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Reorder doubt categories (staff only).',
 				body: reorderSchema,
@@ -92,7 +94,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.patch(
 		'/doubt-categories/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Update a doubt category (staff only).',
 				params: z.object({ id: z.string() }),
@@ -112,7 +114,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.delete(
 		'/doubt-categories/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Delete a doubt category (staff only).',
 				params: z.object({ id: z.string() }),
@@ -177,7 +179,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.post(
 		'/technicians/:id/default-questions',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Create a default question for a technician (staff only).',
 				params: z.object({ id: z.string() }),
@@ -197,7 +199,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.post(
 		'/technicians/:id/default-questions/reorder',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Reorder default questions for a technician (staff only).',
 				params: z.object({ id: z.string() }),
@@ -213,7 +215,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.patch(
 		'/doubt-default-questions/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Update a default question (staff only).',
 				params: z.object({ id: z.string() }),
@@ -233,7 +235,7 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	server.delete(
 		'/doubt-default-questions/:id',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'Delete a default question (staff only).',
 				params: z.object({ id: z.string() }),
@@ -275,9 +277,24 @@ export async function doubtChatRoute(server: FastifyInstance) {
 	);
 
 	server.get(
+		'/doubt-chats/stats',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Counts of doubt chats by status (pending, answered, total) for the current customer (or all if staff).',
+				response: { 200: doubtChatStatsSchema, 500: ErrorSchema },
+				tags: ['Doubt Chat'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		doubtChatStatsController,
+	);
+
+	server.get(
 		'/doubt-chats/admin',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('suporte')],
 			schema: {
 				description: 'List all doubt chats (staff only).',
 				querystring: z.object({ categoryId: z.string().optional() }),

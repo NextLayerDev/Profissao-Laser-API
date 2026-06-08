@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticateAdmin, authenticateCustomer } from '@/middleware/auth.js';
+import { authenticateCustomer, requireModule } from '@/middleware/auth.js';
 import {
 	closeTicketController,
 	createTicketController,
@@ -76,7 +76,7 @@ export async function vectorSupportRoute(server: FastifyInstance) {
 	server.get(
 		'/vector-support/tickets/admin',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('vetorizacao')],
 			schema: {
 				description: 'List all vector support tickets (staff only).',
 				querystring: z.object({ status: z.string().optional() }),
@@ -114,7 +114,7 @@ export async function vectorSupportRoute(server: FastifyInstance) {
 	server.post(
 		'/vector-support/tickets/:id/close',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('vetorizacao')],
 			schema: {
 				description: 'Close a vector support ticket (staff only).',
 				params: z.object({ id: z.string() }),

@@ -1,8 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { customerController } from '../controllers/customer.js';
-import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
-import { customerSchema } from '../types/customer.js';
+import { profileController } from '../controllers/profile.js';
+import { authenticateCustomer, requireModule } from '../middleware/auth.js';
+import {
+	changeMyPasswordSchema,
+	customerProfileSchema,
+	customerSchema,
+	updateProfileSchema,
+} from '../types/customer.js';
 import { ErrorSchema } from '../types/error.js';
 
 export async function customerRoute(server: FastifyInstance) {
@@ -60,7 +66,7 @@ export async function customerRoute(server: FastifyInstance) {
 	server.delete(
 		'/customer',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('alunos')],
 			schema: {
 				description: 'Delete a customer by ID',
 				body: z.object({ id: z.string() }),
@@ -78,7 +84,7 @@ export async function customerRoute(server: FastifyInstance) {
 	server.patch(
 		'/customer/:id/block',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('alunos')],
 			schema: {
 				description: 'Block or unblock a customer',
 				params: z.object({ id: z.string() }),
@@ -96,7 +102,7 @@ export async function customerRoute(server: FastifyInstance) {
 	server.patch(
 		'/customer/:id/password',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('alunos')],
 			schema: {
 				description: 'Change the password of a customer',
 				params: z.object({ id: z.string() }),
@@ -109,6 +115,28 @@ export async function customerRoute(server: FastifyInstance) {
 			},
 		},
 		customerController.changePassword,
+	);
+
+	server.patch(
+		'/customer/:id/test-unlimited',
+		{
+			preHandler: [requireModule('alunos')],
+			schema: {
+				description:
+					'Marca/desmarca um customer como conta de teste ilimitada.',
+				params: z.object({ id: z.string() }),
+				body: z.object({ unlimited: z.boolean() }),
+				response: {
+					200: z.object({
+						message: z.string(),
+						isTestUnlimited: z.boolean(),
+					}),
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+			},
+		},
+		customerController.setTestUnlimited,
 	);
 
 	server.get(
@@ -138,6 +166,121 @@ export async function customerRoute(server: FastifyInstance) {
 		customerController.getMySubscription,
 	);
 
+	server.get(
+		'/me/unlimited',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Whether the authenticated customer is an unlimited test account.',
+				response: {
+					200: z.object({ unlimited: z.boolean() }),
+					401: ErrorSchema,
+				},
+				tags: ['Customer'],
+			},
+		},
+		async (request) => ({ unlimited: request.isUnlimitedCustomer === true }),
+	);
+
+	server.get(
+		'/me/profile',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description: 'Get the authenticated customer profile.',
+				response: {
+					200: customerProfileSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.getMyProfile,
+	);
+
+	server.patch(
+		'/me/profile',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Update the authenticated customer profile (name, nickname, bio).',
+				body: updateProfileSchema,
+				response: {
+					200: customerProfileSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.updateMyProfile,
+	);
+
+	server.post(
+		'/me/avatar',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Upload the authenticated customer avatar (multipart/form-data, field "file").',
+				response: {
+					200: z.object({ avatar: z.string() }),
+					400: ErrorSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.uploadAvatar,
+	);
+
+	server.delete(
+		'/me/avatar',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Remove the authenticated customer avatar (reverts to default initials).',
+				response: {
+					200: z.object({ avatar: z.string().nullable() }),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.removeAvatar,
+	);
+
+	server.patch(
+		'/me/password',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Change the authenticated customer password (validates the current one).',
+				body: changeMyPasswordSchema,
+				response: {
+					200: z.object({ message: z.string() }),
+					400: ErrorSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.changeMyPassword,
+	);
+
 	server.post(
 		'/me/subscription/cancel',
 		{
@@ -164,7 +307,7 @@ export async function customerRoute(server: FastifyInstance) {
 	server.post(
 		'/customer/subscription/cancel',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [requireModule('alunos')],
 			schema: {
 				description:
 					'Cancel a customer subscription at period end by email and subscription ID (Admin).',

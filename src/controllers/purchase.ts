@@ -193,6 +193,60 @@ export const downgradeSubscriptionController = async (
 	return reply.status(200).send(result);
 };
 
+export const addAddonController = async (
+	request: FastifyRequest<{ Body: { productId: string } }>,
+	reply: FastifyReply,
+) => {
+	const user = request.currentUser;
+	if (!user || !user.email) {
+		return reply.status(401).send({ message: 'Authentication required' });
+	}
+	const { data: result, error } = await purchaseService.addAddon(
+		user.email,
+		request.body.productId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.status(201).send(result);
+};
+
+export const removeAddonController = async (
+	request: FastifyRequest<{ Params: { itemId: string } }>,
+	reply: FastifyReply,
+) => {
+	const user = request.currentUser;
+	if (!user || !user.email) {
+		return reply.status(401).send({ message: 'Authentication required' });
+	}
+	const { data: result, error } = await purchaseService.removeAddon(
+		user.email,
+		request.params.itemId,
+	);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.status(200).send(result);
+};
+
+export const listAddonsController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const user = request.currentUser;
+	if (!user || !user.email) {
+		return reply.status(401).send({ message: 'Authentication required' });
+	}
+	const { data: result, error } = await purchaseService.listAddons(user.email);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.status(200).send(result);
+};
+
 export const adminChangePlanController = async (
 	request: FastifyRequest<{
 		Params: { id: string };

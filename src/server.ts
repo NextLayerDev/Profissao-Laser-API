@@ -1,5 +1,4 @@
 import { fastifyCors } from '@fastify/cors';
-import { fastifyJwt } from '@fastify/jwt';
 import multipart from '@fastify/multipart';
 import { fastifySwagger } from '@fastify/swagger';
 import ScalarApiReference from '@scalar/fastify-api-reference';
@@ -29,14 +28,6 @@ app.register(fastifyCors, {
 app.setErrorHandler((error: FastifyError, _request, reply) => {
 	captureException(error);
 	reply.status(error.statusCode ?? 500).send({ message: error.message });
-});
-
-if (!process.env.JWT_SECRET) {
-	throw new Error('JWT_SECRET is not defined in .env');
-}
-
-app.register(fastifyJwt, {
-	secret: process.env.JWT_SECRET,
 });
 
 app.register(fastifySwagger, {

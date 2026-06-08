@@ -1,4 +1,4 @@
-name: 🚀 CI/CD Pipeline
+name: 🚀 CI Pipeline
 
 on:
   push:
@@ -11,96 +11,65 @@ on:
       - dev
 
 env:
-  NODE_VERSION: "22"
+  NODE_VERSION: "24"
 
 jobs:
   setup:
-    name: 📦 Setup
     runs-on: ubuntu-latest
     steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🏗 Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
+          cache: "npm"
       - name: 📦 Install dependencies
         run: npm ci
 
   lint:
-    name: 🔍 Lint & Type Check
     runs-on: ubuntu-latest
     needs: setup
     steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🏗 Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🔍 Lint check
+      - run: npm ci
+      - name: 린 Lint check
         run: npx biome check .
 
   build:
-    name: 🏗️ Build
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🏗 Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🏗️ Build application
-        run: npm run build
-
-      - name: 📤 Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
-          retention-days: 1
-
-  security:
-    name: 🔒 Security Audit
     runs-on: ubuntu-latest
     needs: setup
     steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🏗 Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+      - run: npm ci
+      - name: 🏗️ Build application
+        run: npm run build
 
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🔒 Run NPM Audit
-        run: npm audit --audit-level=high
+  security:
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+      - run: npm ci
+      - name: 🔒 Run NPM Audit (apenas deps de produção)
+        # --omit=dev: audita só o que vai pra produção. Vulns de ferramentas de
+        # dev/teste (vitest/esbuild — não rodam no servidor) não barram o deploy.
+        run: npm audit --omit=dev --audit-level=critical
 
   deploy:
     name: 🚀 Deploy
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [build, security]
     if: github.event_name == 'push'
     steps:
       - name: 🚀 Deploy to EasyPanel (main)

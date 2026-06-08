@@ -12,6 +12,7 @@ import {
 	deleteEventController,
 	deleteMessageController,
 	deleteProjectController,
+	getActivityController,
 	getChannelsController,
 	getEventsController,
 	getMembersController,
@@ -22,13 +23,19 @@ import {
 	getProjectController,
 	getProjectsController,
 	getRankingController,
+	getStatsController,
+	getWaitingRoomController,
+	joinWaitingRoomController,
+	leaveWaitingRoomController,
 	sendMessageController,
 	togglePostLikeController,
+	toggleProjectLikeController,
 	updateChannelController,
 	updateEventController,
 	updateProjectController,
 } from '../controllers/community.js';
 import {
+	activitySchema,
 	communityChannelSchema,
 	communityEventSchema,
 	communityMemberSchema,
@@ -36,6 +43,7 @@ import {
 	communityPostSchema,
 	communityProjectSchema,
 	communityRankingSchema,
+	communityStatsSchema,
 	createChannelSchema,
 	createCommentSchema,
 	createEventSchema,
@@ -47,6 +55,7 @@ import {
 	updateChannelSchema,
 	updateEventSchema,
 	updateProjectSchema,
+	waitingRoomStateSchema,
 } from '../types/community.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -286,10 +295,14 @@ export async function communityRoute(server: FastifyInstance) {
 			preHandler: [authenticateCommunity],
 			schema: {
 				description:
-					'List community members, optionally filtered by search or category.',
+					'List community members, optionally filtered by search, category, featured or online status.',
 				querystring: z.object({
 					search: z.string().optional(),
 					category: z.string().optional(),
+					featured: z.enum(['true', 'false']).optional(),
+					online: z.enum(['true', 'false']).optional(),
+					limit: z.string().optional(),
+					offset: z.string().optional(),
 				}),
 				response: {
 					200: z.array(communityMemberSchema),
@@ -362,6 +375,24 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		getProjectController,
+	);
+
+	server.post(
+		'/community/projects/:projectId/like',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Toggle like/unlike on a community project.',
+				params: z.object({ projectId: z.string() }),
+				response: {
+					200: z.object({ liked: z.boolean(), likes: z.number() }),
+					400: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		toggleProjectLikeController,
 	);
 
 	server.patch(
@@ -521,6 +552,69 @@ export async function communityRoute(server: FastifyInstance) {
 		deleteEventController,
 	);
 
+	// ── Sala de espera ─────────────────────────────────────────────────────
+
+	server.get(
+		'/community/events/:eventId/waiting-room',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Estado da sala de espera de um evento online: timestamps de abertura/início, lista de presentes (realtime), live status, embed url. Front faz polling + assina realtime em pl_event_attendance.',
+				params: z.object({ eventId: z.string() }),
+				response: {
+					200: waitingRoomStateSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getWaitingRoomController,
+	);
+
+	server.post(
+		'/community/events/:eventId/waiting-room/join',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Entra na sala de espera (insert em pl_event_attendance). Idempotente — não duplica se já estiver dentro.',
+				params: z.object({ eventId: z.string() }),
+				response: {
+					204: z.null(),
+					400: ErrorSchema,
+					403: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		joinWaitingRoomController,
+	);
+
+	server.post(
+		'/community/events/:eventId/waiting-room/leave',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Sai da sala de espera (marca leftAt na presença ativa). Idempotente.',
+				params: z.object({ eventId: z.string() }),
+				response: {
+					204: z.null(),
+					400: ErrorSchema,
+					403: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		leaveWaitingRoomController,
+	);
+
 	server.get(
 		'/community/ranking',
 		{
@@ -539,5 +633,43 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		getRankingController,
+	);
+
+	server.get(
+		'/community/activity',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Feed de atividades recentes da comunidade (paginado).',
+				querystring: z.object({
+					page: z.string().optional(),
+					limit: z.string().optional(),
+				}),
+				response: {
+					200: z.array(activitySchema),
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getActivityController,
+	);
+
+	server.get(
+		'/community/stats',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Estatísticas agregadas da plataforma.',
+				response: {
+					200: communityStatsSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getStatsController,
 	);
 }

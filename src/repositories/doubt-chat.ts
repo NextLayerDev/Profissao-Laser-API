@@ -170,7 +170,7 @@ class DoubtChatRepository {
 		let query = supabase
 			.from('pl_doubt_chat')
 			.select(
-				'id, categoryId, technicianId, customerId, status, createdAt, updatedAt',
+				'id, ticketNumber, categoryId, technicianId, customerId, status, createdAt, updatedAt',
 			)
 			.eq('customerId', customerId)
 			.order('updatedAt', { ascending: false });
@@ -189,7 +189,7 @@ class DoubtChatRepository {
 		let query = supabase
 			.from('pl_doubt_chat')
 			.select(
-				'id, categoryId, technicianId, customerId, status, createdAt, updatedAt',
+				'id, ticketNumber, categoryId, technicianId, customerId, status, createdAt, updatedAt',
 			)
 			.order('updatedAt', { ascending: false });
 
@@ -206,6 +206,7 @@ class DoubtChatRepository {
 	private async _enrichChatSummaries(
 		chats: Array<{
 			id: string;
+			ticketNumber?: number | null;
 			categoryId: string;
 			technicianId: string | null;
 			customerId: string;
@@ -226,7 +227,7 @@ class DoubtChatRepository {
 			categoryIds.length > 0
 				? supabase
 						.from('pl_doubt_category')
-						.select('id, title')
+						.select('id, title, description, order')
 						.in('id', categoryIds)
 				: { data: [] },
 			technicianIds.length > 0
@@ -237,9 +238,12 @@ class DoubtChatRepository {
 				: { data: [] },
 		]);
 
-		const categoryMap: Record<string, string> = {};
+		const categoryMap: Record<
+			string,
+			{ id: string; title: string; description: string | null; order: number }
+		> = {};
 		for (const c of categories.data ?? []) {
-			categoryMap[c.id] = c.title;
+			categoryMap[c.id] = c;
 		}
 
 		const technicianMap: Record<string, string> = {};
@@ -254,8 +258,10 @@ class DoubtChatRepository {
 
 		return chats.map((chat) => ({
 			id: chat.id,
+			ticketNumber: chat.ticketNumber ?? null,
 			categoryId: chat.categoryId,
-			categoryName: categoryMap[chat.categoryId] ?? null,
+			categoryName: categoryMap[chat.categoryId]?.title ?? null,
+			category: categoryMap[chat.categoryId] ?? null,
 			technicianId: chat.technicianId ?? null,
 			technicianName: chat.technicianId
 				? (technicianMap[chat.technicianId] ?? null)
@@ -268,11 +274,37 @@ class DoubtChatRepository {
 		}));
 	}
 
+	async statsByCustomer(customerId: string) {
+		const { data, error } = await supabase
+			.from('pl_doubt_chat')
+			.select('status')
+			.eq('customerId', customerId);
+
+		if (error) throw new Error(error.message);
+		const rows = (data ?? []) as Array<{ status: string }>;
+		const total = rows.length;
+		const answered = rows.filter((r) => r.status === 'answered').length;
+		const pending = total - answered;
+		return { pending, answered, total };
+	}
+
+	async statsAll() {
+		const { data, error } = await supabase
+			.from('pl_doubt_chat')
+			.select('status');
+		if (error) throw new Error(error.message);
+		const rows = (data ?? []) as Array<{ status: string }>;
+		const total = rows.length;
+		const answered = rows.filter((r) => r.status === 'answered').length;
+		const pending = total - answered;
+		return { pending, answered, total };
+	}
+
 	async getChatById(id: string) {
 		const { data: chat, error } = await supabase
 			.from('pl_doubt_chat')
 			.select(
-				'id, categoryId, technicianId, customerId, status, createdAt, updatedAt',
+				'id, ticketNumber, categoryId, technicianId, customerId, status, createdAt, updatedAt',
 			)
 			.eq('id', id)
 			.maybeSingle();

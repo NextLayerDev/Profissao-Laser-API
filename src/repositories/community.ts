@@ -281,50 +281,72 @@ class CommunityRepository {
 		if (error) throw new Error(error.message);
 	}
 
-	async listMembers(search?: string, category?: string) {
+	async listMembers(
+		search?: string,
+		category?: string,
+		featured?: boolean,
+		online?: boolean,
+		limit = 200,
+		offset = 0,
+	) {
+		const onlineThreshold = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+		// Filtros (online/featured/category) sao do perfil -> inner join + SQL +
+		// paginacao, pra NAO puxar todos os Customers e filtrar em JS (a 'demora
+		// ao abrir' de membros/chat/online).
+		const needsInner = !!(category || featured || online);
+		const join = needsInner
+			? 'pl_community_profile!inner'
+			: 'pl_community_profile';
 		let query = supabase.from('Customers').select(`
 				id,
 				name,
-				pl_community_profile (
+				${join} (
 					specialty,
+					nickname,
 					badges,
+					badge,
+					"featuredRole",
+					featured,
 					category,
-					image
+					image,
+					"lastSeenAt"
 				)
 			`);
 
-		if (search) {
-			query = query.ilike('name', `%${search}%`);
-		}
+		if (search) query = query.ilike('name', `%${search}%`);
+		if (category) query = query.eq('pl_community_profile.category', category);
+		if (featured) query = query.eq('pl_community_profile.featured', true);
+		if (online)
+			query = query.gte('pl_community_profile.lastSeenAt', onlineThreshold);
+
+		query = query
+			.order('name', { ascending: true })
+			.range(offset, offset + limit - 1);
 
 		const { data, error } = await query;
 		if (error) throw new Error(error.message);
 
-		return (data ?? [])
-			.map(
-				(m: {
-					name: string;
-					pl_community_profile: {
-						specialty: string | null;
-						badges: string[];
-						category: string | null;
-						image: string | null;
-					}[];
-				}) => {
-					const profile = m.pl_community_profile?.[0] ?? null;
-					return {
-						name: m.name,
-						specialty: profile?.specialty ?? null,
-						badges: profile?.badges ?? [],
-						category: profile?.category ?? null,
-						image: profile?.image ?? null,
-					};
-				},
-			)
-			.filter(
-				(m: { category: string | null }) =>
-					!category || m.category === category,
-			);
+		return (data ?? []).map((m) => {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const member = m as any;
+			const profile = member.pl_community_profile?.[0] ?? null;
+			const lastSeenAt: string | null = profile?.lastSeenAt ?? null;
+			const isOnline = lastSeenAt ? lastSeenAt >= onlineThreshold : false;
+			return {
+				id: member.id as string,
+				name: member.name as string,
+				nickname: (profile?.nickname ?? null) as string | null,
+				specialty: (profile?.specialty ?? null) as string | null,
+				badges: (profile?.badges ?? []) as string[],
+				badge: (profile?.badge ?? null) as string | null,
+				featuredRole: (profile?.featuredRole ?? null) as string | null,
+				featured: (profile?.featured ?? false) as boolean,
+				category: (profile?.category ?? null) as string | null,
+				image: (profile?.image ?? null) as string | null,
+				isOnline,
+				lastSeenAt,
+			};
+		});
 	}
 
 	async listProjects(
@@ -336,6 +358,7 @@ class CommunityRepository {
 			search?: string;
 			sort?: string;
 		},
+		currentCustomerId?: string,
 	) {
 		const from = (page - 1) * limit;
 		const to = from + limit - 1;
@@ -360,49 +383,140 @@ class CommunityRepository {
 		const { data, error } = await query;
 		if (error) throw new Error(error.message);
 
-		return (data ?? []).map(
-			(p: {
-				id: string;
-				title: string;
-				authorName: string;
-				img: string | null;
-				description: string | null;
-				material: string | null;
-				technique: string | null;
-				createdAt: string;
-				likes: number;
-				comments: number;
-			}) => ({
-				id: p.id,
-				title: p.title,
-				author: p.authorName,
-				img: p.img,
-				description: p.description,
-				material: p.material,
-				technique: p.technique,
-				time: p.createdAt,
-				likes: p.likes,
-				comments: p.comments,
-			}),
+		const rows = data ?? [];
+		const [avatarMap, likedSet] = await Promise.all([
+			this.getAuthorAvatars(
+				rows.map((p: { authorId?: string | null }) => p.authorId),
+			),
+			this.getLikedProjectIds(
+				rows.map((p: { id: string }) => p.id),
+				currentCustomerId,
+			),
+		]);
+		return rows.map((p: { id: string; authorId?: string | null }) =>
+			this.mapProject(
+				p,
+				avatarMap.get(p.authorId ?? '') ?? null,
+				likedSet.has(p.id),
+			),
 		);
 	}
 
-	private mapProject(p: {
-		id: string;
-		title: string;
-		authorName: string;
-		img: string | null;
-		description: string | null;
-		material: string | null;
-		technique: string | null;
-		createdAt: string;
-		likes: number;
-		comments: number;
-	}) {
+	/** Versão cacheável da lista (sem o flag de like por usuário). */
+	async listProjectsBase(
+		page: number,
+		limit: number,
+		filters?: {
+			material?: string;
+			technique?: string;
+			search?: string;
+			sort?: string;
+		},
+	) {
+		return this.listProjects(page, limit, filters);
+	}
+
+	/** Projetos curtidos pelo customer atual (entre os ids dados) — 1 query. */
+	async getLikedProjectIds(
+		projectIds: string[],
+		customerId?: string,
+	): Promise<Set<string>> {
+		const set = new Set<string>();
+		if (!customerId || projectIds.length === 0) return set;
+		const { data, error } = await supabase
+			.from('pl_community_project_like')
+			.select('projectId')
+			.eq('customerId', customerId)
+			.in('projectId', projectIds);
+		if (error) throw new Error(error.message);
+		for (const row of (data ?? []) as { projectId: string }[]) {
+			set.add(row.projectId);
+		}
+		return set;
+	}
+
+	/** Curtir/descurtir um projeto; recomputa o contador e retorna o estado. */
+	async toggleProjectLike(projectId: string, customerId: string) {
+		const { data: existing } = await supabase
+			.from('pl_community_project_like')
+			.select('id')
+			.eq('projectId', projectId)
+			.eq('customerId', customerId)
+			.maybeSingle();
+
+		if (existing) {
+			const { error } = await supabase
+				.from('pl_community_project_like')
+				.delete()
+				.eq('projectId', projectId)
+				.eq('customerId', customerId);
+			if (error) throw new Error(error.message);
+		} else {
+			const { error } = await supabase
+				.from('pl_community_project_like')
+				.insert({ projectId, customerId });
+			if (error) throw new Error(error.message);
+		}
+
+		// Mantém o contador denormalizado (pl_community_project.likes) sincronizado.
+		const { count, error: countError } = await supabase
+			.from('pl_community_project_like')
+			.select('*', { count: 'exact', head: true })
+			.eq('projectId', projectId);
+		if (countError) throw new Error(countError.message);
+		const likes = count ?? 0;
+		await supabase
+			.from('pl_community_project')
+			.update({ likes })
+			.eq('id', projectId);
+
+		return { liked: !existing, likes };
+	}
+
+	/** Busca a foto (pl_community_profile.image) dos autores em uma só query. */
+	private async getAuthorAvatars(
+		authorIds: (string | null | undefined)[],
+	): Promise<Map<string, string | null>> {
+		const ids = Array.from(
+			new Set(authorIds.filter((id): id is string => !!id)),
+		);
+		const map = new Map<string, string | null>();
+		if (ids.length === 0) return map;
+		const { data, error } = await supabase
+			.from('pl_community_profile')
+			.select('customerId, image')
+			.in('customerId', ids);
+		if (error) throw new Error(error.message);
+		for (const row of (data ?? []) as {
+			customerId: string;
+			image: string | null;
+		}[]) {
+			map.set(row.customerId, row.image ?? null);
+		}
+		return map;
+	}
+
+	private mapProject(
+		p: {
+			id: string;
+			title: string;
+			authorName: string;
+			img: string | null;
+			description: string | null;
+			material: string | null;
+			technique: string | null;
+			createdAt: string;
+			likes: number;
+			comments: number;
+		},
+		authorAvatar: string | null = null,
+		liked = false,
+	) {
 		return {
 			id: p.id,
 			title: p.title,
 			author: p.authorName,
+			authorAvatar,
 			img: p.img,
 			description: p.description,
 			material: p.material,
@@ -410,17 +524,34 @@ class CommunityRepository {
 			time: p.createdAt,
 			likes: p.likes,
 			comments: p.comments,
+			liked,
 		};
 	}
 
-	async getProject(id: string) {
+	async getProject(id: string, currentCustomerId?: string) {
 		const [{ data: project, error }, comments] = await Promise.all([
 			supabase.from('pl_community_project').select('*').eq('id', id).single(),
 			this.listProjectComments(id, 1, 100),
 		]);
 		if (error) throw new Error(error.message);
 		if (!project) return null;
-		return { ...this.mapProject(project), commentList: comments };
+		const [avatarMap, likedSet] = await Promise.all([
+			this.getAuthorAvatars([project.authorId]),
+			this.getLikedProjectIds([project.id], currentCustomerId),
+		]);
+		return {
+			...this.mapProject(
+				project,
+				avatarMap.get(project.authorId) ?? null,
+				likedSet.has(project.id),
+			),
+			commentList: comments,
+		};
+	}
+
+	/** Versão cacheável do detalhe (sem o flag de like por usuário). */
+	async getProjectBase(id: string) {
+		return this.getProject(id);
 	}
 
 	async updateProject(id: string, data: UpdateProject) {
@@ -548,7 +679,9 @@ class CommunityRepository {
 	async listEvents(from?: string, to?: string) {
 		let query = supabase
 			.from('pl_community_event')
-			.select('*')
+			.select(
+				'id, title, date, time, type, description, "streamUrl", "streamProvider", "waitingRoomOpensMinutesBefore", "hostId"',
+			)
 			.order('date', { ascending: true });
 
 		if (from) query = query.gte('date', from);
@@ -556,24 +689,20 @@ class CommunityRepository {
 
 		const { data, error } = await query;
 		if (error) throw new Error(error.message);
+		return data ?? [];
+	}
 
-		return (data ?? []).map(
-			(e: {
-				id: string;
-				title: string;
-				date: string;
-				time: string | null;
-				type: 'workshop' | 'live' | 'qa';
-				description: string | null;
-			}) => ({
-				id: e.id,
-				title: e.title,
-				date: e.date,
-				time: e.time,
-				type: e.type,
-				description: e.description,
-			}),
-		);
+	async findEventById(id: string) {
+		const { data, error } = await supabase
+			.from('pl_community_event')
+			.select(
+				'id, title, date, time, type, description, "streamUrl", "streamProvider", "waitingRoomOpensMinutesBefore", "hostId"',
+			)
+			.eq('id', id)
+			.maybeSingle();
+		if (error) throw new Error(error.message);
+		if (!data) throw new Error('Event not found');
+		return data;
 	}
 
 	async createEvent(data: CreateEvent) {
@@ -589,7 +718,7 @@ class CommunityRepository {
 	async updateEvent(id: string, data: UpdateEvent) {
 		const { data: event, error } = await supabase
 			.from('pl_community_event')
-			.update(data)
+			.update({ ...data, updatedAt: new Date().toISOString() })
 			.eq('id', id)
 			.select()
 			.single();
@@ -603,6 +732,77 @@ class CommunityRepository {
 			.delete()
 			.eq('id', id);
 		if (error) throw new Error(error.message);
+	}
+
+	// ── Sala de espera (attendance) ───────────────────────────────────────────
+
+	async joinEventWaitingRoom(eventId: string, customerId: string) {
+		// Se já existe presença ativa (leftAt NULL), reusar (idempotente).
+		const { data: existing } = await supabase
+			.from('pl_event_attendance')
+			.select('id')
+			.eq('eventId', eventId)
+			.eq('customerId', customerId)
+			.is('leftAt', null)
+			.maybeSingle();
+		if (existing) return existing as { id: string };
+
+		const { data, error } = await supabase
+			.from('pl_event_attendance')
+			.insert({ eventId, customerId })
+			.select('id')
+			.single();
+		if (error) throw new Error(error.message);
+		return data as { id: string };
+	}
+
+	async leaveEventWaitingRoom(eventId: string, customerId: string) {
+		const { error } = await supabase
+			.from('pl_event_attendance')
+			.update({ leftAt: new Date().toISOString() })
+			.eq('eventId', eventId)
+			.eq('customerId', customerId)
+			.is('leftAt', null);
+		if (error) throw new Error(error.message);
+	}
+
+	async listEventAttendees(eventId: string) {
+		// Pega presenças ativas + faz JOIN com Customers e pl_community_profile.image
+		const { data, error } = await supabase
+			.from('pl_event_attendance')
+			.select(
+				'customerId, joinedAt, Customers!inner(id, name, pl_community_profile(image))',
+			)
+			.eq('eventId', eventId)
+			.is('leftAt', null)
+			.order('joinedAt', { ascending: true });
+		if (error) throw new Error(error.message);
+
+		return (data ?? []).map((row) => {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
+			const r = row as any;
+			const customer = r.Customers;
+			const profileList = customer?.pl_community_profile;
+			const profile = Array.isArray(profileList) ? profileList[0] : profileList;
+			return {
+				customerId: r.customerId as string,
+				customerName: (customer?.name as string | null) ?? null,
+				customerImage: (profile?.image as string | null) ?? null,
+				joinedAt: r.joinedAt as string,
+			};
+		});
+	}
+
+	async isCustomerInWaitingRoom(eventId: string, customerId: string) {
+		const { data, error } = await supabase
+			.from('pl_event_attendance')
+			.select('id')
+			.eq('eventId', eventId)
+			.eq('customerId', customerId)
+			.is('leftAt', null)
+			.maybeSingle();
+		if (error) throw new Error(error.message);
+		return !!data;
 	}
 
 	async listPostComments(postId: string, page: number, limit: number) {
@@ -750,6 +950,286 @@ class CommunityRepository {
 		return Array.from(scores.values())
 			.sort((a, b) => b.pts - a.pts)
 			.map((entry, i) => ({ pos: i + 1, name: entry.name, pts: entry.pts }));
+	}
+
+	async getStats() {
+		const [
+			{ count: membersCount },
+			{ count: projectsCount },
+			{ count: messagesCount },
+			{ count: livesCount },
+		] = await Promise.all([
+			supabase.from('Customers').select('*', { count: 'exact', head: true }),
+			supabase
+				.from('pl_community_project')
+				.select('*', { count: 'exact', head: true }),
+			supabase
+				.from('pl_community_message')
+				.select('*', { count: 'exact', head: true }),
+			supabase
+				.from('pl_community_event')
+				.select('*', { count: 'exact', head: true })
+				.eq('type', 'live'),
+		]);
+
+		return {
+			activeMembers: membersCount ?? 0,
+			completedProjects: projectsCount ?? 0,
+			messagesSent: messagesCount ?? 0,
+			livesRealized: livesCount ?? 0,
+		};
+	}
+
+	async listActivity(page: number, limit: number) {
+		const fetchLimit = page * limit;
+		const offset = (page - 1) * limit;
+
+		const [
+			{ data: completions },
+			{ data: badges },
+			{ data: forumPosts },
+			{ data: forumReplies },
+			{ data: challengeParticipants },
+			{ data: newMembers },
+		] = await Promise.all([
+			supabase
+				.from('customer_lesson_completions')
+				.select('customer_id, lesson_id, completed_at')
+				.order('completed_at', { ascending: false })
+				.limit(fetchLimit),
+			supabase
+				.from('pl_gamification_user_badge')
+				.select(
+					'userId, badgeId, earnedAt, pl_gamification_badge(id, name, icon)',
+				)
+				.order('earnedAt', { ascending: false })
+				.limit(fetchLimit),
+			supabase
+				.from('forum_posts')
+				.select('id, title, author_id, author_name, created_at')
+				.order('created_at', { ascending: false })
+				.limit(fetchLimit),
+			supabase
+				.from('forum_replies')
+				.select('id, post_id, author_id, author_name, created_at')
+				.order('created_at', { ascending: false })
+				.limit(fetchLimit),
+			supabase
+				.from('pl_challenge_participant')
+				.select('id, userId, challengeId, joinedAt, pl_challenge(title)')
+				.order('joinedAt', { ascending: false })
+				.limit(fetchLimit),
+			supabase
+				.from('Customers')
+				.select('id, name, created_at, pl_community_profile(image)')
+				.order('created_at', { ascending: false })
+				.limit(fetchLimit),
+		]);
+
+		// Collect IDs for batch lookups
+		const lessonIds = [
+			...new Set(
+				(completions ?? []).map((c) => (c as { lesson_id: string }).lesson_id),
+			),
+		];
+		const customerIds = new Set<string>();
+
+		for (const c of completions ?? [])
+			customerIds.add((c as { customer_id: string }).customer_id);
+		for (const b of badges ?? [])
+			customerIds.add((b as { userId: string }).userId);
+		for (const fp of forumPosts ?? [])
+			customerIds.add((fp as { author_id: string }).author_id);
+		for (const fr of forumReplies ?? [])
+			customerIds.add((fr as { author_id: string }).author_id);
+		for (const cp of challengeParticipants ?? [])
+			customerIds.add((cp as { userId: string }).userId);
+
+		const replyPostIds = [
+			...new Set(
+				(forumReplies ?? []).map((r) => (r as { post_id: string }).post_id),
+			),
+		];
+
+		// Batch lookups
+		const [{ data: lessons }, { data: customerRows }, { data: postRows }] =
+			await Promise.all([
+				lessonIds.length > 0
+					? supabase
+							.from('pl_lesson')
+							.select('id, title, productId, pl_product(name)')
+							.in('id', lessonIds)
+					: Promise.resolve({ data: [] as unknown[] }),
+				customerIds.size > 0
+					? supabase
+							.from('Customers')
+							.select('id, name, pl_community_profile(image)')
+							.in('id', [...customerIds])
+					: Promise.resolve({ data: [] as unknown[] }),
+				replyPostIds.length > 0
+					? supabase
+							.from('forum_posts')
+							.select('id, title')
+							.in('id', replyPostIds)
+					: Promise.resolve({ data: [] as unknown[] }),
+			]);
+
+		// Build lookup maps
+		type UserInfo = { id: string; name: string; avatar: string | null };
+
+		const lessonMap = new Map<string, { title: string; courseName: string }>();
+		for (const l of lessons ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const lesson = l as any;
+			lessonMap.set(lesson.id, {
+				title: lesson.title ?? '',
+				courseName: lesson.pl_product?.name ?? '',
+			});
+		}
+
+		const customerMap = new Map<string, UserInfo>();
+		for (const c of customerRows ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const customer = c as any;
+			const profile = customer.pl_community_profile?.[0] ?? null;
+			customerMap.set(customer.id, {
+				id: customer.id,
+				name: customer.name,
+				avatar: profile?.image ?? null,
+			});
+		}
+		for (const m of newMembers ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const member = m as any;
+			if (!customerMap.has(member.id)) {
+				const profile = member.pl_community_profile?.[0] ?? null;
+				customerMap.set(member.id, {
+					id: member.id,
+					name: member.name,
+					avatar: profile?.image ?? null,
+				});
+			}
+		}
+
+		const postTitleMap = new Map<string, string>();
+		for (const p of postRows ?? []) {
+			const post = p as { id: string; title: string };
+			postTitleMap.set(post.id, post.title);
+		}
+
+		type ActivityItem = {
+			id: string;
+			type: string;
+			user: UserInfo;
+			data: Record<string, unknown>;
+			createdAt: string;
+		};
+
+		const items: ActivityItem[] = [];
+
+		for (const c of completions ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic row
+			const row = c as any;
+			if (!row.completed_at) continue;
+			const lesson = lessonMap.get(row.lesson_id);
+			const user = customerMap.get(row.customer_id);
+			if (!lesson || !user) continue;
+			items.push({
+				id: `lesson_completed_${row.customer_id}_${row.lesson_id}`,
+				type: 'lesson_completed',
+				user,
+				data: { lessonTitle: lesson.title, courseName: lesson.courseName },
+				createdAt: row.completed_at,
+			});
+		}
+
+		for (const b of badges ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const row = b as any;
+			if (!row.earnedAt) continue;
+			const user = customerMap.get(row.userId);
+			if (!user) continue;
+			const badge = row.pl_gamification_badge as {
+				name: string;
+				icon: string;
+			} | null;
+			items.push({
+				id: `badge_earned_${row.userId}_${row.badgeId}`,
+				type: 'badge_earned',
+				user,
+				data: { badgeName: badge?.name ?? '', badgeIcon: badge?.icon ?? '' },
+				createdAt: row.earnedAt,
+			});
+		}
+
+		for (const fp of forumPosts ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic row
+			const row = fp as any;
+			if (!row.created_at) continue;
+			const user: UserInfo = customerMap.get(row.author_id) ?? {
+				id: row.author_id,
+				name: row.author_name,
+				avatar: null,
+			};
+			items.push({
+				id: `forum_post_${row.id}`,
+				type: 'forum_post',
+				user,
+				data: { postTitle: row.title },
+				createdAt: row.created_at,
+			});
+		}
+
+		for (const fr of forumReplies ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic row
+			const row = fr as any;
+			if (!row.created_at) continue;
+			const user: UserInfo = customerMap.get(row.author_id) ?? {
+				id: row.author_id,
+				name: row.author_name,
+				avatar: null,
+			};
+			items.push({
+				id: `forum_reply_${row.id}`,
+				type: 'forum_reply',
+				user,
+				data: { postTitle: postTitleMap.get(row.post_id) ?? '' },
+				createdAt: row.created_at,
+			});
+		}
+
+		for (const cp of challengeParticipants ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const row = cp as any;
+			if (!row.joinedAt) continue;
+			const user = customerMap.get(row.userId);
+			if (!user) continue;
+			const challenge = row.pl_challenge as { title: string } | null;
+			items.push({
+				id: `challenge_completed_${row.id}`,
+				type: 'challenge_completed',
+				user,
+				data: { challengeTitle: challenge?.title ?? '' },
+				createdAt: row.joinedAt,
+			});
+		}
+
+		for (const m of newMembers ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: dynamic join result
+			const row = m as any;
+			if (!row.created_at) continue;
+			const profile = row.pl_community_profile?.[0] ?? null;
+			items.push({
+				id: `member_joined_${row.id}`,
+				type: 'member_joined',
+				user: { id: row.id, name: row.name, avatar: profile?.image ?? null },
+				data: {},
+				createdAt: row.created_at,
+			});
+		}
+
+		items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+		return items.slice(offset, offset + limit);
 	}
 }
 

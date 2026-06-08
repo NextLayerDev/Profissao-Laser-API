@@ -447,6 +447,22 @@ class ForumRepository {
 		return this.getPost(postId, author.id);
 	}
 
+	async updateReply(
+		postId: string,
+		replyId: string,
+		content: string,
+		currentUserId: string,
+	) {
+		const { error } = await supabase
+			.from('forum_replies')
+			.update({ content })
+			.eq('id', replyId)
+			.eq('post_id', postId);
+
+		if (error) throw new Error(error.message);
+		return this.getPost(postId, currentUserId);
+	}
+
 	async deleteReply(postId: string, replyId: string, currentUserId: string) {
 		await supabase.from('forum_reply_upvotes').delete().eq('reply_id', replyId);
 

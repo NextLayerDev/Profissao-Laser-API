@@ -3,6 +3,7 @@ import { uploadCourseImage } from '../lib/storage.js';
 import { productRepository } from '../repositories/product.js';
 import { productService } from '../services/product.js';
 import {
+	createAddonSchema,
 	createProductSchema,
 	updateProductSchema,
 	updateProductStatusSchema,
@@ -31,6 +32,19 @@ export const createProductController = async (
 		return reply.status(500).send({ message });
 	}
 	return reply.status(201).send(product);
+};
+
+export const createAddonController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const data = createAddonSchema.parse(request.body);
+	const { data: addon, error } = await productService.createAddon(data);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.status(201).send(addon);
 };
 
 export const updateProductStatusController = async (
