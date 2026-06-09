@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { isStaffRole } from '../lib/external-auth.js';
 import {
 	loadPublishedToolDefinition,
+	parseInlineToolDefinition,
 	type ToolDefinitionDoc,
 	ToolDefinitionLoadError,
 } from '../lib/tool-definitions.js';
@@ -87,9 +88,10 @@ export const toolRunController = async (
 					.send({ message: 'inline_definition_forbidden' });
 			}
 			try {
-				doc = JSON.parse(fields.definition) as ToolDefinitionDoc;
+				// Valida a forma da definition inline (JSON + estrutura) antes de rodar.
+				doc = parseInlineToolDefinition(fields.definition);
 			} catch {
-				return reply.status(400).send({ message: 'definition JSON inválido' });
+				return reply.status(400).send({ message: 'definition inválida' });
 			}
 			runtime =
 				(doc as { engine_runtime?: string }).engine_runtime ?? 'blocks_v1';

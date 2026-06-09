@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { cache } from './redis.js';
 
 /**
@@ -91,4 +92,37 @@ export async function loadPublishedToolDefinition(
 		}
 		return (await res.json()) as ToolDefinitionRow;
 	});
+}
+
+/**
+ * Schema estrutural de uma ToolDefinition inline (preview de rascunho do staff).
+ * A definition publicada já é validada pelo upvox; a inline chega como JSON cru,
+ * então validamos a forma aqui antes de rodar (o motor revalida cada bloco).
+ */
+const inlineDocSchema = z
+	.object({
+		schemaVersion: z.number().optional(),
+		engine_runtime: z.string().optional(),
+		input: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+		pipeline: z
+			.array(
+				z
+					.object({
+						id: z.string().min(1),
+						block: z.string().min(1),
+						params: z.record(z.string(), z.unknown()).optional(),
+					})
+					.passthrough(),
+			)
+			.optional(),
+		output: z.record(z.string(), z.unknown()).optional(),
+		ui: z.record(z.string(), z.unknown()).optional(),
+		billing: z.record(z.string(), z.unknown()).optional(),
+	})
+	.passthrough();
+
+/** Faz parse + valida a forma de uma definition inline (lança em JSON/forma inválida). */
+export function parseInlineToolDefinition(raw: string): ToolDefinitionDoc {
+	const json = JSON.parse(raw) as unknown;
+	return inlineDocSchema.parse(json) as unknown as ToolDefinitionDoc;
 }

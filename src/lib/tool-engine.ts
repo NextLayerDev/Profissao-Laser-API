@@ -1,6 +1,9 @@
 import { blockRegistry } from '../tool-blocks/index.js';
 import type { BlockRunContext } from '../tool-blocks/types.js';
 import type { InputSpec, ToolDefinitionDoc } from './tool-definitions.js';
+import { ToolEngineError } from './tool-errors.js';
+
+export { ToolEngineError } from './tool-errors.js';
 
 /**
  * Motor genérico `blocks_v1` — pipeline LINEAR (sem ramificação; `flow.*` e
@@ -13,17 +16,6 @@ import type { InputSpec, ToolDefinitionDoc } from './tool-definitions.js';
  * Referências num param: `input.X`, `<nodeId>.campo`, `!ref` (negação booleana).
  * Strings sem "." (ou cuja cabeça não seja `input`/um nodeId) são LITERAIS.
  */
-
-/** Erro do motor com status HTTP a propagar (400 = definição/uso inválido). */
-export class ToolEngineError extends Error {
-	constructor(
-		public readonly status: number,
-		message: string,
-	) {
-		super(message);
-		this.name = 'ToolEngineError';
-	}
-}
 
 /** Bag = mapa plano (proto-null) de valores resolvidos (`input.x`, `node.campo`). */
 export type Bag = Record<string, unknown>;

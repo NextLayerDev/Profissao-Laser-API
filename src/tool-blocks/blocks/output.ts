@@ -33,9 +33,12 @@ export const outputUploadPngBlock: ToolBlock<z.infer<typeof uploadPngSchema>> =
 
 /**
  * `output.upload_svg` — sobe um SVG (string) pro storage e devolve a URL.
+ * Teto de 20 MB de texto: um Potrace alimentado com entrada patológica pode
+ * gerar um SVG com milhões de nós; sem teto, o Buffer + base64 estouram memória.
  */
+const MAX_SVG_BYTES = 20 * 1_000_000;
 const uploadSvgSchema = z.object({
-	from: z.string().min(1),
+	from: z.string().min(1).max(MAX_SVG_BYTES),
 	folder: z.string().default('tool-output'),
 });
 

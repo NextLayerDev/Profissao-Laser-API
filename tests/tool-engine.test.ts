@@ -10,12 +10,16 @@ import {
 import { blockRegistry } from '@/tool-blocks/registry.js';
 
 // Bloco fake só pra testar a orquestração do motor (sem tocar sharp/storage).
+const echoSchema = z.object({
+	value: z.unknown(),
+	flag: z.boolean().optional(),
+});
 blockRegistry.register({
 	id: 'test.echo',
 	category: 'test',
 	description: 'echo dos params',
-	paramsSchema: z.object({ value: z.unknown(), flag: z.boolean().optional() }),
-	async run(_ctx, params) {
+	paramsSchema: echoSchema,
+	async run(_ctx, params: z.infer<typeof echoSchema>) {
 		return { value: params.value, flag: params.flag };
 	},
 });
