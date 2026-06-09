@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { laserPrepController } from '../controllers/laser-prep.js';
 import {
 	createVectorController,
 	deleteVectorController,
@@ -14,6 +15,7 @@ import {
 } from '../controllers/vectorize.js';
 import { authenticateVectorizacao } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
+import { laserPrepResultSchema } from '../types/laser-prep.js';
 import {
 	batchVectorizeResultSchema,
 	createVectorSchema,
@@ -239,5 +241,44 @@ export async function vectorRoute(server: FastifyInstance) {
 			},
 		},
 		exportVectorController,
+	);
+
+	server.post(
+		'/api/laser-prep',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Prepara uma foto para gravação a laser (Gravação 1-Clique / fotogravação).',
+					'Porte do pipeline ImagR "One Click": flatten sobre branco → cinza Rec.709 →',
+					'tom por material (gamma/contraste/inversão) → resize físico (Lanczos) →',
+					'dithering (Floyd–Steinberg por padrão) → PNG 1-bit com DPI embutido.',
+					'',
+					'Envio via **multipart/form-data**. Resposta traz `pngUrl` + `pngBase64`',
+					'(inline `data:image/png;base64,...`) + dimensões físicas e em px + `id`.',
+					'',
+					'| Field | Type | Default | Description |',
+					'|-------|------|---------|-------------|',
+					'| `image` | **binary** | — | Imagem de entrada (obrigatório) |',
+					'| `material` | string | — | wood / black slate / glass / acrylic / leather / cork / andonized aluminum / stainless steel / white tile / white tile painted black |',
+					'| `width_mm` | number | — | Largura física em mm (>0). Altura recalculada pela proporção |',
+					'| `dpi` | number | `254` | Densidade de px (mm→px) |',
+					'| `noDither` | boolean | — | `true` desliga o dithering (senão usa o default do material) |',
+					'| `ditherAlgorithm` | string | — | floydSteinberg/atkinson/stucki/jarvis/sierra/ordered/halftone |',
+					'| `invocation_id` | string | — | (opcional) id da invocação cobrada pelo upvox |',
+				].join('\n'),
+				consumes: ['multipart/form-data'],
+				response: {
+					201: laserPrepResultSchema,
+					400: ErrorSchema,
+					402: ErrorSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		laserPrepController,
 	);
 }

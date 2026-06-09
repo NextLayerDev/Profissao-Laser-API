@@ -217,6 +217,13 @@ export async function uploadVectorPng(
 	return upload('vectors-preview', buffer, path, 'image/png');
 }
 
+export async function uploadLaserPrepPng(
+	buffer: Buffer,
+	path: string,
+): Promise<string> {
+	return upload('laser-prep', buffer, path, 'image/png');
+}
+
 export async function createBunnyStreamUpload(title: string): Promise<{
 	videoId: string;
 	tusEndpoint: string;
