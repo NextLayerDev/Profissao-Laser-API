@@ -224,6 +224,26 @@ export async function uploadLaserPrepPng(
 	return upload('laser-prep', buffer, path, 'image/png');
 }
 
+/**
+ * Upload genérico para saídas da Fábrica de Tools (motor genérico). O `folder`
+ * vem da ToolDefinition (autorada por admin) — ainda assim é higienizado pra um
+ * conjunto seguro de caracteres antes de compor o path no Bunny.
+ */
+export async function uploadToolOutput(
+	folder: string,
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	const safeFolder =
+		folder
+			.replace(/[^a-zA-Z0-9._/-]/g, '_')
+			.replace(/\.\.+/g, '.')
+			.replace(/^\/+|\/+$/g, '')
+			.slice(0, 80) || 'tool-output';
+	return upload(safeFolder, buffer, path, mimetype);
+}
+
 export async function createBunnyStreamUpload(title: string): Promise<{
 	videoId: string;
 	tusEndpoint: string;
