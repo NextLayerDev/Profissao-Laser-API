@@ -93,10 +93,64 @@ function mmToPx(mm: number, dpi: number): number {
 	return Math.max(1, Math.round((mm / 25.4) * dpi));
 }
 
+/** Acima disso (px na origem) a limpeza de fundo é pulada (memória do flood-fill). */
+const MAX_BG_CLEANUP_PIXELS = 40 * 1_000_000;
+
+/**
+ * Detecta o "fundo claro" por flood-fill 4-conexo a partir das BORDAS: só os
+ * pixels quase-brancos (>= threshold) conectados à borda viram fundo. Isso
+ * preserva áreas claras INTERNAS do sujeito (logo, reflexo, brilho) — ao
+ * contrário de um corte global de luminância, que apagaria esses detalhes.
+ * Determinístico (não é remoção de fundo por IA). Opera na resolução original.
+ *
+ * Devolve um Uint8Array (1 = fundo) ou null se nada (ou a imagem toda) for marcado.
+ */
+function detectLightBackground(
+	gray: Buffer | Uint8Array,
+	width: number,
+	height: number,
+	threshold: number,
+): Uint8Array | null {
+	const n = width * height;
+	if (n > MAX_BG_CLEANUP_PIXELS) return null; // imagem grande demais — pula
+	const isBg = new Uint8Array(n);
+	const stack = new Int32Array(n);
+	let sp = 0;
+	let marked = 0;
+	const seed = (idx: number) => {
+		if (isBg[idx] === 0 && (gray[idx] as number) >= threshold) {
+			isBg[idx] = 1;
+			stack[sp++] = idx;
+			marked++;
+		}
+	};
+	// Semeia as 4 bordas.
+	for (let x = 0; x < width; x++) {
+		seed(x);
+		seed((height - 1) * width + x);
+	}
+	for (let y = 0; y < height; y++) {
+		seed(y * width);
+		seed(y * width + width - 1);
+	}
+	// Flood-fill 4-conexo.
+	while (sp > 0) {
+		const idx = stack[--sp];
+		const x = idx % width;
+		const y = (idx - x) / width;
+		if (x > 0) seed(idx - 1);
+		if (x < width - 1) seed(idx + 1);
+		if (y > 0) seed(idx - width);
+		if (y < height - 1) seed(idx + width);
+	}
+	return marked > 0 ? isBg : null;
+}
+
 /**
  * Motor de fotogravação (Gravação 1-Clique). Porte do pipeline do ImagR:
  *   1. flatten do alpha sobre BRANCO
  *   2. escala de cinza (Rec.709)
+ *   3. (opcional) limpa o fundo claro por flood-fill das bordas
  *   3. tom por material: gamma → contraste em torno do meio → inverte se grava claro
  *   4. resize físico (mm→px) com Lanczos (altura pela proporção)
  *   5. dithering (Floyd–Steinberg por padrão) → 1-bit, exceto se noDither
@@ -152,15 +206,35 @@ export async function laserPrep(
 	const applyGamma = preset.gamma !== 1;
 	const invGamma = 1 / preset.gamma;
 	const c = preset.contrast;
-	const toned = Buffer.allocUnsafe(gray.length);
-	for (let i = 0; i < gray.length; i++) {
-		let g = gray[i] / 255;
+	// Curva de tom de um pixel (reutilizada pra achar o "branco do material").
+	const toneOf = (v255: number): number => {
+		let g = v255 / 255;
 		if (applyGamma) g = g ** invGamma;
 		g = (g - 0.5) * c + 0.5;
 		g = g < 0 ? 0 : g > 1 ? 1 : g;
 		g *= 255;
 		if (preset.invert) g = 255 - g;
-		toned[i] = Math.round(g);
+		return Math.round(g);
+	};
+
+	// Limpeza de fundo claro (opcional): pixels de fundo (quase-brancos conectados
+	// à borda) viram o "branco do material" — o que um pixel branco vira após
+	// tom+inversão: 255 nos materiais normais, 0 nos invertidos. Resultado: fundo
+	// sólido, sem o granulado do dithering, preservando o sujeito.
+	const bgMask =
+		params.cleanBackground === true
+			? detectLightBackground(
+					gray,
+					grayInfo.width,
+					grayInfo.height,
+					params.bgThreshold ?? 200,
+				)
+			: null;
+	const blankValue = toneOf(255);
+
+	const toned = Buffer.allocUnsafe(gray.length);
+	for (let i = 0; i < gray.length; i++) {
+		toned[i] = bgMask?.[i] ? blankValue : toneOf(gray[i]);
 	}
 
 	// ── 3: resize físico (mm→px) com Lanczos, sobre o raster JÁ tonalizado.
@@ -225,5 +299,11 @@ export function parseLaserPrepParams(
 		dpi: fields.dpi ? Number.parseInt(fields.dpi, 10) : undefined,
 		noDither: fields.noDither ? fields.noDither === 'true' : undefined,
 		ditherAlgorithm,
+		cleanBackground: fields.cleanBackground
+			? fields.cleanBackground === 'true'
+			: undefined,
+		bgThreshold: fields.bgThreshold
+			? Number.parseInt(fields.bgThreshold, 10)
+			: undefined,
 	});
 }
