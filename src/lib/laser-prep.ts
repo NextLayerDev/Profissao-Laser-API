@@ -97,22 +97,43 @@ function mmToPx(mm: number, dpi: number): number {
 const MAX_BG_CLEANUP_PIXELS = 40 * 1_000_000;
 
 /**
- * Detecta o "fundo claro" por flood-fill 4-conexo a partir das BORDAS: só os
- * pixels quase-brancos (>= threshold) conectados à borda viram fundo. Isso
- * preserva áreas claras INTERNAS do sujeito (logo, reflexo, brilho) — ao
- * contrário de um corte global de luminância, que apagaria esses detalhes.
- * Determinístico (não é remoção de fundo por IA). Opera na resolução original.
+ * Detecta o FUNDO por flood-fill 4-conexo a partir das BORDAS, com LIMIAR
+ * ADAPTATIVO: o limiar é fixado logo abaixo da luminância dominante da borda
+ * (mediana − margin), e tudo que for >= limiar e conectado à borda vira fundo.
  *
- * Devolve um Uint8Array (1 = fundo) ou null se nada (ou a imagem toda) for marcado.
+ * Por que limiar (e não seguir gradiente): um objeto 3D tem sombreado suave;
+ * seguir o gradiente "entraria" no objeto e o apagaria. O limiar absoluto
+ * preserva o objeto (mais escuro que o limiar) e alcança os cantos do fundo
+ * (que estão no nível do fundo). Áreas claras INTERNAS do sujeito também ficam
+ * preservadas — não são alcançadas a partir da borda. `margin` (do slider)
+ * controla quão escuro o fundo pode ser pra ainda ser limpo. Sem IA.
+ *
+ * Devolve Uint8Array (1 = fundo) ou null se nada — ou quase tudo — for marcado.
  */
-function detectLightBackground(
+function detectBackground(
 	gray: Buffer | Uint8Array,
 	width: number,
 	height: number,
-	threshold: number,
+	margin: number,
 ): Uint8Array | null {
 	const n = width * height;
 	if (n > MAX_BG_CLEANUP_PIXELS) return null; // imagem grande demais — pula
+
+	// Mediana da borda = luminância dominante do fundo (robusta ao sujeito que
+	// toca a borda, que costuma ser minoria).
+	const border: number[] = [];
+	for (let x = 0; x < width; x++) {
+		border.push(gray[x] as number);
+		border.push(gray[(height - 1) * width + x] as number);
+	}
+	for (let y = 1; y < height - 1; y++) {
+		border.push(gray[y * width] as number);
+		border.push(gray[y * width + width - 1] as number);
+	}
+	border.sort((a, b) => a - b);
+	const bgMedian = border[border.length >> 1];
+	const threshold = bgMedian - margin;
+
 	const isBg = new Uint8Array(n);
 	const stack = new Int32Array(n);
 	let sp = 0;
@@ -124,16 +145,14 @@ function detectLightBackground(
 			marked++;
 		}
 	};
-	// Semeia as 4 bordas.
 	for (let x = 0; x < width; x++) {
 		seed(x);
 		seed((height - 1) * width + x);
 	}
-	for (let y = 0; y < height; y++) {
+	for (let y = 1; y < height - 1; y++) {
 		seed(y * width);
 		seed(y * width + width - 1);
 	}
-	// Flood-fill 4-conexo.
 	while (sp > 0) {
 		const idx = stack[--sp];
 		const x = idx % width;
@@ -143,7 +162,8 @@ function detectLightBackground(
 		if (y > 0) seed(idx - width);
 		if (y < height - 1) seed(idx + width);
 	}
-	return marked > 0 ? isBg : null;
+	// Marcou quase tudo → vazou pro sujeito; descarta por segurança.
+	return marked > 0 && marked < n * 0.97 ? isBg : null;
 }
 
 /**
@@ -223,11 +243,11 @@ export async function laserPrep(
 	// sólido, sem o granulado do dithering, preservando o sujeito.
 	const bgMask =
 		params.cleanBackground === true
-			? detectLightBackground(
+			? detectBackground(
 					gray,
 					grayInfo.width,
 					grayInfo.height,
-					params.bgThreshold ?? 200,
+					params.bgMargin ?? 16,
 				)
 			: null;
 	const blankValue = toneOf(255);
@@ -302,8 +322,8 @@ export function parseLaserPrepParams(
 		cleanBackground: fields.cleanBackground
 			? fields.cleanBackground === 'true'
 			: undefined,
-		bgThreshold: fields.bgThreshold
-			? Number.parseInt(fields.bgThreshold, 10)
+		bgMargin: fields.bgMargin
+			? Number.parseInt(fields.bgMargin, 10)
 			: undefined,
 	});
 }
