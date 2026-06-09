@@ -80,6 +80,14 @@ export interface LaserPrepResult {
 	pxH: number;
 }
 
+/**
+ * Teto de pixels do raster de SAÍDA (100 MP = 10.000×10.000). Defesa contra
+ * OOM: o resize aloca px independentemente do tamanho do upload, então uma
+ * combinação width_mm×dpi (ou aspecto extremo) poderia estourar a memória.
+ * 100 MP cobre folgado o uso real (1 m × 1 m @ 254 DPI ≈ 89 MP).
+ */
+const MAX_OUTPUT_PIXELS = 100 * 1_000_000;
+
 /** mm → polegada → px no DPI alvo (mesmo arredondamento do `imagr_pipeline.py`). */
 function mmToPx(mm: number, dpi: number): number {
 	return Math.max(1, Math.round((mm / 25.4) * dpi));
@@ -114,29 +122,57 @@ export async function laserPrep(
 	const pxW = mmToPx(widthMm, dpi);
 	const pxH = mmToPx(heightMm, dpi);
 
-	// 1-4: flatten sobre branco → grayscale Rec.709 → tom → resize Lanczos.
-	let pipeline = sharp(buffer).flatten({ background: '#ffffff' }).grayscale();
-
-	// gamma só quando > 1 (sharp exige gamma >= 1; gamma=1 é no-op).
-	if (preset.gamma > 1) {
-		pipeline = pipeline.gamma(preset.gamma);
+	// Teto de megapixels do raster de saída: defesa contra OOM/DoS. pxW/pxH vêm de
+	// width_mm/dpi (já limitados no schema), mas pxH também depende do aspecto da
+	// imagem; um aspecto extremo ainda poderia explodir. Rejeita antes do resize.
+	if (pxW * pxH > MAX_OUTPUT_PIXELS) {
+		throw new Error(
+			`Saída grande demais: ${pxW}x${pxH}px excede o teto de ${
+				MAX_OUTPUT_PIXELS / 1_000_000
+			} MP. Reduza a largura (mm) ou o DPI.`,
+		);
 	}
 
-	// contraste em torno do meio: out = contrast*in + 128*(1-contrast).
-	pipeline = pipeline.linear(preset.contrast, 128 * (1 - preset.contrast));
-
-	if (preset.invert) {
-		pipeline = pipeline.negate();
-	}
-
-	pipeline = pipeline.resize(pxW, pxH, { kernel: 'lanczos3' });
-
-	const { data, info } = await pipeline
+	// ── 1: flatten sobre BRANCO → grayscale Rec.709, na RESOLUÇÃO ORIGINAL.
+	// (1 canal, raw — o tom é aplicado manualmente para bater 1:1 com a referência.)
+	const { data: gray, info: grayInfo } = await sharp(buffer)
+		.flatten({ background: '#ffffff' })
+		.grayscale()
 		.toColourspace('b-w')
 		.raw()
 		.toBuffer({ resolveWithObject: true });
 
-	// 5: resolve dithering (noDither tem prioridade; senão default do material).
+	// ── 2: TOM por material aplicado ANTES do resize (porte 1:1 do apply_tone):
+	//   gamma     → out = (in/255) ^ (1/gamma)         (curva tonal única)
+	//   contraste → out = (g - 0.5) * contrast + 0.5   (em torno do meio)
+	//   clamp [0,1] → *255 → inverte se o material grava claro sobre escuro.
+	// O sharp NÃO serve aqui: .gamma() é um round-trip encode/decode que zera o
+	// efeito tonal, e .linear()/.negate() rodariam DEPOIS do resize (ordem interna
+	// fixa). Por isso o tom é feito na mão, sobre o raster em resolução original.
+	const applyGamma = preset.gamma !== 1;
+	const invGamma = 1 / preset.gamma;
+	const c = preset.contrast;
+	const toned = Buffer.allocUnsafe(gray.length);
+	for (let i = 0; i < gray.length; i++) {
+		let g = gray[i] / 255;
+		if (applyGamma) g = g ** invGamma;
+		g = (g - 0.5) * c + 0.5;
+		g = g < 0 ? 0 : g > 1 ? 1 : g;
+		g *= 255;
+		if (preset.invert) g = 255 - g;
+		toned[i] = Math.round(g);
+	}
+
+	// ── 3: resize físico (mm→px) com Lanczos, sobre o raster JÁ tonalizado.
+	const { data, info } = await sharp(toned, {
+		raw: { width: grayInfo.width, height: grayInfo.height, channels: 1 },
+	})
+		.resize(pxW, pxH, { kernel: 'lanczos3' })
+		.toColourspace('b-w')
+		.raw()
+		.toBuffer({ resolveWithObject: true });
+
+	// 4: resolve dithering (noDither tem prioridade; senão default do material).
 	const dither = params.noDither === true ? false : preset.default_dither;
 
 	const pixels = dither

@@ -22,8 +22,11 @@ export const MATERIAL_KEYS = [
 // de px. `noDither` desliga o dithering; `ditherAlgorithm` troca o algoritmo.
 export const laserPrepParamsSchema = z.object({
 	material: z.enum(MATERIAL_KEYS),
-	width_mm: z.number().positive(),
-	dpi: z.number().int().positive().default(254),
+	// Limites físicos sãos: até 2 m de largura e 1200 DPI. Sem teto, um cliente
+	// autenticado poderia pedir width_mm/dpi enormes (ex.: 10000 mm @ 2540 DPI =
+	// 1.000.000 px) e estourar a memória do processo no resize (DoS).
+	width_mm: z.number().positive().max(2000),
+	dpi: z.number().int().positive().max(1200).default(254),
 	noDither: z.boolean().optional(),
 	ditherAlgorithm: z
 		.enum([

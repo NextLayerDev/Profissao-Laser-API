@@ -7,6 +7,18 @@ import {
 } from '../lib/upvox-tools.js';
 import { laserPrepService } from '../services/laser-prep.js';
 
+// Tipos de imagem aceitos no upload (alinhado ao que o sharp decodifica).
+const ALLOWED_IMAGE_MIME = new Set([
+	'image/png',
+	'image/jpeg',
+	'image/jpg',
+	'image/webp',
+	'image/gif',
+	'image/bmp',
+	'image/tiff',
+	'image/avif',
+]);
+
 export const laserPrepController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
@@ -53,6 +65,18 @@ export const laserPrepController = async (
 			return reply.status(gate.status).send({ message: gate.message });
 		}
 		invocationId = gate.mode === 'paid' ? gate.invocationId : null;
+
+		// Falha rápida em tipo não-imagem: evita gastar CPU no sharp e devolve um
+		// 400 claro (com refund) em vez do 500 genérico. O sharp já rejeita
+		// não-imagem mais adiante; isto é a primeira barreira (mimetype é
+		// spoofável, então é defense-in-depth, não garantia de segurança).
+		if (!ALLOWED_IMAGE_MIME.has(mimetype)) {
+			if (invocationId)
+				await refundInvocation(customerId, invocationId, authHeader);
+			return reply.status(400).send({
+				message: 'Tipo de arquivo não suportado (envie PNG/JPG/WEBP).',
+			});
+		}
 
 		const params = parseLaserPrepParams(fields);
 		const { data: result, error } = await laserPrepService.prepare(customerId, {
