@@ -39,10 +39,11 @@ export const laserPrepParamsSchema = z.object({
 			'halftone',
 		])
 		.optional(),
-	// Limpeza de fundo claro (flood-fill das bordas, determinístico). `bgThreshold`
-	// é o corte de luminância no cinza original (>= vira fundo candidato); default 200.
+	// Limpeza de fundo (flood-fill das bordas com limiar adaptativo, determinístico).
+	// `bgMargin` = quanto abaixo da mediana da borda fica o limiar (maior = limpa
+	// fundos mais escuros, mas pode comer partes claras do objeto); default 16.
 	cleanBackground: z.boolean().optional(),
-	bgThreshold: z.number().int().min(0).max(255).default(200),
+	bgMargin: z.number().int().min(0).max(200).default(16),
 });
 
 export type LaserPrepParams = z.infer<typeof laserPrepParamsSchema>;
