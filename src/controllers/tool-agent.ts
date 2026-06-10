@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { incrWithTtl } from '../lib/redis.js';
 import { type AgentTurnRequest, runAgentTurn } from '../services/tool-agent.js';
@@ -32,6 +33,13 @@ export const toolAgentController = async (
 		return reply.status(402).send({ message: 'session_budget_exceeded' });
 	}
 
+	// Chave de auditoria do débito: nº do turno quando há Redis; um nonce único
+	// quando ele cai (turn === -1) — assim turnos distintos NUNCA aliam pra ":0".
+	const refId =
+		turn > 0
+			? `${body.session_id}:${turn}`
+			: `${body.session_id}:x${randomUUID()}`;
+
 	// SSE: assume o controle da resposta crua.
 	reply.hijack();
 	const raw = reply.raw;
@@ -41,12 +49,18 @@ export const toolAgentController = async (
 		Connection: 'keep-alive',
 		'X-Accel-Buffering': 'no',
 	});
+	// Escreve um frame SSE; engole erro de socket morto (cliente desconectou).
 	const send = (event: string, data: unknown) => {
-		raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+		if (raw.writableEnded) return;
+		try {
+			raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+		} catch {
+			// socket caiu no meio do turno — ignora; o finally encerra.
+		}
 	};
 
 	try {
-		await runAgentTurn(body, customerId, turn < 0 ? 0 : turn, authHeader, send);
+		await runAgentTurn(body, customerId, refId, authHeader, send);
 	} catch (err) {
 		console.error('[tool-agent] controller erro:', err);
 		try {

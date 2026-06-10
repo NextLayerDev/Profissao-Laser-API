@@ -203,6 +203,36 @@ describe('remove_block', () => {
 	});
 });
 
+describe('remove_input (não derruba OUTRAS refs de input)', () => {
+	it('remove só o campo alvo; preserva refs a outros campos', () => {
+		const doc = chain([
+			['add_input', { name: 'a', type: 'string' }],
+			['add_input', { name: 'b', type: 'string' }],
+			['add_block', { block_id: 'util.text_template', node_id: 't1' }],
+			['connect', { node_id: 't1', param: 'a', source: 'input.a' }],
+			['add_block', { block_id: 'util.text_template', node_id: 't2' }],
+			['connect', { node_id: 't2', param: 'a', source: 'input.b' }],
+		]);
+		const out = apply(doc, 'remove_input', { name: 'a' });
+		expect(out.error).toBeFalsy();
+		const nodes = out.doc?.pipeline ?? [];
+		// t1.a apontava pra input.a (removido) → limpo
+		expect(nodes.find((n) => n.id === 't1')?.params?.a).toBeUndefined();
+		// t2.a apontava pra input.b (intacto) → PRESERVADO (regressão H1)
+		expect(nodes.find((n) => n.id === 't2')?.params?.a).toBe('input.b');
+	});
+
+	it('limpa saída que apontava pro campo removido (regressão H2)', () => {
+		const doc = chain([
+			['add_input', { name: 'a', type: 'string' }],
+			['set_output', { primary: 'input.a' }],
+		]);
+		const out = apply(doc, 'remove_input', { name: 'a' });
+		const output = (out.doc?.output ?? {}) as Record<string, unknown>;
+		expect(output.primary).toBeUndefined();
+	});
+});
+
 describe('validate (registry real)', () => {
 	it('aprova uma ferramenta completa', () => {
 		const doc = chain([

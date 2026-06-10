@@ -211,12 +211,20 @@ function removeInput(doc: ToolDefinitionDoc, i: Input): ReducerResult {
 			(d.ui as Record<string, unknown>).controls as Record<string, unknown>[]
 		).filter((c) => c.bind !== `input.${name}`);
 	}
-	clearRefsTo(d, 'input'); // refs a input.<name> ficam órfãs só se o head 'input' some — não some; limpa o campo específico:
+	// Limpa SÓ as refs a input.<name> (a cabeça 'input' NÃO some — outras refs
+	// input.* continuam válidas). NÃO usar clearRefsTo('input'): apagaria todas.
+	const isThisField = (v: unknown) =>
+		typeof v === 'string' && v.replace(/^!/, '') === `input.${name}`;
 	for (const n of d.pipeline ?? []) {
 		for (const [k, v] of Object.entries(n.params ?? {})) {
-			if (typeof v === 'string' && v.replace(/^!/, '') === `input.${name}`)
-				delete (n.params as Record<string, unknown>)[k];
+			if (isThisField(v)) delete (n.params as Record<string, unknown>)[k];
 		}
+	}
+	// e as saídas que apontavam pro campo removido (escalar ou lista).
+	const out = (d.output ?? {}) as Record<string, unknown>;
+	for (const [k, v] of Object.entries(out)) {
+		if (Array.isArray(v)) out[k] = v.filter((x) => !isThisField(x));
+		else if (isThisField(v)) delete out[k];
 	}
 	return ok(d, `Campo '${name}' removido.`);
 }

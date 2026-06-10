@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { AGENT_MODEL, anthropic } from '../lib/anthropic.js';
+import { type Usage, voxesFromUsage } from '../lib/tool-agent-metering.js';
 import { buildSystem, summarizeDoc } from '../lib/tool-agent-prompt.js';
 import {
 	AGENT_TOOLS,
@@ -15,40 +16,6 @@ registerCoreBlocks();
 
 const MAX_ITERATIONS = 16; // teto de passos de tool-use por turno (espelha 32 nós)
 const MAX_TOKENS = 8000;
-
-/** Preços do Claude por TOKEN (USD), env-configuráveis (defaults Sonnet 4.6). */
-const num = (k: string, d: number) => {
-	const v = Number(process.env[k]);
-	return Number.isFinite(v) && v >= 0 ? v : d;
-};
-const PRICE = {
-	in: num('TOOL_AGENT_PRICE_IN', 3 / 1_000_000),
-	out: num('TOOL_AGENT_PRICE_OUT', 15 / 1_000_000),
-	cacheWrite: num('TOOL_AGENT_PRICE_CACHE_WRITE', 3.75 / 1_000_000),
-	cacheRead: num('TOOL_AGENT_PRICE_CACHE_READ', 0.3 / 1_000_000),
-};
-const VOX_USD = num('TOOL_AGENT_VOX_USD', 0.1); // valor de 1 vox em USD
-const MARKUP = num('TOOL_AGENT_MARKUP', 3); // margem (proporcional ao uso + lucro)
-const GRAN = num('TOOL_AGENT_VOX_GRANULARITY', 0.05);
-
-interface Usage {
-	in: number;
-	out: number;
-	cw: number;
-	cr: number;
-}
-
-/** Custo do turno em voxes: USD dos tokens → voxes com markup, arredondado pra cima. */
-function voxesFromUsage(u: Usage): number {
-	const usd =
-		u.in * PRICE.in +
-		u.out * PRICE.out +
-		u.cw * PRICE.cacheWrite +
-		u.cr * PRICE.cacheRead;
-	const raw = (usd / VOX_USD) * MARKUP;
-	const stepped = Math.ceil(raw / GRAN) * GRAN;
-	return Math.max(0, Math.round(stepped * 100) / 100);
-}
 
 export interface AgentTurnRequest {
 	session_id: string;
@@ -68,7 +35,7 @@ export type AgentSend = (event: string, data: unknown) => void;
 export async function runAgentTurn(
 	req: AgentTurnRequest,
 	customerId: string,
-	turn: number,
+	refId: string,
 	authHeader: string | undefined,
 	send: AgentSend,
 ): Promise<void> {
@@ -90,6 +57,7 @@ export async function runAgentTurn(
 	const actions: { type: string; label: string; ok: boolean }[] = [];
 	let done = false;
 	let needsInput = false;
+	let errored = false;
 
 	try {
 		for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
@@ -148,6 +116,7 @@ export async function runAgentTurn(
 			if (done || needsInput) break;
 		}
 	} catch (err) {
+		errored = true;
 		console.error('[tool-agent] turno falhou:', err);
 		send('error', {
 			message:
@@ -155,9 +124,10 @@ export async function runAgentTurn(
 		});
 	}
 
-	// Metering: cobra por tokens (com markup) ao fim do turno.
-	const voxCost = voxesFromUsage(usage);
-	const refId = `${req.session_id}:${turn}`;
+	// Metering: cobra por tokens (com markup) ao fim do turno. O `refId` é a
+	// chave de auditoria do débito (única por turno — vem do controller).
+	// Cortesia: turno que falhou SEM nenhuma ação útil não cobra (não houve build).
+	const voxCost = errored && actions.length === 0 ? 0 : voxesFromUsage(usage);
 	const spend = await spendAgent(
 		customerId,
 		{ ref_id: refId, vox_cost: voxCost },

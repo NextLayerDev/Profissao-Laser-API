@@ -4,14 +4,20 @@ import { toolAgentController } from '../controllers/tool-agent.js';
 import { authenticateVectorizacao } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 
+// Tetos contra abuso: o catálogo, a definition e o histórico são serializados no
+// prompt a CADA iteração (até 16) — sem tetos, um cliente (ou uma conta de teste
+// ilimitada, que não debita voxes) infla nosso custo de tokens na Anthropic.
 const turnBodySchema = z.object({
 	session_id: z.string().min(1).max(120),
 	definition: z.record(z.string(), z.unknown()).default({}),
 	catalog: z
 		.object({
-			blocks: z.array(z.record(z.string(), z.unknown())).default([]),
-			custom_nodes: z.array(z.record(z.string(), z.unknown())).optional(),
-			inputs: z.array(z.record(z.string(), z.unknown())).optional(),
+			blocks: z.array(z.record(z.string(), z.unknown())).max(64).default([]),
+			custom_nodes: z
+				.array(z.record(z.string(), z.unknown()))
+				.max(64)
+				.optional(),
+			inputs: z.array(z.record(z.string(), z.unknown())).max(64).optional(),
 		})
 		.passthrough(),
 	message: z.string().min(1).max(8000),
@@ -19,9 +25,10 @@ const turnBodySchema = z.object({
 		.array(
 			z.object({
 				role: z.enum(['user', 'assistant']),
-				content: z.string(),
+				content: z.string().max(16000),
 			}),
 		)
+		.max(40)
 		.default([]),
 });
 
