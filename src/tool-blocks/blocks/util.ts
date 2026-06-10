@@ -125,9 +125,10 @@ export const conditionBlock: ToolBlock<z.infer<typeof conditionSchema>> = {
  * IP privado/loopback/link-local (resolvendo o DNS), sem seguir redirects,
  * timeout e teto de bytes. Saída: `{ status, body, json }`.
  *
- * Limitação conhecida (TOCTOU/DNS-rebinding): validamos o IP resolvido mas o
- * fetch resolve de novo; por isso o bloco fica atrás de flag e allowlist até a
- * revisão de segurança antes de ligar em produção. */
+ * Resíduo conhecido (TOCTOU/DNS-rebinding): validamos o IP resolvido mas o fetch
+ * resolve de novo. Mitigado por: allowlist OBRIGATÓRIA quando ligado (fail
+ * closed), redirect:manual e checagem de IP (v4+v6 mapeado/comprimido). Fechar
+ * 100% pede pinar o IP validado no fetch (dispatcher undici) — follow-up. */
 
 const HTTP_ENABLED = process.env.TOOL_HTTP_ENABLED === 'true';
 const HTTP_ALLOWLIST = (process.env.TOOL_HTTP_ALLOW_HOSTS ?? '')
@@ -147,43 +148,94 @@ function inRange4(ip: number, base: string, bits: number): boolean {
 	return (ip & mask) === (ip4ToInt(base) & mask);
 }
 
-/** IP reservado/privado que NÃO deve ser alvo (anti-SSRF). */
-function isBlockedIp(ip: string): boolean {
+function isBlockedV4(ip: string): boolean {
+	const n = ip4ToInt(ip);
+	return (
+		inRange4(n, '0.0.0.0', 8) ||
+		inRange4(n, '10.0.0.0', 8) ||
+		inRange4(n, '100.64.0.0', 10) || // CGNAT
+		inRange4(n, '127.0.0.0', 8) || // loopback
+		inRange4(n, '169.254.0.0', 16) || // link-local
+		inRange4(n, '172.16.0.0', 12) ||
+		inRange4(n, '192.0.0.0', 24) ||
+		inRange4(n, '192.168.0.0', 16) ||
+		inRange4(n, '198.18.0.0', 15) || // benchmarking
+		inRange4(n, '224.0.0.0', 4) || // multicast
+		inRange4(n, '240.0.0.0', 4) // reservado
+	);
+}
+
+/** Expande um IPv6 (com `::` e/ou cauda IPv4 dotted) nos 8 hextets numéricos. */
+function parseV6(ip: string): number[] | null {
+	let s = ip.toLowerCase();
+	// cauda IPv4 (mapeado/compat dotted, ex.: ::ffff:127.0.0.1) → dois hextets hex
+	const dotted = s.match(/^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+	if (dotted) {
+		const o = [
+			Number(dotted[2]),
+			Number(dotted[3]),
+			Number(dotted[4]),
+			Number(dotted[5]),
+		];
+		if (o.some((x) => x > 255)) return null;
+		s = `${dotted[1]}${((o[0] << 8) | o[1]).toString(16)}:${((o[2] << 8) | o[3]).toString(16)}`;
+	}
+	const halves = s.split('::');
+	if (halves.length > 2) return null;
+	const head = halves[0] ? halves[0].split(':') : [];
+	const tail =
+		halves.length === 2 ? (halves[1] ? halves[1].split(':') : []) : null;
+	let groups: string[];
+	if (tail === null) {
+		groups = head;
+	} else {
+		const fill = 8 - head.length - tail.length;
+		if (fill < 0) return null;
+		groups = [...head, ...Array(fill).fill('0'), ...tail];
+	}
+	if (groups.length !== 8) return null;
+	const nums = groups.map((g) => Number.parseInt(g || '0', 16));
+	if (nums.some((x) => Number.isNaN(x) || x < 0 || x > 0xffff)) return null;
+	return nums;
+}
+
+const v4FromHextets = (a: number, b: number): string =>
+	`${(a >> 8) & 0xff}.${a & 0xff}.${(b >> 8) & 0xff}.${b & 0xff}`;
+
+function isBlockedV6(ip: string): boolean {
+	const h = parseV6(ip);
+	if (!h) return true; // não parseou → bloqueia (fail closed)
+	const zeroHi =
+		h[0] === 0 && h[1] === 0 && h[2] === 0 && h[3] === 0 && h[4] === 0;
+	// ::1 (loopback) / :: (não especificado)
+	if (zeroHi && h[5] === 0 && h[6] === 0 && (h[7] === 0 || h[7] === 1))
+		return true;
+	// ::ffff:0:0/96 (IPv4-mapeado) → checa o v4 embutido (também forma hex)
+	if (zeroHi && h[5] === 0xffff) return isBlockedV4(v4FromHextets(h[6], h[7]));
+	// ::/96 (IPv4-compat, depreciado) → v4
+	if (zeroHi && h[5] === 0 && !(h[6] === 0 && h[7] <= 1))
+		return isBlockedV4(v4FromHextets(h[6], h[7]));
+	// 64:ff9b::/96 (NAT64) → v4
+	if (
+		h[0] === 0x64 &&
+		h[1] === 0xff9b &&
+		h[2] === 0 &&
+		h[3] === 0 &&
+		h[4] === 0 &&
+		h[5] === 0
+	)
+		return isBlockedV4(v4FromHextets(h[6], h[7]));
+	if ((h[0] & 0xfe00) === 0xfc00) return true; // ULA fc00::/7
+	if ((h[0] & 0xffc0) === 0xfe80) return true; // link-local fe80::/10
+	if ((h[0] & 0xff00) === 0xff00) return true; // multicast ff00::/8
+	return false;
+}
+
+/** IP reservado/privado que NÃO deve ser alvo (anti-SSRF). Exportado p/ teste. */
+export function isBlockedIp(ip: string): boolean {
 	const v = isIP(ip);
-	if (v === 4) {
-		const n = ip4ToInt(ip);
-		return (
-			inRange4(n, '0.0.0.0', 8) ||
-			inRange4(n, '10.0.0.0', 8) ||
-			inRange4(n, '100.64.0.0', 10) || // CGNAT
-			inRange4(n, '127.0.0.0', 8) || // loopback
-			inRange4(n, '169.254.0.0', 16) || // link-local
-			inRange4(n, '172.16.0.0', 12) ||
-			inRange4(n, '192.0.0.0', 24) ||
-			inRange4(n, '192.168.0.0', 16) ||
-			inRange4(n, '198.18.0.0', 15) || // benchmarking
-			inRange4(n, '224.0.0.0', 4) || // multicast
-			inRange4(n, '240.0.0.0', 4) // reservado
-		);
-	}
-	if (v === 6) {
-		const lc = ip.toLowerCase();
-		if (lc === '::1' || lc === '::') return true;
-		// IPv4 mapeado/compatível (::ffff:a.b.c.d) — checa o v4 embutido.
-		const m = lc.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-		if (m && isIP(m[1]) === 4) return isBlockedIp(m[1]);
-		const head = lc.split(':')[0];
-		// ULA fc00::/7, link-local fe80::/10, multicast ff00::/8.
-		return (
-			head.startsWith('fc') ||
-			head.startsWith('fd') ||
-			head.startsWith('fe8') ||
-			head.startsWith('fe9') ||
-			head.startsWith('fea') ||
-			head.startsWith('feb') ||
-			head.startsWith('ff')
-		);
-	}
+	if (v === 4) return isBlockedV4(ip);
+	if (v === 6) return isBlockedV6(ip);
 	return true; // não é IP reconhecível → bloqueia
 }
 
@@ -197,7 +249,8 @@ async function assertSafeUrl(raw: string): Promise<URL> {
 	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
 		throw new ToolEngineError(400, 'util.http_request só aceita http/https.');
 	}
-	const host = url.hostname.toLowerCase();
+	// literais IPv6 vêm com colchetes em url.hostname ([::1]) — tira pra isIP ver.
+	const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
 	if (HTTP_ALLOWLIST.length > 0 && !HTTP_ALLOWLIST.includes(host)) {
 		throw new ToolEngineError(403, `Host não permitido: ${host}.`);
 	}
@@ -242,6 +295,14 @@ export const httpRequestBlock: ToolBlock<z.infer<typeof httpRequestSchema>> = {
 			throw new ToolEngineError(
 				403,
 				'Bloco util.http_request desabilitado neste ambiente.',
+			);
+		}
+		// Fail closed: ligado sem allowlist seria internet aberta + só a checagem
+		// de IP (racy) — exige allowlist explícita.
+		if (HTTP_ALLOWLIST.length === 0) {
+			throw new ToolEngineError(
+				403,
+				'util.http_request exige uma allowlist (TOOL_HTTP_ALLOW_HOSTS).',
 			);
 		}
 		const url = await assertSafeUrl(params.url);
