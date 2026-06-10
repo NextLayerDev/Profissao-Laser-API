@@ -1,0 +1,112 @@
+import { blockRegistry } from '../tool-blocks/index.js';
+import type { ToolDefinitionDoc } from './tool-definitions.js';
+
+/**
+ * Validação ESTRUTURAL pura de uma ToolDefinition (sem `block.run`, sem buffers):
+ * espelha as barreiras do motor (`tool-engine.ts`) mas ACUMULA os erros em vez de
+ * lançar no 1º. Usada pelo tool `validate` do Agente e como 2ª barreira (registry
+ * REAL) contra divergência entre o catálogo do front e os blocos deployados.
+ *
+ * Checa: ids válidos + únicos; pipeline 1..32; cada `block` existe no registry;
+ * refs (`<nó>.campo`) apontam pra `input` ou um nó ANTERIOR (ordem linear); saídas
+ * apontam pra nós existentes. NÃO valida os params contra o zod do bloco (isso
+ * exige valores resolvidos em runtime) — a checagem de tipo fica no agente (via
+ * catálogo) e o motor revalida a fundo no run.
+ */
+
+const NODE_ID_RE = /^[a-zA-Z_]\w*$/;
+const MAX_PIPELINE_NODES = 32;
+
+export interface ValidationIssue {
+	node?: string;
+	field?: string;
+	message: string;
+}
+export interface ValidationResult {
+	valid: boolean;
+	errors: ValidationIssue[];
+}
+
+/** Cabeça de uma ref (`!a.b` → `a`); null se for literal (sem ponto). */
+function refHead(v: unknown): string | null {
+	if (typeof v !== 'string') return null;
+	const path = v.startsWith('!') ? v.slice(1) : v;
+	const dot = path.indexOf('.');
+	if (dot <= 0) return null;
+	return path.slice(0, dot);
+}
+
+export function validateDefinition(doc: ToolDefinitionDoc): ValidationResult {
+	const errors: ValidationIssue[] = [];
+	const pipeline = doc.pipeline ?? [];
+
+	if (pipeline.length === 0) {
+		errors.push({ message: 'Pipeline vazio — adicione ao menos um bloco.' });
+	}
+	if (pipeline.length > MAX_PIPELINE_NODES) {
+		errors.push({
+			message: `Pipeline grande demais (${pipeline.length} > ${MAX_PIPELINE_NODES} blocos).`,
+		});
+	}
+
+	const order = new Map<string, number>();
+	const seen = new Set<string>();
+	pipeline.forEach((node, i) => {
+		if (!NODE_ID_RE.test(node.id)) {
+			errors.push({
+				node: node.id,
+				message: `Id de nó inválido: '${node.id}'.`,
+			});
+		}
+		if (seen.has(node.id)) {
+			errors.push({
+				node: node.id,
+				message: `Id de nó duplicado: '${node.id}'.`,
+			});
+		}
+		seen.add(node.id);
+		order.set(node.id, i);
+	});
+
+	const isHead = (h: string) => h === 'input' || order.has(h);
+
+	pipeline.forEach((node, i) => {
+		if (!blockRegistry.get(node.block)) {
+			errors.push({
+				node: node.id,
+				message: `Bloco desconhecido: '${node.block}'.`,
+			});
+		}
+		for (const [field, value] of Object.entries(node.params ?? {})) {
+			const head = refHead(value);
+			if (!head || !isHead(head)) continue; // literal ou cabeça não-ref
+			if (head !== 'input') {
+				const srcIdx = order.get(head);
+				if (srcIdx === undefined || srcIdx >= i) {
+					errors.push({
+						node: node.id,
+						field,
+						message: `Ligue a uma etapa ANTERIOR (a fonte '${head}' vem depois ou não existe).`,
+					});
+				}
+			}
+		}
+	});
+
+	const out = (doc.output ?? {}) as Record<string, unknown>;
+	const checkOut = (v: unknown, key: string) => {
+		const head = refHead(v);
+		if (head && head !== 'input' && !order.has(head)) {
+			errors.push({
+				field: `output.${key}`,
+				message: `A saída '${key}' aponta pra um nó inexistente ('${head}').`,
+			});
+		}
+	};
+	for (const [k, v] of Object.entries(out)) {
+		if (Array.isArray(v)) for (const item of v) checkOut(item, k);
+		else checkOut(v, k);
+	}
+
+	return { valid: errors.length === 0, errors };
+}

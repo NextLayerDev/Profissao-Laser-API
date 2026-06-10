@@ -43,6 +43,9 @@ export function makeCache(client: RedisLike): Cache {
 	};
 }
 
+// Cliente cru compartilhado (reusado pelo `cache` e pelo `incrWithTtl`).
+let sharedClient: Redis | null = null;
+
 function build(): Cache {
 	const url = process.env.REDIS_URL;
 	if (!url) return noopCache;
@@ -57,6 +60,7 @@ function build(): Cache {
 		maxRetriesPerRequest: 1,
 		enableOfflineQueue: false,
 	});
+	sharedClient = client;
 	// host:porta pro log (sem expor a senha da URL).
 	const target = `${client.options.host}:${client.options.port}`;
 	client.on('connect', () => console.log(`[redis] conectando em ${target}…`));
@@ -69,3 +73,22 @@ function build(): Cache {
 }
 
 export const cache: Cache = build();
+
+/**
+ * INCR + EXPIRE (na 1ª vez) pra contadores com janela — ex.: teto de turnos por
+ * sessão do agente. Fail-open: sem Redis ou erro, devolve -1 (= "sem teto",
+ * não bloqueia). Reusa a conexão do `cache`.
+ */
+export async function incrWithTtl(
+	key: string,
+	ttlSeconds: number,
+): Promise<number> {
+	if (!sharedClient) return -1;
+	try {
+		const n = await sharedClient.incr(key);
+		if (n === 1) await sharedClient.expire(key, ttlSeconds);
+		return n;
+	} catch {
+		return -1; // fail-open
+	}
+}
