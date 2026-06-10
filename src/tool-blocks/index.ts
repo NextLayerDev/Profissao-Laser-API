@@ -5,6 +5,12 @@ import {
 	outputUploadPngBlock,
 	outputUploadSvgBlock,
 } from './blocks/output.js';
+import {
+	conditionBlock,
+	httpRequestBlock,
+	mathBlock,
+	textTemplateBlock,
+} from './blocks/util.js';
 import { blockRegistry } from './registry.js';
 
 /**
@@ -23,6 +29,11 @@ export function registerCoreBlocks(): void {
 	blockRegistry.register(outputUploadPngBlock);
 	blockRegistry.register(outputUploadSvgBlock);
 	blockRegistry.register(outputReturnBase64Block);
+	// Blocos genéricos (composição livre).
+	blockRegistry.register(textTemplateBlock);
+	blockRegistry.register(mathBlock);
+	blockRegistry.register(conditionBlock);
+	blockRegistry.register(httpRequestBlock);
 }
 
 export { blockRegistry } from './registry.js';
