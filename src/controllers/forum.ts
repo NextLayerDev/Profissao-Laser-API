@@ -121,12 +121,19 @@ export const listForumPostsController = async (
 			limit?: string;
 			categoryId?: string;
 			search?: string;
+			sort?: 'recent' | 'top' | 'unanswered';
 		};
 	}>,
 	reply: FastifyReply,
 ) => {
 	try {
-		const { page = '1', limit = '20', categoryId, search } = request.query;
+		const {
+			page = '1',
+			limit = '20',
+			categoryId,
+			search,
+			sort,
+		} = request.query;
 		const currentUserId = request.currentUser?.id ?? '';
 		const result = await forumRepository.listPosts({
 			page: Math.max(1, Number(page)),
@@ -134,6 +141,7 @@ export const listForumPostsController = async (
 			categoryId,
 			search,
 			currentUserId,
+			sort,
 		});
 		return reply.send(result);
 	} catch (err) {

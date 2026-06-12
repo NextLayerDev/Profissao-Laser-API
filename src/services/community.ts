@@ -1,6 +1,7 @@
 import { cache } from '@/lib/redis.js';
 import { withCapture } from '@/lib/sentry.js';
 import { communityRepository } from '../repositories/community.js';
+import { profileRepository } from '../repositories/profile.js';
 import type {
 	CreateChannel,
 	CreateComment,
@@ -22,6 +23,7 @@ const RANKING_TTL = 120;
 const MEMBERS_TTL = 60;
 const ACTIVITY_TTL = 30;
 const PROJECTS_TTL = 60;
+const PRESENCE_TTL = 30;
 
 export const communityService = {
 	async listPosts(page: number, limit: number, currentUserId: string) {
@@ -105,8 +107,11 @@ export const communityService = {
 		online?: boolean,
 		limit?: number,
 		offset?: number,
+		includePhone = false,
 	) {
-		const key = `community:members:${JSON.stringify({ search, category, featured, online, limit, offset })}`;
+		// includePhone NA CHAVE: telefone (PII, só staff) nunca pode vazar pra
+		// resposta cacheada de customer.
+		const key = `community:members:${JSON.stringify({ search, category, featured, online, limit, offset, includePhone })}`;
 		return withCapture(() =>
 			cache.cacheAside(key, MEMBERS_TTL, () =>
 				communityRepository.listMembers(
@@ -116,7 +121,26 @@ export const communityService = {
 					online,
 					limit,
 					offset,
+					includePhone,
 				),
+			),
+		);
+	},
+
+	/** Marca o customer como visto agora (presença online). */
+	async heartbeat(customerId: string) {
+		return withCapture(() =>
+			profileRepository.upsertByCustomerId(customerId, {
+				lastSeenAt: new Date().toISOString(),
+			}),
+		);
+	},
+
+	/** Totais p/ visão admin: membros cadastrados + online agora. */
+	async presenceSummary() {
+		return withCapture(() =>
+			cache.cacheAside('community:presence-summary', PRESENCE_TTL, () =>
+				communityRepository.presenceCounts(),
 			),
 		);
 	},

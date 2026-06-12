@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { isStaffRole } from '../lib/external-auth.js';
 import { uploadCommunityFile } from '../lib/storage.js';
 import { communityService } from '../services/community.js';
 import {
@@ -306,6 +307,8 @@ export const getMembersController = async (
 	reply: FastifyReply,
 ) => {
 	const { search, category, featured, online, limit, offset } = request.query;
+	// Telefone (PII) só para staff/admin — técnicos atendem membros pelo WhatsApp.
+	const includePhone = isStaffRole(request.currentRole);
 	const { data: members, error } = await communityService.listMembers(
 		search,
 		category,
@@ -313,12 +316,42 @@ export const getMembersController = async (
 		online === 'true',
 		limit ? Number(limit) : undefined,
 		offset ? Number(offset) : undefined,
+		includePhone,
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
 	return reply.send(members);
+};
+
+export const presenceHeartbeatController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id ?? request.currentUser?.id;
+	if (!customerId) return reply.status(401).send({ message: 'Unauthorized' });
+	const { error } = await communityService.heartbeat(customerId);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.status(204).send();
+};
+
+export const getPresenceSummaryController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	if (!isStaffRole(request.currentRole)) {
+		return reply.status(403).send({ message: 'Forbidden' });
+	}
+	const { data, error } = await communityService.presenceSummary();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
 };
 
 export const getProjectsController = async (

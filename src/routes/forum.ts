@@ -111,6 +111,7 @@ export async function forumRoute(server: FastifyInstance) {
 					limit: z.string().optional(),
 					categoryId: z.string().optional(),
 					search: z.string().optional(),
+					sort: z.enum(['recent', 'top', 'unanswered']).optional(),
 				}),
 				response: { 200: forumPostsResponseSchema, 500: ErrorSchema },
 				tags: ['Forum'],
