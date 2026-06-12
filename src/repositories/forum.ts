@@ -117,7 +117,7 @@ class ForumRepository {
 		}));
 	}
 
-	async createCategory(data: CreateForumCategory) {
+	async createCategory(data: CreateForumCategory & { color: string }) {
 		const { data: cat, error } = await supabase
 			.from('forum_categories')
 			.insert({ id: crypto.randomUUID(), name: data.name, color: data.color })
@@ -126,6 +126,17 @@ class ForumRepository {
 
 		if (error) throw new Error(error.message);
 		return { ...(cat as CategoryRow), postsCount: 0 };
+	}
+
+	/** Busca categoria por nome exato (case-insensitive) — dedupe na criação. */
+	async findCategoryByName(name: string) {
+		const { data, error } = await supabase
+			.from('forum_categories')
+			.select('*')
+			.ilike('name', name)
+			.maybeSingle();
+		if (error) throw new Error(error.message);
+		return data ? { ...(data as CategoryRow), postsCount: 0 } : null;
 	}
 
 	async updateCategory(id: string, data: UpdateForumCategory) {
