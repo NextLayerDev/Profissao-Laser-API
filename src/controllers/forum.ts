@@ -1,10 +1,15 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { isStaffRole } from '../lib/external-auth.js';
+import {
+	colorForThemeName,
+	suggestForumTheme,
+} from '../lib/forum-theme-suggest.js';
 import { forumRepository } from '../repositories/forum.js';
 import {
 	createForumCategorySchema,
 	createForumPostSchema,
 	createForumReplySchema,
+	suggestForumCategorySchema,
 	updateForumCategorySchema,
 	updateForumPostSchema,
 	updateForumReplySchema,
@@ -66,15 +71,52 @@ export const listForumCategoriesController = async (
 	}
 };
 
+// Alunos também podem criar temas (pedido do cliente): dedupe por nome
+// case-insensitive evita lixo, e a cor é sorteada quando não enviada.
 export const createForumCategoryController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
-	if (!(await requireAdmin(request, reply))) return;
 	try {
 		const data = createForumCategorySchema.parse(request.body);
-		const category = await forumRepository.createCategory(data);
+		const existing = await forumRepository.findCategoryByName(data.name.trim());
+		if (existing) return reply.status(201).send(existing);
+
+		const category = await forumRepository.createCategory({
+			name: data.name.trim(),
+			color: data.color ?? colorForThemeName(data.name.trim()),
+		});
 		return reply.status(201).send(category);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
+/** Tema inteligente: IA (com fallback heurístico) escolhe ou cria o tema. */
+export const suggestForumCategoryController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	try {
+		const { title, content } = suggestForumCategorySchema.parse(request.body);
+		const categories = await forumRepository.listCategories();
+		const suggestion = await suggestForumTheme(title, content, categories);
+
+		if (suggestion.existingId) {
+			const category = categories.find((c) => c.id === suggestion.existingId);
+			if (category) return reply.send({ category, isNew: false });
+		}
+
+		const newName = (suggestion.newName ?? 'Dúvidas Gerais').trim();
+		const existing = await forumRepository.findCategoryByName(newName);
+		if (existing) return reply.send({ category: existing, isNew: false });
+
+		const created = await forumRepository.createCategory({
+			name: newName,
+			color: colorForThemeName(newName),
+		});
+		return reply.send({ category: created, isNew: true });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(400).send({ message });
@@ -121,12 +163,19 @@ export const listForumPostsController = async (
 			limit?: string;
 			categoryId?: string;
 			search?: string;
+			sort?: 'recent' | 'top' | 'unanswered';
 		};
 	}>,
 	reply: FastifyReply,
 ) => {
 	try {
-		const { page = '1', limit = '20', categoryId, search } = request.query;
+		const {
+			page = '1',
+			limit = '20',
+			categoryId,
+			search,
+			sort,
+		} = request.query;
 		const currentUserId = request.currentUser?.id ?? '';
 		const result = await forumRepository.listPosts({
 			page: Math.max(1, Number(page)),
@@ -134,6 +183,7 @@ export const listForumPostsController = async (
 			categoryId,
 			search,
 			currentUserId,
+			sort,
 		});
 		return reply.send(result);
 	} catch (err) {

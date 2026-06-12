@@ -288,6 +288,7 @@ class CommunityRepository {
 		online?: boolean,
 		limit = 200,
 		offset = 0,
+		includePhone = false,
 	) {
 		const onlineThreshold = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 		// Filtros (online/featured/category) sao do perfil -> inner join + SQL +
@@ -300,6 +301,7 @@ class CommunityRepository {
 		let query = supabase.from('Customers').select(`
 				id,
 				name,
+				${includePhone ? 'phone,' : ''}
 				${join} (
 					specialty,
 					nickname,
@@ -345,8 +347,29 @@ class CommunityRepository {
 				image: (profile?.image ?? null) as string | null,
 				isOnline,
 				lastSeenAt,
+				...(includePhone
+					? { phone: (member.phone ?? null) as string | null }
+					: {}),
 			};
 		});
+	}
+
+	/** Totais para a visão admin: membros cadastrados e online agora (<5min). */
+	async presenceCounts() {
+		const onlineThreshold = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+		const [membersRes, onlineRes] = await Promise.all([
+			supabase.from('Customers').select('id', { count: 'exact', head: true }),
+			supabase
+				.from('pl_community_profile')
+				.select('customerId', { count: 'exact', head: true })
+				.gte('lastSeenAt', onlineThreshold),
+		]);
+		if (membersRes.error) throw new Error(membersRes.error.message);
+		if (onlineRes.error) throw new Error(onlineRes.error.message);
+		return {
+			totalMembers: membersRes.count ?? 0,
+			onlineNow: onlineRes.count ?? 0,
+		};
 	}
 
 	async listProjects(

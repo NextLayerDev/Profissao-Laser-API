@@ -70,6 +70,8 @@ export const communityMemberSchema = z.object({
 	image: z.string().nullable(),
 	isOnline: z.boolean(),
 	lastSeenAt: z.string().nullable(),
+	/** Só presente quando o requester é staff/admin (técnicos). */
+	phone: z.string().nullable().optional(),
 });
 
 export const communityProjectSchema = z.object({

@@ -77,6 +77,8 @@ export function generatePrompt(
 		inferior:
 			'LOWER THIRD (bottom 33%) of product - horizontally centered, vertically in bottom area',
 		lateral: 'LEFT OR RIGHT side of product - offset from center towards edge',
+		'envolvente-360':
+			'WRAP-AROUND 360° — the artwork flows CONTINUOUSLY around the full circumference of the cylindrical product (tumbler/cup/bottle). The design visibly curves and wraps following the cylinder, disappearing around the left and right edges with NO seams and consistent scale',
 	};
 
 	// Descrições visuais detalhadas para posicionamento
@@ -132,6 +134,10 @@ export function generatePrompt(
 	const materialMap: Record<string, string> = {
 		'aco-inox':
 			'Stainless steel (inox) - metallic silver surface, smooth and reflective, industrial quality',
+		'inox-pintado':
+			'Powder-coated stainless steel (insulated tumbler/copo térmico) - solid colored painted exterior over stainless steel; laser engraving REMOVES the paint layer and reveals bright silver stainless steel beneath; crisp high-contrast silver marks on the colored body',
+		'aluminio-anodizado':
+			'Anodized aluminum - dyed anodic colored surface; laser engraving removes the dye layer revealing light silver/white natural aluminum beneath; sharp bright marks contrasting with the colored body',
 		madeira:
 			'Natural wood - warm brown tones, visible wood grain texture, organic appearance',
 		couro:
@@ -241,6 +247,8 @@ export function generatePrompt(
 			'OVERHEAD / BIRDS-EYE — Camera positioned directly above product at 90°, pointing straight down. Product perfectly centered. Clean background visible around product. Even, diffused lighting from above with minimal shadows.',
 		'multi-angulo':
 			'MULTI-ANGLE COMPOSITE GRID — Single image containing a 2×2 grid of 4 distinct product angles (front, 45° left, 45° right, overhead). Same product and engraving in all 4 cells. Equal cell sizes, subtle dividers. Each cell labeled with the angle name.',
+		'turntable-4':
+			'TURNTABLE SHEET 2×2 — Single image divided into 4 EXACTLY EQUAL quadrants showing the SAME product rotated around its vertical axis: TOP-LEFT = 0° (front), TOP-RIGHT = 90° (right side), BOTTOM-LEFT = 180° (back), BOTTOM-RIGHT = 270° (left side). IDENTICAL camera distance, camera height, lighting and plain background in ALL 4 quadrants. Product centered identically in each quadrant, same scale. NO labels, NO dividers, NO text, NO borders between quadrants — the 4 frames will be cropped and played back as a rotation animation.',
 		'render-3d':
 			'PHOTOREALISTIC 3D RENDER STYLE — CGI rendering aesthetic with studio HDRI lighting, perfect reflections on metal surfaces, ray-traced shadows, sub-surface scattering on appropriate materials. Hyperrealistic quality exceeding real photography. Dramatic specular highlights on engraved surface.',
 		fotogravacao:
@@ -695,6 +703,7 @@ export function generatePrompt(
 	const is360 = laserSettings.tipoVisualizacao === '360';
 	const isMultiAngulo = laserSettings.tipoVisualizacao === 'multi-angulo';
 	const isComposite = is360 || isMultiAngulo;
+	const isTurntable = laserSettings.tipoVisualizacao === 'turntable-4';
 
 	lines.push('📐 ENGRAVING SPECIFICATIONS:');
 	lines.push('┌─────────────────────────────────────────────────────────┐');
@@ -784,6 +793,15 @@ export function generatePrompt(
 	} else if (materialType === 'plastico') {
 		lines.push('│ → Plastic: clean precise etched/marked surface          │');
 		lines.push('│ → Subtle contrast mark, smooth modern appearance        │');
+	} else if (
+		materialType === 'inox-pintado' ||
+		materialType === 'aluminio-anodizado'
+	) {
+		lines.push('│ → Coated metal (painted tumbler/anodized): engraving    │');
+		lines.push('│   REMOVES the colored coating, revealing bright SILVER  │');
+		lines.push('│   bare metal beneath — crisp high-contrast marks        │');
+		lines.push('│ → NEVER dark/burned marks — always shiny silver reveal  │');
+		lines.push('│ → Keep the product body color INTACT outside the marks  │');
 	} else {
 		lines.push('│ → Metal engraving: metallic silver/gray/black tones     │');
 		lines.push('│ → Stainless steel (inox) reflective appearance          │');
@@ -1002,6 +1020,8 @@ export function generatePrompt(
 		lines.push('│   🎯 SELECTED: INFERIOR - Logo in BOTTOM area          │');
 	} else if (laserSettings.posicao === 'lateral') {
 		lines.push('│   🎯 SELECTED: LATERAL - Logo offset to SIDE           │');
+	} else if (laserSettings.posicao === 'envolvente-360') {
+		lines.push('│   🎯 SELECTED: WRAP-AROUND 360° - art circles product  │');
 	}
 	lines.push('└─────────────────────────────────────────────────────────┘');
 	lines.push('');
@@ -1094,6 +1114,45 @@ export function generatePrompt(
 			lines.push('│ • Small white label below each panel                    │');
 			lines.push('│ • Output is ONE single image — square (1:1) aspect ratio│');
 		}
+		lines.push('└─────────────────────────────────────────────────────────┘');
+		lines.push('');
+	}
+
+	if (isTurntable) {
+		// Diferente do composite: SEM labels e SEM divisores — os 4 quadrantes
+		// são recortados pelo front e tocados como animação de giro.
+		lines.push('🔄 TURNTABLE SHEET — CRITICAL LAYOUT REQUIREMENTS:');
+		lines.push('┌─────────────────────────────────────────────────────────┐');
+		lines.push('│ CREATE ONE SQUARE IMAGE divided into 4 EQUAL quadrants: │');
+		lines.push('│   TOP-LEFT     = product at 0°   (front view)           │');
+		lines.push('│   TOP-RIGHT    = product at 90°  (right side)           │');
+		lines.push('│   BOTTOM-LEFT  = product at 180° (back view)            │');
+		lines.push('│   BOTTOM-RIGHT = product at 270° (left side)            │');
+		lines.push('│                                                         │');
+		lines.push('│ • SAME product, SAME engraving, rotated on vertical axis│');
+		lines.push('│ • IDENTICAL camera distance/height in ALL 4 quadrants   │');
+		lines.push('│ • IDENTICAL plain background and lighting in all 4      │');
+		lines.push('│ • Product centered at the SAME spot in each quadrant    │');
+		lines.push('│ • Product at the SAME scale in each quadrant            │');
+		lines.push('│ • ABSOLUTELY NO labels, NO text, NO dividers, NO borders│');
+		lines.push('│   — the quadrants will be cropped and animated as a     │');
+		lines.push('│   spinning turntable                                    │');
+		lines.push('│ • Output: ONE single square (1:1) image                 │');
+		lines.push('└─────────────────────────────────────────────────────────┘');
+		lines.push('');
+	}
+
+	if (laserSettings.posicao === 'envolvente-360') {
+		lines.push('🌀 WRAP-AROUND 360° ENGRAVING REQUIREMENTS:');
+		lines.push('┌─────────────────────────────────────────────────────────┐');
+		lines.push('│ • Artwork wraps CONTINUOUSLY around the cylindrical     │');
+		lines.push('│   product (tumbler/cup/bottle) — full circumference     │');
+		lines.push('│ • Design visibly CURVES following the cylinder surface  │');
+		lines.push('│ • Art disappears around the LEFT and RIGHT edges of the │');
+		lines.push('│   visible face — implying it continues behind           │');
+		lines.push('│ • NO visible seams, consistent scale all the way around │');
+		lines.push('│ • Perspective distortion of the art must match the      │');
+		lines.push('│   cylinder curvature (compressed near the edges)        │');
 		lines.push('└─────────────────────────────────────────────────────────┘');
 		lines.push('');
 	}
@@ -1359,9 +1418,11 @@ export function generatePrompt(
 		? 'COMPOSITE 2×3 grid image showing 6 views (front, back, left, right, top, 45°) of the laser-engraved product.'
 		: isMultiAngulo
 			? 'COMPOSITE 2×2 grid image showing 4 angles of the laser-engraved product.'
-			: laserSettings.tipoVisualizacao === 'closeup-gravacao'
-				? 'Extreme macro close-up of the laser engraving area showing microscopic texture detail.'
-				: 'Professional photorealistic preview showing laser-engraved logo on product with authentic engraving appearance.';
+			: isTurntable
+				? 'TURNTABLE SHEET: one square image with 4 equal unlabeled quadrants showing the SAME laser-engraved product rotated at 0°/90°/180°/270° — no dividers, no text (frames will be animated).'
+				: laserSettings.tipoVisualizacao === 'closeup-gravacao'
+					? 'Extreme macro close-up of the laser engraving area showing microscopic texture detail.'
+					: 'Professional photorealistic preview showing laser-engraved logo on product with authentic engraving appearance.';
 	lines.push(outputDesc);
 	lines.push(
 		`Photography style: ${laserSettings.tipoVisualizacao ?? 'frontal-padrao'} | Lighting: ${laserSettings.iluminacao ?? 'studio-softbox'} | Background: ${laserSettings.fundoCena ?? 'cinza-gradiente'}`,
