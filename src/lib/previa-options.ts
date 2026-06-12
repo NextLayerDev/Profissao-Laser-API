@@ -35,6 +35,7 @@ export const LASER_OPTIONS = {
 		{ value: 'superior', label: 'Superior' },
 		{ value: 'inferior', label: 'Inferior' },
 		{ value: 'lateral', label: 'Lateral' },
+		{ value: 'envolvente-360', label: 'Envolvente (360°)' },
 	],
 	intensidade: [
 		{ value: 'baixa', label: 'Baixa (25%)' },
@@ -54,7 +55,9 @@ export const LASER_OPTIONS = {
 	],
 	material: [
 		{ value: 'aco-inox', label: 'Aco Inox' },
+		{ value: 'inox-pintado', label: 'Inox Pintado (copo térmico)' },
 		{ value: 'aluminio', label: 'Aluminio' },
+		{ value: 'aluminio-anodizado', label: 'Alumínio Anodizado' },
 		{ value: 'madeira', label: 'Madeira' },
 		{ value: 'mdf', label: 'MDF' },
 		{ value: 'bambu', label: 'Bambu' },
@@ -114,6 +117,7 @@ export const LASER_OPTIONS = {
 		{ value: 'em-uso', label: 'Em Uso / Mão' },
 		{ value: 'overhead', label: 'Vista Superior' },
 		{ value: 'multi-angulo', label: 'Multi-ângulo' },
+		{ value: 'turntable-4', label: 'Giro 360° (4 ângulos)' },
 		{ value: 'render-3d', label: 'Render 3D' },
 		{ value: 'fotogravacao', label: 'Fotogravação' },
 	],
