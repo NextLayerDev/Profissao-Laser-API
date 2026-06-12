@@ -1,6 +1,87 @@
 import { supabase } from '../lib/supabase.js';
+import type { AdminDoubt, AdminDoubtsStatus } from '../types/doubt.js';
 
 class DoubtRepository {
+	/**
+	 * Visão agregada para o admin: todas as dúvidas de todas as aulas em uma
+	 * única consulta (cap 1000, mais recentes primeiro — suficiente para a
+	 * escala atual; mesmo trade-off do sort do fórum). Filtro/paginação em JS
+	 * porque "respondida" deriva da contagem de replies embutida.
+	 */
+	async listAllAdmin(params: {
+		status: AdminDoubtsStatus;
+		page: number;
+		limit: number;
+	}): Promise<{
+		doubts: AdminDoubt[];
+		total: number;
+		unansweredCount: number;
+	}> {
+		const { data, error } = await supabase
+			.from('pl_lesson_doubt')
+			.select(
+				'id, lesson_id, customer_id, content, created_at, pl_lesson_doubt_reply (created_at)',
+			)
+			.order('created_at', { ascending: false })
+			.limit(1000);
+
+		if (error) throw new Error(error.message);
+
+		const mapped = (data ?? []).map((row) => {
+			const replies = (row.pl_lesson_doubt_reply ?? []) as {
+				created_at: string;
+			}[];
+			const lastReplyAt = replies.reduce<string | null>(
+				(max, r) => (!max || r.created_at > max ? r.created_at : max),
+				null,
+			);
+			return {
+				id: row.id as string,
+				lessonId: row.lesson_id as string,
+				customerId: (row.customer_id as string | null) ?? null,
+				content: row.content as string,
+				createdAt: row.created_at as string,
+				repliesCount: replies.length,
+				lastReplyAt,
+				answered: replies.length > 0,
+			};
+		});
+
+		const unansweredCount = mapped.filter((d) => !d.answered).length;
+		const filtered =
+			params.status === 'all'
+				? mapped
+				: mapped.filter((d) => d.answered === (params.status === 'answered'));
+		const total = filtered.length;
+		const start = (params.page - 1) * params.limit;
+		const pageRows = filtered.slice(start, start + params.limit);
+
+		// Nome do aluno só para a página devolvida.
+		const customerIds = [
+			...new Set(pageRows.map((d) => d.customerId).filter(Boolean)),
+		] as string[];
+		const customerMap: Record<string, string> = {};
+		if (customerIds.length > 0) {
+			const { data: customers } = await supabase
+				.from('Customers')
+				.select('id, name')
+				.in('id', customerIds);
+			for (const c of customers ?? []) {
+				customerMap[c.id] = c.name;
+			}
+		}
+
+		return {
+			doubts: pageRows.map((d) => ({
+				...d,
+				authorName:
+					(d.customerId ? customerMap[d.customerId] : undefined) ?? 'Aluno',
+			})),
+			total,
+			unansweredCount,
+		};
+	}
+
 	async listByLesson(lessonId: string) {
 		const { data, error } = await supabase
 			.from('pl_lesson_doubt')
