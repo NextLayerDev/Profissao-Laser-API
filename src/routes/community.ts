@@ -19,6 +19,7 @@ import {
 	getMessagesController,
 	getPostCommentsController,
 	getPostsController,
+	getPresenceSummaryController,
 	getProjectCommentsController,
 	getProjectController,
 	getProjectsController,
@@ -27,6 +28,7 @@ import {
 	getWaitingRoomController,
 	joinWaitingRoomController,
 	leaveWaitingRoomController,
+	presenceHeartbeatController,
 	sendMessageController,
 	togglePostLikeController,
 	toggleProjectLikeController,
@@ -287,6 +289,47 @@ export async function communityRoute(server: FastifyInstance) {
 			},
 		},
 		deleteMessageController,
+	);
+
+	server.post(
+		'/community/presence/heartbeat',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Marks the current customer as seen now (online presence). Called periodically by the app while open.',
+				response: {
+					204: z.null(),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		presenceHeartbeatController,
+	);
+
+	server.get(
+		'/community/presence/summary',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Member totals for the admin view: registered members and online now (staff/admin only).',
+				response: {
+					200: z.object({
+						totalMembers: z.number(),
+						onlineNow: z.number(),
+					}),
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Community'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getPresenceSummaryController,
 	);
 
 	server.get(

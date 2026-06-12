@@ -26,7 +26,7 @@ class ProfileRepository {
 	/** Upsert por customerId (sem depender de unique constraint): select → update | insert. */
 	async upsertByCustomerId(
 		customerId: string,
-		fields: Partial<CommunityProfileRow>,
+		fields: Partial<CommunityProfileRow> & { lastSeenAt?: string },
 	): Promise<void> {
 		const { data: existing, error: selError } = await supabase
 			.from('pl_community_profile')

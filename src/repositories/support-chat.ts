@@ -19,7 +19,7 @@ interface UpdateStatusExtra {
 }
 
 const CHAT_COLS =
-	'id, customerId, customerName, attendantId, status, subject, handoffReason, createdAt, updatedAt, closedAt';
+	'id, customerId, customerName, attendantId, status, subject, handoffReason, createdAt, updatedAt, closedAt, lastMessageAt, lastMessageRole, lastMessagePreview';
 const MSG_COLS =
 	'id, chatId, role, authorId, authorName, content, fileUrl, createdAt';
 
@@ -69,7 +69,12 @@ class SupportChatRepository {
 
 		await supabase
 			.from('pl_support_chat')
-			.update({ updatedAt: now })
+			.update({
+				updatedAt: now,
+				lastMessageAt: now,
+				lastMessageRole: input.role,
+				lastMessagePreview: input.content.slice(0, 120),
+			})
 			.eq('id', chatId);
 
 		return data;

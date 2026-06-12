@@ -5,6 +5,14 @@ vi.mock('@/lib/sentry.js', () => ({
 	withCapture: (fn: () => unknown) => fn(),
 }));
 
+// Perfil mockado: o service importa profileRepository (heartbeat/presença).
+vi.mock('@/repositories/profile.js', () => ({
+	profileRepository: {
+		upsertByCustomerId: vi.fn(),
+		getByCustomerId: vi.fn(),
+	},
+}));
+
 // Repository mockado (mesmo módulo que o service importa).
 vi.mock('@/repositories/community.js', () => ({
 	communityRepository: {
