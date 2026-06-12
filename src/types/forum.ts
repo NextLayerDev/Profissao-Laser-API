@@ -11,7 +11,21 @@ export const forumCategorySchema = z.object({
 
 export const createForumCategorySchema = z.object({
 	name: z.string().min(1).max(60),
-	color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Invalid hex color'),
+	/** Opcional: sem cor, o backend sorteia uma da paleta (determinística). */
+	color: z
+		.string()
+		.regex(/^#[0-9a-fA-F]{6}$/, 'Invalid hex color')
+		.optional(),
+});
+
+export const suggestForumCategorySchema = z.object({
+	title: z.string().max(200).optional().default(''),
+	content: z.string().min(10).max(5000),
+});
+
+export const suggestForumCategoryResponseSchema = z.object({
+	category: forumCategorySchema,
+	isNew: z.boolean(),
 });
 
 export const updateForumCategorySchema = z.object({
