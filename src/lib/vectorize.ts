@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import type { VectorizeParams } from '../types/vector.js';
 import { applyDithering } from './dithering.js';
 import { applyLinePattern } from './line-patterns.js';
+import { vectorizeColorImage } from './vectorize-color.js';
 
 // ─── Tipos internos (Potrace usa `turnPolicy`; @types/potrace expõe nome
 //     diferente, então mantemos uma interface própria e fazemos cast) ──
@@ -90,7 +91,12 @@ export function parseVectorizeParams(
 	] as const);
 	const blackOnWhite = fields.blackOnWhite !== 'false';
 
-	const mode = fields.mode === 'posterize' ? 'posterize' : 'trace';
+	const mode = pick(
+		fields.mode,
+		['trace', 'posterize', 'color'] as const,
+		'trace',
+	);
+	const maxColors = clamp(parseInt(fields.maxColors || '8', 10), 2, 16);
 	const posterizeLevels = clamp(
 		parseInt(fields.posterizeLevels || '4', 10),
 		2,
@@ -173,6 +179,7 @@ export function parseVectorizeParams(
 		turnPolicy,
 		blackOnWhite,
 		mode,
+		maxColors,
 		posterizeLevels,
 		posterizeFillStrategy,
 		posterizeRangeDistribution,
@@ -481,6 +488,15 @@ export async function vectorizeImage(
 	params: VectorizeParams,
 	opts: VectorizeOptions = {},
 ): Promise<string> {
+	// Cores: pipeline próprio (quantização + máscara por cor + trace em camadas).
+	// Preview (supersample=false) usa resolução menor p/ rapidez.
+	if (params.mode === 'color') {
+		const svg = await vectorizeColorImage(buffer, params, {
+			maxDim: opts.supersample === false ? 500 : 900,
+		});
+		return postProcessSvg(svg, params);
+	}
+
 	// Só faz upscale no modo trace e quando o usuário NÃO pediu dimensão de saída
 	// (dpi/mm) — assim não interfere no dimensionamento do SVG.
 	const canUpscale =

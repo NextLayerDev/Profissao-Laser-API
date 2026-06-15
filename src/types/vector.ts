@@ -57,8 +57,10 @@ export const vectorizeParamsSchema = z.object({
 		.nullable()
 		.default(null),
 	blackOnWhite: z.boolean().default(true),
-	// Posterize
-	mode: z.enum(['trace', 'posterize']).default('trace'),
+	// Algoritmo: trace (P&B) / posterize (níveis) / color (camadas por cor)
+	mode: z.enum(['trace', 'posterize', 'color']).default('trace'),
+	// Vetorização em cores: nº de cores da paleta (k-means)
+	maxColors: z.number().int().min(2).max(16).default(8),
 	posterizeLevels: z.number().int().min(2).max(10).default(4),
 	posterizeFillStrategy: z
 		.enum(['dominant', 'mean', 'median', 'spread'])
@@ -137,6 +139,7 @@ export const imageProfileSchema = z.object({
 		height: z.number(),
 		hasAlpha: z.boolean(),
 		colorCount: z.number(),
+		saturation: z.number(),
 		grayEntropy: z.number(),
 		otsuThreshold: z.number(),
 		bimodality: z.number(),
