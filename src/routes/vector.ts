@@ -10,6 +10,7 @@ import {
 } from '../controllers/vector.js';
 import {
 	exportVectorController,
+	vectorizeAnalyzeController,
 	vectorizeBatchController,
 	vectorizeController,
 	vectorizePreviewController,
@@ -20,6 +21,7 @@ import { laserPrepResultSchema } from '../types/laser-prep.js';
 import {
 	batchVectorizeResultSchema,
 	createVectorSchema,
+	imageProfileSchema,
 	listVectorsQuery,
 	updateVectorSchema,
 	vectorizeResultSchema,
@@ -187,6 +189,30 @@ export async function vectorRoute(server: FastifyInstance) {
 			},
 		},
 		vectorizeController,
+	);
+
+	server.post(
+		'/api/vectorize/analyze',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Análise automática (router + image analytics) — **NÃO cobrada**, sem',
+					'storage. Recebe a imagem (multipart, campo `file`) e devolve o tipo',
+					'detectado + `recommendedParams` que o modo Automático do front aplica.',
+				].join('\n'),
+				consumes: ['multipart/form-data'],
+				response: {
+					200: imageProfileSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		vectorizeAnalyzeController,
 	);
 
 	server.post(
