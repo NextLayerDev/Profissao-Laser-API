@@ -64,6 +64,29 @@ export const vectorizeService = {
 		});
 	},
 
+	/**
+	 * Preview rápido e NÃO cobrado: reduz o input (~600px) p/ baratear a CPU,
+	 * roda o motor sem supersampling e devolve só o SVG inline — sem upload e sem
+	 * gravar no banco. Serve o feedback ao vivo dos sliders na vetorização.
+	 */
+	async preview(input: { buffer: Buffer; params: VectorizeParams }) {
+		return withCapture(async () => {
+			const downscaled = await sharp(input.buffer)
+				.resize({
+					width: 600,
+					height: 600,
+					fit: 'inside',
+					withoutEnlargement: true,
+				})
+				.png()
+				.toBuffer();
+			const svgContent = await vectorizeImage(downscaled, input.params, {
+				supersample: false,
+			});
+			return { svgContent };
+		});
+	},
+
 	async vectorizeBatch(customerId: string, inputs: VectorizeInput[]) {
 		return withCapture(async () => {
 			const settled = await Promise.allSettled(
