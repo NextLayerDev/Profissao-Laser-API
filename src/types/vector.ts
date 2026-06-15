@@ -119,6 +119,37 @@ export const batchVectorizeResultSchema = z.object({
 
 export const exportFormatSchema = z.enum(['dxf', 'png']);
 
+// ─── Análise automática (router + image analytics) ───────────────────
+export const imageProfileSchema = z.object({
+	class: z.enum([
+		'text',
+		'line_art',
+		'logo',
+		'color_flat',
+		'grayscale_tonal',
+		'photo',
+	]),
+	label: z.string(),
+	reason: z.string(),
+	confidence: z.number(),
+	metrics: z.object({
+		width: z.number(),
+		height: z.number(),
+		hasAlpha: z.boolean(),
+		colorCount: z.number(),
+		grayEntropy: z.number(),
+		otsuThreshold: z.number(),
+		bimodality: z.number(),
+		foregroundRatio: z.number(),
+		darkBackground: z.boolean(),
+		edgeDensity: z.number(),
+		noise: z.number(),
+	}),
+	// Parâmetros recomendados — subconjunto de vectorizeParamsSchema.
+	recommendedParams: vectorizeParamsSchema.partial(),
+	recommendTool: z.literal('engraving').optional(),
+});
+
 export type VectorCreate = z.infer<typeof createVectorSchema>;
 export type VectorUpdate = z.infer<typeof updateVectorSchema>;
 export type ListVectorsQuery = z.infer<typeof listVectorsQuery>;

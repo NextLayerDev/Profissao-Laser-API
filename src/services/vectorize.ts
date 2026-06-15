@@ -7,6 +7,7 @@ import {
 	uploadVectorPng,
 } from '../lib/storage.js';
 import { svgToDxf, vectorizeImage } from '../lib/vectorize.js';
+import { analyzeImage } from '../lib/vectorize-analyze.js';
 import { vectorRepository } from '../repositories/vector.js';
 import type { VectorizeParams } from '../types/vector.js';
 
@@ -85,6 +86,14 @@ export const vectorizeService = {
 			});
 			return { svgContent };
 		});
+	},
+
+	/**
+	 * Análise automática (router + image analytics): devolve o tipo detectado
+	 * e os parâmetros recomendados. Não grava nada e não cobra.
+	 */
+	async analyze(buffer: Buffer) {
+		return withCapture(async () => analyzeImage(buffer));
 	},
 
 	async vectorizeBatch(customerId: string, inputs: VectorizeInput[]) {
