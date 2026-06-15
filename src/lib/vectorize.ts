@@ -201,9 +201,14 @@ async function preprocessImage(
 	buffer: Buffer,
 	params: VectorizeParams,
 ): Promise<Buffer> {
+	// Fundo transparente → BRANCO (não grava). Sem isso, arte preta sobre
+	// transparente era lida como tudo-preto e o resultado saía vazio/errado.
+	// `flatten` é no-op em imagens sem alpha.
+	const FLAT_BG = { background: '#ffffff' as const };
+
 	// Posterize: preserva cores para o Potrace.posterize()
 	if (params.mode === 'posterize') {
-		let pipeline = sharp(buffer);
+		let pipeline = sharp(buffer).flatten(FLAT_BG);
 		if (params.blur !== null) pipeline = pipeline.blur(params.blur);
 		if (params.sharpen) pipeline = pipeline.sharpen();
 		if (params.invert) pipeline = pipeline.negate();
@@ -222,10 +227,10 @@ async function preprocessImage(
 
 	// Caminho rápido: sem novos parâmetros → comportamento original
 	if (!hasDithering && !hasPreprocessing && params.threshold === 128) {
-		return sharp(buffer).threshold(128).png().toBuffer();
+		return sharp(buffer).flatten(FLAT_BG).threshold(128).png().toBuffer();
 	}
 
-	let pipeline = sharp(buffer).grayscale();
+	let pipeline = sharp(buffer).flatten(FLAT_BG).grayscale();
 
 	if (params.brightness !== null) {
 		pipeline = pipeline.modulate({ brightness: params.brightness });

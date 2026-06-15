@@ -65,14 +65,21 @@ function histogram(gray: Buffer | Uint8Array): Uint32Array {
 	return h;
 }
 
-/** Limiar de Otsu: maximiza a variância entre as duas classes. */
+/**
+ * Limiar de Otsu: maximiza a variância entre as duas classes. Para bimodais
+ * "limpos" (logo: preto+branco, sem meio-tom) a variância forma um PLATÔ entre
+ * os dois modos — devolvemos o MEIO do platô. Pegar a borda (o 1º máximo) cairia
+ * exatamente no valor da tinta e, como o threshold do sharp é `>=`, a tinta
+ * viraria branca → resultado vazio (bug reportado).
+ */
 function otsu(hist: Uint32Array, total: number): number {
 	let sum = 0;
 	for (let t = 0; t < 256; t++) sum += t * hist[t];
 	let sumB = 0;
 	let wB = 0;
 	let maxVar = -1;
-	let threshold = 128;
+	let tFirst = 128;
+	let tLast = 128;
 	for (let t = 0; t < 256; t++) {
 		wB += hist[t];
 		if (wB === 0) continue;
@@ -84,10 +91,13 @@ function otsu(hist: Uint32Array, total: number): number {
 		const between = wB * wF * (mB - mF) * (mB - mF);
 		if (between > maxVar) {
 			maxVar = between;
-			threshold = t;
+			tFirst = t;
+			tLast = t;
+		} else if (between === maxVar) {
+			tLast = t;
 		}
 	}
-	return threshold;
+	return Math.round((tFirst + tLast) / 2);
 }
 
 function entropyOf(hist: Uint32Array, total: number): number {
@@ -98,29 +108,6 @@ function entropyOf(hist: Uint32Array, total: number): number {
 		e -= p * Math.log2(p);
 	}
 	return e;
-}
-
-/** Cores distintas (4 bits/canal, máx 4096) + saturação média (0–1). */
-function colorStats(
-	rgb: Buffer | Uint8Array,
-	channels: number,
-): { colorCount: number; saturation: number } {
-	const seen = new Set<number>();
-	let satSum = 0;
-	let n = 0;
-	for (let i = 0; i + channels - 1 < rgb.length; i += channels) {
-		const r = rgb[i];
-		const g = rgb[i + 1];
-		const b = rgb[i + 2];
-		if (seen.size < 4096) {
-			seen.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
-		}
-		const max = Math.max(r, g, b);
-		const min = Math.min(r, g, b);
-		satSum += max > 0 ? (max - min) / max : 0;
-		n++;
-	}
-	return { colorCount: seen.size, saturation: n ? satSum / n : 0 };
 }
 
 /** Laplaciano: densidade de bordas + estimativa de ruído. */
@@ -296,28 +283,48 @@ export async function analyzeImage(buffer: Buffer): Promise<ImageProfile> {
 	const height = meta.height ?? 0;
 	const hasAlpha = meta.hasAlpha ?? false;
 
-	const work = sharp(buffer).resize({
-		width: ANALYZE_DIM,
-		height: ANALYZE_DIM,
-		fit: 'inside',
-		withoutEnlargement: true,
-	});
-
-	// RGB (sem alpha) p/ contagem de cores.
-	const { data: rgb, info: rgbInfo } = await work
-		.clone()
-		.removeAlpha()
+	// RGBA cru (com alpha) — fundo transparente vira BRANCO no cinza (convenção
+	// de gravação: branco = não grava). Sem isso, preto-sobre-transparente era
+	// lido como "fundo escuro" → invertia → resultado vazio.
+	const { data, info } = await sharp(buffer)
+		.resize({
+			width: ANALYZE_DIM,
+			height: ANALYZE_DIM,
+			fit: 'inside',
+			withoutEnlargement: true,
+		})
+		.ensureAlpha()
 		.raw()
 		.toBuffer({ resolveWithObject: true });
-	const { colorCount, saturation } = colorStats(rgb, rgbInfo.channels);
+	const gw = info.width;
+	const gh = info.height;
+	const total = gw * gh;
 
-	// Cinza p/ histograma / Otsu / bordas.
-	const { data: gray, info: gInfo } = await work
-		.clone()
-		.grayscale()
-		.raw()
-		.toBuffer({ resolveWithObject: true });
-	const total = gray.length;
+	const gray = new Uint8Array(total);
+	const seenColors = new Set<number>();
+	let satSum = 0;
+	let satN = 0;
+	for (let i = 0; i < total; i++) {
+		const a = data[i * 4 + 3];
+		if (a < 128) {
+			gray[i] = 255; // transparente → branco
+			continue;
+		}
+		const r = data[i * 4];
+		const g = data[i * 4 + 1];
+		const b = data[i * 4 + 2];
+		gray[i] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+		if (seenColors.size < 4096) {
+			seenColors.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+		}
+		const mx = Math.max(r, g, b);
+		const mn = Math.min(r, g, b);
+		satSum += mx > 0 ? (mx - mn) / mx : 0;
+		satN++;
+	}
+	const colorCount = seenColors.size;
+	const saturation = satN ? satSum / satN : 0;
+
 	const hist = histogram(gray);
 	const otsuThreshold = otsu(hist, total);
 
@@ -334,7 +341,7 @@ export async function analyzeImage(buffer: Buffer): Promise<ImageProfile> {
 	const belowRatio = below / total;
 	const foregroundRatio = darkBackground ? 1 - belowRatio : belowRatio;
 	const grayEntropy = entropyOf(hist, total);
-	const { edgeDensity, noise } = edgeMetrics(gray, gInfo.width, gInfo.height);
+	const { edgeDensity, noise } = edgeMetrics(gray, gw, gh);
 
 	const metrics: ImageMetrics = {
 		width,
