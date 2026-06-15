@@ -22,6 +22,8 @@ export interface ImageMetrics {
 	hasAlpha: boolean;
 	/** Cores distintas (quantizadas 4 bits/canal; máx 4096). */
 	colorCount: number;
+	/** Saturação média (0–1) — quão "colorida" é a imagem. */
+	saturation: number;
 	/** Entropia do canal de cinza (0–8). */
 	grayEntropy: number;
 	/** Limiar ótimo de Otsu (0–255). */
@@ -98,17 +100,27 @@ function entropyOf(hist: Uint32Array, total: number): number {
 	return e;
 }
 
-/** Cores distintas, quantizando 4 bits por canal (máx 4096 buckets). */
-function countColors(rgb: Buffer | Uint8Array, channels: number): number {
+/** Cores distintas (4 bits/canal, máx 4096) + saturação média (0–1). */
+function colorStats(
+	rgb: Buffer | Uint8Array,
+	channels: number,
+): { colorCount: number; saturation: number } {
 	const seen = new Set<number>();
+	let satSum = 0;
+	let n = 0;
 	for (let i = 0; i + channels - 1 < rgb.length; i += channels) {
-		const r = rgb[i] >> 4;
-		const g = rgb[i + 1] >> 4;
-		const b = rgb[i + 2] >> 4;
-		seen.add((r << 8) | (g << 4) | b);
-		if (seen.size >= 4096) break;
+		const r = rgb[i];
+		const g = rgb[i + 1];
+		const b = rgb[i + 2];
+		if (seen.size < 4096) {
+			seen.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+		}
+		const max = Math.max(r, g, b);
+		const min = Math.min(r, g, b);
+		satSum += max > 0 ? (max - min) / max : 0;
+		n++;
 	}
-	return seen.size;
+	return { colorCount: seen.size, saturation: n ? satSum / n : 0 };
 }
 
 /** Laplaciano: densidade de bordas + estimativa de ruído. */
@@ -149,15 +161,23 @@ const LABELS: Record<VectorClass, string> = {
 	photo: 'Foto / Imagem complexa',
 };
 
+/** Nº de cores da paleta a partir da riqueza de cores (clamp 4–12). */
+function paletteSize(colorCount: number): number {
+	if (colorCount <= 48) return 6;
+	if (colorCount <= 300) return 8;
+	if (colorCount <= 1500) return 10;
+	return 12;
+}
+
 /** Decide a classe + os parâmetros do motor a partir das métricas. */
 function classify(m: ImageMetrics): ImageProfile {
-	const base: Partial<VectorizeParams> = {
-		threshold: m.otsuThreshold,
-		invert: m.darkBackground,
-	};
 	// turdSize cresce com o ruído (suprime manchas); blur só se bem ruidoso.
 	const noisyTurd = (n: number) => Math.round(n + m.noise * 8);
-	const maybeBlur = m.noise > 0.18 ? 0.6 : null;
+	const maybeBlur = m.noise > 0.2 ? 0.5 : null;
+	// "Colorida de verdade" → vetorizar em cores (camadas), não em P&B. Guiado
+	// pela SATURAÇÃO (não pelo nº de cores: um logo chapado tem poucas cores
+	// distintas mas ainda é colorido e deve preservar as cores).
+	const isColorful = m.saturation > 0.15 && m.colorCount >= 3;
 
 	let cls: VectorClass;
 	let reason: string;
@@ -165,46 +185,58 @@ function classify(m: ImageMetrics): ImageProfile {
 	let params: Partial<VectorizeParams>;
 	let recommendTool: 'engraving' | undefined;
 
-	if (m.colorCount > 3500 && m.grayEntropy > 6.7 && m.noise > 0.12) {
-		cls = 'photo';
-		reason = 'Muitas cores, tom contínuo e textura — típico de foto.';
-		confidence = 0.85;
-		recommendTool = 'engraving';
-		params = {
-			...base,
-			mode: 'posterize',
-			posterizeLevels: 6,
-			turdSize: noisyTurd(6),
-			optTolerance: 0.2,
-			blur: maybeBlur,
-		};
-	} else if (
+	// 1) Texto / arte de linha P&B (alto contraste, sem cor) → trace mono.
+	if (
+		!isColorful &&
 		m.bimodality > 0.85 &&
 		m.foregroundRatio < 0.22 &&
-		m.edgeDensity > 0.03 &&
-		m.colorCount < 600
+		m.edgeDensity > 0.03
 	) {
 		cls = 'text';
 		reason = 'Alto contraste, traços finos e pouca tinta — texto.';
 		confidence = 0.9;
 		params = {
-			...base,
+			threshold: m.otsuThreshold,
+			invert: m.darkBackground,
 			mode: 'trace',
 			turdSize: 2,
 			alphaMax: 1.3,
 			optTolerance: 0.2,
 			sharpen: true,
 		};
-	} else if (m.colorCount <= 600 && m.bimodality > 0.6) {
-		// Linha fina (line art) vs forma chapada (logo).
+	} else if (isColorful) {
+		// 2) Imagem colorida → VETORIZAÇÃO EM CORES (k-means + camadas).
+		const maxColors = paletteSize(m.colorCount);
+		const isPhoto =
+			m.noise > 0.16 && m.grayEntropy > 6.5 && m.colorCount > 2500;
+		const isLogo = !isPhoto && m.colorCount <= 400 && m.noise < 0.14;
+		cls = isPhoto ? 'photo' : isLogo ? 'logo' : 'color_flat';
+		reason = isPhoto
+			? 'Foto colorida — vetorizamos em camadas de cor (pode perder detalhe fino).'
+			: isLogo
+				? 'Logo colorido com poucas cores chapadas — vetorização em cores.'
+				: 'Ilustração colorida — vetorização em camadas de cor.';
+		confidence = isPhoto ? 0.7 : 0.85;
+		if (isPhoto) recommendTool = 'engraving';
+		params = {
+			mode: 'color',
+			maxColors,
+			turdSize: noisyTurd(isLogo ? 2 : 3),
+			alphaMax: 1.1,
+			optTolerance: 0.2,
+			blur: maybeBlur,
+		};
+	} else if (m.bimodality > 0.6) {
+		// 3) P&B chapado/linha (sem cor) → trace mono.
 		const isLogo = m.foregroundRatio >= 0.15 && (m.hasAlpha || m.noise < 0.08);
 		cls = isLogo ? 'logo' : 'line_art';
 		reason = isLogo
-			? 'Poucas cores e formas chapadas com bordas nítidas — logo.'
-			: 'Poucas cores e traços finos de alto contraste — arte de linha.';
-		confidence = 0.82;
+			? 'Poucas cores e formas chapadas com bordas nítidas — logo P&B.'
+			: 'Traços finos de alto contraste — arte de linha.';
+		confidence = 0.8;
 		params = {
-			...base,
+			threshold: m.otsuThreshold,
+			invert: m.darkBackground,
 			mode: 'trace',
 			turdSize: noisyTurd(isLogo ? 2 : 3),
 			alphaMax: isLogo ? 1.1 : 1.2,
@@ -212,24 +244,14 @@ function classify(m: ImageMetrics): ImageProfile {
 			sharpen: isLogo,
 			blur: maybeBlur,
 		};
-	} else if (m.colorCount <= 64) {
-		cls = 'color_flat';
-		reason = 'Poucas cores chapadas — ilustração vetorizável por camadas.';
-		confidence = 0.75;
-		params = {
-			...base,
-			mode: 'posterize',
-			posterizeLevels: clamp(Math.round(Math.log2(m.colorCount + 2)), 3, 6),
-			posterizeFillStrategy: 'dominant',
-			turdSize: noisyTurd(4),
-			optTolerance: 0.2,
-		};
 	} else if (m.grayEntropy > 5.8) {
+		// 4) Tons de cinza contínuos → posterize por níveis.
 		cls = 'grayscale_tonal';
-		reason = 'Tom contínuo com poucas cores — melhor por níveis (posterize).';
+		reason = 'Tons de cinza contínuos — vetorização por níveis.';
 		confidence = 0.7;
 		params = {
-			...base,
+			threshold: m.otsuThreshold,
+			invert: m.darkBackground,
 			mode: 'posterize',
 			posterizeLevels: 4,
 			turdSize: noisyTurd(4),
@@ -237,17 +259,17 @@ function classify(m: ImageMetrics): ImageProfile {
 			blur: maybeBlur,
 		};
 	} else {
-		cls = 'photo';
-		reason = 'Imagem complexa sem regiões chapadas claras.';
+		// 5) Fallback: trace mono com Otsu.
+		cls = 'line_art';
+		reason = 'Imagem em P&B — traço simples.';
 		confidence = 0.6;
-		recommendTool = 'engraving';
 		params = {
-			...base,
-			mode: 'posterize',
-			posterizeLevels: 6,
-			turdSize: noisyTurd(6),
+			threshold: m.otsuThreshold,
+			invert: m.darkBackground,
+			mode: 'trace',
+			turdSize: noisyTurd(3),
+			alphaMax: 1.2,
 			optTolerance: 0.2,
-			blur: maybeBlur,
 		};
 	}
 
@@ -287,7 +309,7 @@ export async function analyzeImage(buffer: Buffer): Promise<ImageProfile> {
 		.removeAlpha()
 		.raw()
 		.toBuffer({ resolveWithObject: true });
-	const colorCount = countColors(rgb, rgbInfo.channels);
+	const { colorCount, saturation } = colorStats(rgb, rgbInfo.channels);
 
 	// Cinza p/ histograma / Otsu / bordas.
 	const { data: gray, info: gInfo } = await work
@@ -319,6 +341,7 @@ export async function analyzeImage(buffer: Buffer): Promise<ImageProfile> {
 		height,
 		hasAlpha,
 		colorCount,
+		saturation,
 		grayEntropy,
 		otsuThreshold,
 		bimodality: extreme / total,

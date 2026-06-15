@@ -57,7 +57,7 @@ export const vectorizeService = {
 				...record,
 				svgContent,
 				originalName: filename,
-				isColor: params.mode === 'posterize',
+				isColor: params.mode !== 'trace',
 				svgUrl,
 				pngUrl,
 				dxfContent,
