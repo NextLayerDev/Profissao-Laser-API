@@ -60,8 +60,14 @@ export const profileService = {
 				// Nome = fonte de verdade no upvox pós-migração. Encaminha p/ o upvox
 				// (PATCH /v1/me) repassando o Bearer — clientes nativos do upvox não
 				// têm linha em `Customers`, então gravar só na tabela legada não valia.
+				// Não-fatal: um erro transitório do upvox não deve derrubar (500) o
+				// salvamento de nickname/bio/foto que vem logo abaixo.
 				if (ctx.token) {
-					await updateExternalUser(ctx.token, { name: input.name });
+					try {
+						await updateExternalUser(ctx.token, { name: input.name });
+					} catch (err) {
+						console.error('[profile] falha ao encaminhar nome ao upvox:', err);
+					}
 				}
 				// Mantém `Customers.name` em sincronia quando a linha existe (migrados):
 				// joins de comunidade/membros ainda leem o nome da tabela legada.

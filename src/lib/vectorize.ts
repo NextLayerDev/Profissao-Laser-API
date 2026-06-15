@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import type { VectorizeParams } from '../types/vector.js';
 import { applyDithering } from './dithering.js';
 import { applyLinePattern } from './line-patterns.js';
+import { vectorizeColorImage } from './vectorize-color.js';
 
 // ─── Tipos internos (Potrace usa `turnPolicy`; @types/potrace expõe nome
 //     diferente, então mantemos uma interface própria e fazemos cast) ──
@@ -90,7 +91,12 @@ export function parseVectorizeParams(
 	] as const);
 	const blackOnWhite = fields.blackOnWhite !== 'false';
 
-	const mode = fields.mode === 'posterize' ? 'posterize' : 'trace';
+	const mode = pick(
+		fields.mode,
+		['trace', 'posterize', 'color'] as const,
+		'trace',
+	);
+	const maxColors = clamp(parseInt(fields.maxColors || '8', 10), 2, 16);
 	const posterizeLevels = clamp(
 		parseInt(fields.posterizeLevels || '4', 10),
 		2,
@@ -173,6 +179,7 @@ export function parseVectorizeParams(
 		turnPolicy,
 		blackOnWhite,
 		mode,
+		maxColors,
 		posterizeLevels,
 		posterizeFillStrategy,
 		posterizeRangeDistribution,
@@ -194,9 +201,14 @@ async function preprocessImage(
 	buffer: Buffer,
 	params: VectorizeParams,
 ): Promise<Buffer> {
+	// Fundo transparente → BRANCO (não grava). Sem isso, arte preta sobre
+	// transparente era lida como tudo-preto e o resultado saía vazio/errado.
+	// `flatten` é no-op em imagens sem alpha.
+	const FLAT_BG = { background: '#ffffff' as const };
+
 	// Posterize: preserva cores para o Potrace.posterize()
 	if (params.mode === 'posterize') {
-		let pipeline = sharp(buffer);
+		let pipeline = sharp(buffer).flatten(FLAT_BG);
 		if (params.blur !== null) pipeline = pipeline.blur(params.blur);
 		if (params.sharpen) pipeline = pipeline.sharpen();
 		if (params.invert) pipeline = pipeline.negate();
@@ -215,10 +227,10 @@ async function preprocessImage(
 
 	// Caminho rápido: sem novos parâmetros → comportamento original
 	if (!hasDithering && !hasPreprocessing && params.threshold === 128) {
-		return sharp(buffer).threshold(128).png().toBuffer();
+		return sharp(buffer).flatten(FLAT_BG).threshold(128).png().toBuffer();
 	}
 
-	let pipeline = sharp(buffer).grayscale();
+	let pipeline = sharp(buffer).flatten(FLAT_BG).grayscale();
 
 	if (params.brightness !== null) {
 		pipeline = pipeline.modulate({ brightness: params.brightness });
@@ -385,20 +397,26 @@ function simplifySvgPaths(svg: string): string {
 	return svg.replace(/(\d+\.\d{2})\d+/g, '$1');
 }
 
+/** Remove elementos <path> byte-idênticos repetidos (sobreposição exata). */
+function dedupeSvgPaths(svg: string): string {
+	const seen = new Set<string>();
+	return svg.replace(/<path\b[^>]*\/?>/g, (m) => {
+		if (seen.has(m)) return '';
+		seen.add(m);
+		return m;
+	});
+}
+
 function postProcessSvg(svg: string, params: VectorizeParams): string {
 	let result = svg;
 
 	// 1. Stroke styles
 	if (params.drawingStyle === 'stroke' || params.drawingStyle === 'outline') {
 		const strokeAttributes = `stroke="${params.color}" stroke-width="${params.strokeWidth}"${params.nonScalingStroke ? ' vector-effect="non-scaling-stroke"' : ''}`;
-		if (params.mode === 'posterize') {
-			result = result.replace(
-				/<path/g,
-				`<path fill="none" ${strokeAttributes}`,
-			);
-		} else {
-			result = result.replace('<path', `<path fill="none" ${strokeAttributes}`);
-		}
+		// Global em ambos os modos: o trace costuma emitir vários <path> (contornos
+		// externos + buracos). Antes, o modo trace usava replace de string (só a 1ª
+		// ocorrência), deixando os demais paths preenchidos → traços duplicados/sujos.
+		result = result.replace(/<path/g, `<path fill="none" ${strokeAttributes}`);
 	}
 
 	// 2. Padrões de linha
@@ -426,10 +444,45 @@ function postProcessSvg(svg: string, params: VectorizeParams): string {
 		result = simplifySvgPaths(result);
 	}
 
+	// 5. Remove paths idênticos sobrepostos (limpa duplicatas exatas).
+	result = dedupeSvgPaths(result);
+
 	return result;
 }
 
 // ─── API pública do motor ────────────────────────────────────────────
+
+const TRACE_MIN_DIM = 1400; // piso de resolução p/ tracing suave
+const TRACE_MAX_UPSCALE = 3; // teto de ampliação
+
+/**
+ * Supersampling: imagens pequenas viram serrilhadas no threshold/trace, o que
+ * quebra fontes e distorce logos simples. Damos upscale (lanczos, com
+ * anti-alias) até um piso de resolução ANTES de binarizar/traçar — o Potrace
+ * ganha mais pixels e devolve curvas bem mais suaves (qualidade tipo LightBurn).
+ * Devolve o fator de escala p/ reajustar o turdSize (que é uma ÁREA em px).
+ */
+async function upscaleForTrace(
+	buffer: Buffer,
+	allow: boolean,
+): Promise<{ buffer: Buffer; scale: number }> {
+	if (!allow) return { buffer, scale: 1 };
+	const meta = await sharp(buffer).metadata();
+	const w = meta.width ?? 0;
+	const h = meta.height ?? 0;
+	const maxDim = Math.max(w, h);
+	if (!maxDim || maxDim >= TRACE_MIN_DIM) return { buffer, scale: 1 };
+	const scale = Math.min(TRACE_MAX_UPSCALE, TRACE_MIN_DIM / maxDim);
+	const out = await sharp(buffer)
+		.resize({ width: Math.round(w * scale), kernel: 'lanczos3' })
+		.toBuffer();
+	return { buffer: out, scale };
+}
+
+export interface VectorizeOptions {
+	/** Liga o supersampling de qualidade (run final). Desligue p/ preview rápido. */
+	supersample?: boolean;
+}
 
 /**
  * Pré-processa, vetoriza (trace/posterize) e pós-processa, devolvendo o SVG.
@@ -438,12 +491,38 @@ function postProcessSvg(svg: string, params: VectorizeParams): string {
 export async function vectorizeImage(
 	buffer: Buffer,
 	params: VectorizeParams,
+	opts: VectorizeOptions = {},
 ): Promise<string> {
-	const processed = await preprocessImage(buffer, params);
+	// Cores: pipeline próprio (quantização + máscara por cor + trace em camadas).
+	// Preview (supersample=false) usa resolução menor p/ rapidez.
+	if (params.mode === 'color') {
+		const svg = await vectorizeColorImage(buffer, params, {
+			maxDim: opts.supersample === false ? 500 : 900,
+		});
+		return postProcessSvg(svg, params);
+	}
+
+	// Só faz upscale no modo trace e quando o usuário NÃO pediu dimensão de saída
+	// (dpi/mm) — assim não interfere no dimensionamento do SVG.
+	const canUpscale =
+		opts.supersample !== false &&
+		params.mode === 'trace' &&
+		params.dpi === null &&
+		params.outputWidth === null &&
+		params.outputHeight === null;
+	const { buffer: scaled, scale } = await upscaleForTrace(buffer, canUpscale);
+	// turdSize é área em px: ao ampliar ×s a área cresce ×s² → reescala p/ manter
+	// a mesma supressão de manchas em escala real.
+	const effParams =
+		scale > 1
+			? { ...params, turdSize: params.turdSize * scale * scale }
+			: params;
+
+	const processed = await preprocessImage(scaled, effParams);
 	const svg =
-		params.mode === 'posterize'
-			? await posterizeImage(processed, params)
-			: await traceImage(processed, params);
+		effParams.mode === 'posterize'
+			? await posterizeImage(processed, effParams)
+			: await traceImage(processed, effParams);
 	return postProcessSvg(svg, params);
 }
 
