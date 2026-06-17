@@ -4,22 +4,28 @@ import { authenticate } from '@/middleware/auth.js';
 import {
 	addDayOffController,
 	addHolidayController,
+	addRecurringBlockController,
 	deleteDayOffController,
 	deleteHolidayController,
+	deleteRecurringBlockController,
 	getGlobalConfigController,
 	getTechScheduleController,
 	listDaysOffController,
 	listHolidaysController,
+	listRecurringBlocksController,
 	updateGlobalConfigController,
 	upsertTechScheduleController,
 } from '../controllers/appointment-config.js';
 import {
 	createDayOffSchema,
 	createHolidaySchema,
+	createRecurringBlockSchema,
 	dayOffSchema,
 	globalConfigSchema,
 	holidaySchema,
 	listDaysOffQuerySchema,
+	listRecurringBlocksQuerySchema,
+	recurringBlockSchema,
 	technicianScheduleSchema,
 	updateGlobalConfigSchema,
 	upsertTechnicianScheduleSchema,
@@ -152,6 +158,58 @@ export async function appointmentConfigRoute(server: FastifyInstance) {
 			},
 		},
 		deleteDayOffController,
+	);
+
+	// ── Bloqueios recorrentes (toda semana) ───────────────────────────
+	server.get(
+		'/appointment-config/recurring-blocks',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Lista bloqueios recorrentes (toda semana). Filtra por technicianId/weekday.',
+				querystring: listRecurringBlocksQuerySchema,
+				response: { 200: z.array(recurringBlockSchema), 500: ErrorSchema },
+				tags: ['Appointments'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		listRecurringBlocksController,
+	);
+
+	server.post(
+		'/appointment-config/recurring-blocks',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Cria bloqueio recorrente (toda semana): dia da semana + faixa de horário opcional (vazia = dia todo). Global (technicianId=null) ou por técnico. Staff pode criar global/pra outro; técnico só pra si.',
+				body: createRecurringBlockSchema,
+				response: {
+					201: recurringBlockSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+				},
+				tags: ['Appointments'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		addRecurringBlockController,
+	);
+
+	server.delete(
+		'/appointment-config/recurring-blocks/:id',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description: 'Remove bloqueio recorrente (staff only).',
+				params: z.object({ id: z.string() }),
+				response: { 204: z.null(), 403: ErrorSchema, 500: ErrorSchema },
+				tags: ['Appointments'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		deleteRecurringBlockController,
 	);
 
 	// ── Tech schedule ─────────────────────────────────────────────────

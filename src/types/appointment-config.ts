@@ -101,6 +101,53 @@ export const upsertTechnicianScheduleSchema = z.object({
 	lunchEnd: timeStr.nullable().optional(),
 });
 
+// ─── Bloqueios recorrentes (toda semana) ─────────────────────────────────
+// Fecha um dia da semana TODA semana: o dia inteiro (startTime/endTime nulos)
+// ou só uma faixa de horário (ex.: toda sexta 16:00–17:00). Global
+// (technicianId null) ou por técnico.
+export const weekdaySchema = z.enum([
+	'mon',
+	'tue',
+	'wed',
+	'thu',
+	'fri',
+	'sat',
+	'sun',
+]);
+export type Weekday = z.infer<typeof weekdaySchema>;
+
+export const recurringBlockSchema = z.object({
+	id: z.string(),
+	technicianId: z.string().nullable(),
+	weekday: weekdaySchema,
+	startTime: timeStr.nullable(),
+	endTime: timeStr.nullable(),
+	reason: z.string().nullable(),
+	createdBy: z.string().nullable(),
+	createdAt: z.string(),
+});
+
+export const createRecurringBlockSchema = z
+	.object({
+		technicianId: z.string().uuid().nullable().optional(),
+		weekday: weekdaySchema,
+		startTime: timeStr.nullable().optional(),
+		endTime: timeStr.nullable().optional(),
+		reason: z.string().optional(),
+	})
+	.refine((d) => (d.startTime == null) === (d.endTime == null), {
+		message: 'Preencha início e fim juntos, ou deixe ambos vazios (dia todo)',
+	})
+	.refine(
+		(d) => d.startTime == null || d.endTime == null || d.startTime < d.endTime,
+		{ message: 'Início deve ser antes do fim' },
+	);
+
+export const listRecurringBlocksQuerySchema = z.object({
+	technicianId: z.string().uuid().optional(),
+	weekday: weekdaySchema.optional(),
+});
+
 // ─── Slot picker response ────────────────────────────────────────────────
 // Quando o dia está totalmente bloqueado (feriado / folga / sem expediente),
 // retorna {slots: [], blocked: true, reason: '...'}.
@@ -120,6 +167,8 @@ export type TechnicianSchedule = z.infer<typeof technicianScheduleSchema>;
 export type UpsertTechnicianSchedule = z.infer<
 	typeof upsertTechnicianScheduleSchema
 >;
+export type RecurringBlock = z.infer<typeof recurringBlockSchema>;
+export type CreateRecurringBlock = z.infer<typeof createRecurringBlockSchema>;
 export type AvailableSlotsResponse = z.infer<
 	typeof availableSlotsResponseSchema
 >;
