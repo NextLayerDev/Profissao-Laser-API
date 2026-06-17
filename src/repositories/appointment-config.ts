@@ -2,9 +2,11 @@ import { supabase } from '../lib/supabase.js';
 import type {
 	CreateDayOff,
 	CreateHoliday,
+	CreateRecurringBlock,
 	DayOff,
 	GlobalConfig,
 	Holiday,
+	RecurringBlock,
 	TechnicianSchedule,
 	UpdateGlobalConfig,
 	UpsertTechnicianSchedule,
@@ -116,6 +118,53 @@ class AppointmentConfigRepository {
 	async deleteDayOff(id: string): Promise<void> {
 		const { error } = await supabase
 			.from('pl_appointment_day_off')
+			.delete()
+			.eq('id', id);
+		if (error) throw new Error(error.message);
+	}
+
+	// ── Bloqueios recorrentes (toda semana) ───────────────────────────
+
+	async listRecurringBlocks(params: {
+		technicianId?: string;
+		weekday?: string;
+	}): Promise<RecurringBlock[]> {
+		let query = supabase
+			.from('pl_appointment_recurring_block')
+			.select('*')
+			.order('weekday', { ascending: true });
+		if (params.technicianId) {
+			query = query.eq('technicianId', params.technicianId);
+		}
+		if (params.weekday) query = query.eq('weekday', params.weekday);
+		const { data, error } = await query;
+		if (error) throw new Error(error.message);
+		return (data ?? []) as RecurringBlock[];
+	}
+
+	async addRecurringBlock(
+		data: CreateRecurringBlock,
+		createdBy: string,
+	): Promise<RecurringBlock> {
+		const { data: row, error } = await supabase
+			.from('pl_appointment_recurring_block')
+			.insert({
+				technicianId: data.technicianId ?? null,
+				weekday: data.weekday,
+				startTime: data.startTime ?? null,
+				endTime: data.endTime ?? null,
+				reason: data.reason ?? null,
+				createdBy,
+			})
+			.select()
+			.single();
+		if (error) throw new Error(error.message);
+		return row as RecurringBlock;
+	}
+
+	async deleteRecurringBlock(id: string): Promise<void> {
+		const { error } = await supabase
+			.from('pl_appointment_recurring_block')
 			.delete()
 			.eq('id', id);
 		if (error) throw new Error(error.message);

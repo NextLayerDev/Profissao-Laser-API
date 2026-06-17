@@ -4,6 +4,7 @@ import { appointmentConfigService } from '../services/appointment-config.js';
 import {
 	createDayOffSchema,
 	createHolidaySchema,
+	createRecurringBlockSchema,
 	updateGlobalConfigSchema,
 	upsertTechnicianScheduleSchema,
 } from '../types/appointment-config.js';
@@ -149,6 +150,72 @@ export const deleteDayOffController = async (
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 		await appointmentConfigService.deleteDayOff(request.params.id);
+		return reply.status(204).send();
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
+// ─── Bloqueios recorrentes ───────────────────────────────────────────────
+
+export const listRecurringBlocksController = async (
+	request: FastifyRequest<{
+		Querystring: { technicianId?: string; weekday?: string };
+	}>,
+	reply: FastifyReply,
+) => {
+	try {
+		const list = await appointmentConfigService.listRecurringBlocks(
+			request.query,
+		);
+		return reply.send(list);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
+export const addRecurringBlockController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	try {
+		const userId = request.currentUser?.id;
+		if (!userId) return reply.status(403).send({ message: 'Forbidden' });
+
+		const data = createRecurringBlockSchema.parse(request.body);
+
+		// Bloqueio GLOBAL ou pra OUTRO técnico → só staff. Pra si mesmo → ok.
+		const staff = isStaffRole(request.currentRole);
+		const targetTech = data.technicianId ?? null;
+		if (!staff && targetTech !== userId) {
+			return reply.status(403).send({
+				message:
+					'Apenas staff pode criar bloqueio global ou para outro técnico',
+			});
+		}
+
+		const block = await appointmentConfigService.addRecurringBlock(
+			data,
+			userId,
+		);
+		return reply.status(201).send(block);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(400).send({ message });
+	}
+};
+
+export const deleteRecurringBlockController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	try {
+		if (!isStaffRole(request.currentRole)) {
+			return reply.status(403).send({ message: 'Forbidden' });
+		}
+		await appointmentConfigService.deleteRecurringBlock(request.params.id);
 		return reply.status(204).send();
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
