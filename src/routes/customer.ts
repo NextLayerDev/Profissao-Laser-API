@@ -207,7 +207,7 @@ export async function customerRoute(server: FastifyInstance) {
 			preHandler: [authenticateCustomer],
 			schema: {
 				description:
-					'Update the authenticated customer profile (name, nickname, bio).',
+					'Update the authenticated customer profile (name, nickname, bio, avatar, banner).',
 				body: updateProfileSchema,
 				response: {
 					200: customerProfileSchema,
@@ -258,6 +258,45 @@ export async function customerRoute(server: FastifyInstance) {
 			},
 		},
 		profileController.removeAvatar,
+	);
+
+	server.post(
+		'/me/banner',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Upload the authenticated customer profile banner (multipart/form-data, field "file").',
+				response: {
+					200: z.object({ banner: z.string() }),
+					400: ErrorSchema,
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.uploadBanner,
+	);
+
+	server.delete(
+		'/me/banner',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Remove the authenticated customer profile banner (reverts to default banner).',
+				response: {
+					200: z.object({ banner: z.string().nullable() }),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Customer'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		profileController.removeBanner,
 	);
 
 	server.patch(

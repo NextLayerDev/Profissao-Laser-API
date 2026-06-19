@@ -80,6 +80,14 @@ export async function uploadCustomerAvatar(
 	return upload('customer-avatars', buffer, path, mimetype);
 }
 
+export async function uploadCustomerBanner(
+	buffer: Buffer,
+	path: string,
+	mimetype: string,
+): Promise<string> {
+	return upload('customer-banners', buffer, path, mimetype);
+}
+
 export async function uploadParameterImage(
 	buffer: Buffer,
 	path: string,

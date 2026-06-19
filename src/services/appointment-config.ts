@@ -4,6 +4,7 @@ import type {
 	AvailableSlotsResponse,
 	CreateDayOff,
 	CreateHoliday,
+	CreateRecurringBlock,
 	GlobalConfig,
 	UpdateGlobalConfig,
 	UpsertTechnicianSchedule,
@@ -119,6 +120,17 @@ function dayOfWeek(date: string): keyof WorkingDays {
 	return DAY_KEYS[d.getDay()];
 }
 
+/** true se o horário HH:MM cai em alguma das faixas [start, end). */
+function inAnyRange(
+	time: string,
+	ranges: { start: string; end: string }[],
+): boolean {
+	const t = timeToMinutes(time);
+	return ranges.some(
+		(r) => t >= timeToMinutes(r.start) && t < timeToMinutes(r.end),
+	);
+}
+
 // ─── Service ─────────────────────────────────────────────────────────────
 
 class AppointmentConfigService {
@@ -152,6 +164,18 @@ class AppointmentConfigService {
 
 	deleteDayOff(id: string) {
 		return appointmentConfigRepository.deleteDayOff(id);
+	}
+
+	listRecurringBlocks(params: { technicianId?: string; weekday?: string }) {
+		return appointmentConfigRepository.listRecurringBlocks(params);
+	}
+
+	addRecurringBlock(data: CreateRecurringBlock, createdBy: string) {
+		return appointmentConfigRepository.addRecurringBlock(data, createdBy);
+	}
+
+	deleteRecurringBlock(id: string) {
+		return appointmentConfigRepository.deleteRecurringBlock(id);
 	}
 
 	getTechSchedule(technicianId: string) {
@@ -200,6 +224,28 @@ class AppointmentConfigService {
 			};
 		}
 
+		// 2b. Bloqueio recorrente (toda <weekday>): global de dia inteiro fecha tudo;
+		//     faixas globais são removidas dos slots de todos os técnicos abaixo.
+		const dow = dayOfWeek(date);
+		const recurringBlocks =
+			await appointmentConfigRepository.listRecurringBlocks({ weekday: dow });
+		const globalRecurring = recurringBlocks.filter(
+			(b) => b.technicianId === null,
+		);
+		const globalWholeDay = globalRecurring.find(
+			(b) => !b.startTime || !b.endTime,
+		);
+		if (globalWholeDay) {
+			return {
+				slots: [],
+				blocked: true,
+				reason: globalWholeDay.reason ?? 'Fechado neste dia da semana',
+			};
+		}
+		const globalRanges = globalRecurring
+			.filter((b) => b.startTime && b.endTime)
+			.map((b) => ({ start: b.startTime as string, end: b.endTime as string }));
+
 		// 3. Determina técnicos elegíveis
 		const techIds = technicianId
 			? [technicianId]
@@ -210,7 +256,7 @@ class AppointmentConfigService {
 			techIds.length === 0 ? [null] : (techIds as Array<string | null>);
 
 		// 4. Pra cada técnico, gera slots respeitando folga + working day + horário
-		const dow = dayOfWeek(date);
+		//    + bloqueios recorrentes (faixa global e/ou do próprio técnico).
 		const slotsByTech = await Promise.all(
 			effectiveTechIds.map(async (tId) => {
 				// folga do técnico bloqueia tudo
@@ -223,6 +269,11 @@ class AppointmentConfigService {
 					if (techOff.some((d) => d.date === date)) {
 						return [];
 					}
+					// bloqueio recorrente do técnico de DIA INTEIRO
+					const techWholeDay = recurringBlocks.some(
+						(b) => b.technicianId === tId && (!b.startTime || !b.endTime),
+					);
+					if (techWholeDay) return [];
 				}
 
 				const schedule = await resolveScheduleFor(global, tId);
@@ -232,13 +283,25 @@ class AppointmentConfigService {
 					return [];
 				}
 
-				const allSlots = generateSlots(schedule);
+				// Faixas recorrentes do próprio técnico (globais já estão em globalRanges).
+				const techRanges = tId
+					? recurringBlocks
+							.filter((b) => b.technicianId === tId && b.startTime && b.endTime)
+							.map((b) => ({
+								start: b.startTime as string,
+								end: b.endTime as string,
+							}))
+					: [];
+
+				let allSlots = generateSlots(schedule).filter(
+					(s) => !inAnyRange(s, globalRanges) && !inAnyRange(s, techRanges),
+				);
 
 				// Remove slots já bookados pra esse técnico
 				if (tId) {
 					const booked = await appointmentRepository.listByDate(date, tId);
 					const bookedTimes = new Set(booked.map((a) => a.time));
-					return allSlots.filter((s) => !bookedTimes.has(s));
+					allSlots = allSlots.filter((s) => !bookedTimes.has(s));
 				}
 				return allSlots;
 			}),
