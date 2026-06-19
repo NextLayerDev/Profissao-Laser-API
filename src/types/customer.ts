@@ -24,6 +24,8 @@ export const customerProfileSchema = z.object({
 	nickname: z.string().nullable(),
 	bio: z.string().nullable(),
 	avatar: z.string().nullable(),
+	// URL do banner: padrão (/banners/*.png) ou foto enviada (Bunny). null = padrão.
+	banner: z.string().nullable(),
 });
 export type CustomerProfile = z.infer<typeof customerProfileSchema>;
 
@@ -33,6 +35,8 @@ export const updateProfileSchema = z.object({
 	bio: z.string().max(500).nullish(),
 	// URL do avatar: ícone-preset (/avatars/*.png) ou foto enviada (Bunny).
 	image: z.string().max(500).nullish(),
+	// URL do banner: padrão (/banners/*.png) ou foto enviada (Bunny).
+	banner: z.string().max(500).nullish(),
 });
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 
