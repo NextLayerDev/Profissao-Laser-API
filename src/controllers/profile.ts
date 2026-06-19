@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { uploadCustomerAvatar } from '../lib/storage.js';
+import { uploadCustomerAvatar, uploadCustomerBanner } from '../lib/storage.js';
 import { profileService } from '../services/profile.js';
 import {
 	changeMyPasswordSchema,
@@ -14,6 +14,7 @@ const ALLOWED_IMAGE_MIMETYPES = [
 	'image/gif',
 ];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_BANNER_SIZE = 8 * 1024 * 1024; // 8MB (banner é maior que o avatar)
 
 class ProfileController {
 	async getMyProfile(request: FastifyRequest, reply: FastifyReply) {
@@ -90,6 +91,51 @@ class ProfileController {
 		const id = request.currentCustomer?.id;
 		if (!id) return reply.status(401).send({ message: 'Unauthorized' });
 		const { data, error } = await profileService.removeMyAvatar(id);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
+		return reply.status(200).send(data);
+	}
+
+	async uploadBanner(request: FastifyRequest, reply: FastifyReply) {
+		const id = request.currentCustomer?.id;
+		if (!id) return reply.status(401).send({ message: 'Unauthorized' });
+
+		const file = await request.file();
+		if (!file) return reply.status(400).send({ message: 'No file provided' });
+		if (!ALLOWED_IMAGE_MIMETYPES.includes(file.mimetype)) {
+			return reply
+				.status(400)
+				.send({ message: 'Invalid file type. Allowed: jpeg, png, webp, gif' });
+		}
+		const buffer = await file.toBuffer();
+		if (buffer.byteLength > MAX_BANNER_SIZE) {
+			return reply
+				.status(400)
+				.send({ message: 'File too large. Maximum size is 8MB' });
+		}
+
+		const ext = file.mimetype.split('/')[1];
+		const url = await uploadCustomerBanner(
+			buffer,
+			`${id}-${crypto.randomUUID()}.${ext}`,
+			file.mimetype,
+		);
+		const { data, error } = await profileService.setMyBanner(id, url);
+		if (error) {
+			return reply.status(500).send({
+				message: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
+		return reply.status(200).send(data);
+	}
+
+	async removeBanner(request: FastifyRequest, reply: FastifyReply) {
+		const id = request.currentCustomer?.id;
+		if (!id) return reply.status(401).send({ message: 'Unauthorized' });
+		const { data, error } = await profileService.removeMyBanner(id);
 		if (error) {
 			return reply.status(500).send({
 				message: error instanceof Error ? error.message : 'Unknown error',
