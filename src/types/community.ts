@@ -68,6 +68,7 @@ export const communityMemberSchema = z.object({
 	featured: z.boolean(),
 	category: z.string().nullable(),
 	image: z.string().nullable(),
+	banner: z.string().nullable(),
 	isOnline: z.boolean(),
 	lastSeenAt: z.string().nullable(),
 	/** Só presente quando o requester é staff/admin (técnicos). */

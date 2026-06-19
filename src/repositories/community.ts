@@ -311,6 +311,7 @@ class CommunityRepository {
 					featured,
 					category,
 					image,
+					banner,
 					"lastSeenAt"
 				)
 			`);
@@ -345,6 +346,7 @@ class CommunityRepository {
 				featured: (profile?.featured ?? false) as boolean,
 				category: (profile?.category ?? null) as string | null,
 				image: (profile?.image ?? null) as string | null,
+				banner: (profile?.banner ?? null) as string | null,
 				isOnline,
 				lastSeenAt,
 				...(includePhone
