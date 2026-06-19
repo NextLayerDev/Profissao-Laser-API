@@ -7,8 +7,8 @@ export interface CommunityProfileRow {
 	banner: string | null;
 }
 
-/** Banner padrão (Banner 3 — moeda Voxxys) gravado em toda linha nova. */
-const DEFAULT_BANNER = '/banners/banner-3.png';
+/** Banner padrão (Copa do Mundo 2026) gravado em toda linha nova. */
+const DEFAULT_BANNER = '/banners/banner-copa.png';
 
 /**
  * Perfil do customer guardado em pl_community_profile (PK = customerId).
