@@ -13,6 +13,13 @@ import {
 	updateProjectSchema,
 } from '../types/community.js';
 
+/** Contexto de acesso p/ gating de eventos por plano (vem da auth da comunidade). */
+const eventAccessFrom = (request: FastifyRequest) => ({
+	planKey: request.currentPlanKey ?? null,
+	isUnlimited: request.isUnlimitedCustomer === true,
+	isStaff: isStaffRole(request.currentRole),
+});
+
 export const getPostsController = async (
 	request: FastifyRequest<{ Querystring: { page?: string; limit?: string } }>,
 	reply: FastifyReply,
@@ -539,7 +546,11 @@ export const getEventsController = async (
 	reply: FastifyReply,
 ) => {
 	const { from, to } = request.query;
-	const { data: events, error } = await communityService.listEvents(from, to);
+	const { data: events, error } = await communityService.listEvents(
+		from,
+		to,
+		eventAccessFrom(request),
+	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
@@ -612,10 +623,12 @@ export const joinWaitingRoomController = async (
 	const { error } = await communityService.joinEventWaitingRoom(
 		eventId,
 		customerId,
+		eventAccessFrom(request),
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
-		return reply.status(400).send({ message });
+		const status = message === 'plan_not_allowed' ? 403 : 400;
+		return reply.status(status).send({ message });
 	}
 	return reply.status(204).send();
 };
@@ -652,10 +665,16 @@ export const getWaitingRoomController = async (
 	const { data, error } = await communityService.getWaitingRoomState(
 		eventId,
 		customerId,
+		eventAccessFrom(request),
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
-		const status = message === 'Event not found' ? 404 : 500;
+		const status =
+			message === 'Event not found'
+				? 404
+				: message === 'plan_not_allowed'
+					? 403
+					: 500;
 		return reply.status(status).send({ message });
 	}
 	return reply.send(data);
