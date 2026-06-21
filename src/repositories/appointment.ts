@@ -116,6 +116,23 @@ class AppointmentRepository {
 		return data;
 	}
 
+	/**
+	 * Busca agendamentos do técnico autenticado via email.
+	 * Necessário porque pl_appointment.technicianId armazena o Users.id legado,
+	 * mas request.currentUser.id após a migração upvox é o id do upvox (diferente).
+	 * A ponte é o email, que é igual nos dois sistemas.
+	 */
+	async listByTechnicianEmail(email: string) {
+		const { data: user } = await supabase
+			.from('Users')
+			.select('id')
+			.eq('email', email)
+			.maybeSingle();
+
+		if (!user) return [];
+		return this.listByTechnicianId(user.id);
+	}
+
 	async updateTechnician(id: string, technicianId: string, machine?: string) {
 		const updates: Record<string, unknown> = { technicianId };
 		if (machine !== undefined) updates.machine = machine;

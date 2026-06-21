@@ -705,7 +705,7 @@ class CommunityRepository {
 		let query = supabase
 			.from('pl_community_event')
 			.select(
-				'id, title, date, time, type, description, "streamUrl", "streamProvider", "waitingRoomOpensMinutesBefore", "hostId"',
+				'id, title, date, time, type, description, "streamUrl", "streamProvider", "waitingRoomOpensMinutesBefore", "hostId", "allowedPlanKeys"',
 			)
 			.order('date', { ascending: true });
 
@@ -721,7 +721,7 @@ class CommunityRepository {
 		const { data, error } = await supabase
 			.from('pl_community_event')
 			.select(
-				'id, title, date, time, type, description, "streamUrl", "streamProvider", "waitingRoomOpensMinutesBefore", "hostId"',
+				'id, title, date, time, type, description, "streamUrl", "streamProvider", "waitingRoomOpensMinutesBefore", "hostId", "allowedPlanKeys"',
 			)
 			.eq('id', id)
 			.maybeSingle();
