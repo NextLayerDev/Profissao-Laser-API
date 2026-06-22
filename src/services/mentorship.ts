@@ -258,6 +258,11 @@ export const mentorshipService = {
 		return repo.leaveAttendance(sessionId, customerId);
 	},
 
+	/** Presença completa da sessão p/ o admin acompanhar (staff — gate no controller). */
+	listSessionAttendees(sessionId: string) {
+		return repo.listAllAttendees(sessionId);
+	},
+
 	// ── materiais ──────────────────────────────────────────────────────────────
 
 	/** Lista materiais — visível a quem é incluído (plano/staff) ou já entrou. */

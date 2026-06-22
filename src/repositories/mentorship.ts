@@ -164,6 +164,33 @@ class MentorshipRepository {
 		});
 	}
 
+	/** Presença COMPLETA (ativos + que saíram) p/ o admin acompanhar a sessão. */
+	async listAllAttendees(sessionId: string) {
+		const { data, error } = await supabase
+			.from('pl_mentorship_attendance')
+			.select(
+				'customerId, joinedAt, leftAt, paidInvocationId, Customers!inner(id, name, pl_community_profile(image))',
+			)
+			.eq('sessionId', sessionId)
+			.order('joinedAt', { ascending: true });
+		if (error) throw new Error(error.message);
+		return (data ?? []).map((row) => {
+			// biome-ignore lint/suspicious/noExplicitAny: join aninhado dinâmico
+			const r = row as any;
+			const customer = r.Customers;
+			const profileList = customer?.pl_community_profile;
+			const profile = Array.isArray(profileList) ? profileList[0] : profileList;
+			return {
+				customerId: r.customerId as string,
+				customerName: (customer?.name as string | null) ?? null,
+				customerImage: (profile?.image as string | null) ?? null,
+				joinedAt: r.joinedAt as string,
+				leftAt: (r.leftAt as string | null) ?? null,
+				paid: !!r.paidInvocationId,
+			};
+		});
+	}
+
 	// ── materiais ───────────────────────────────────────────────────────────────
 
 	async listMaterials(sessionId: string) {

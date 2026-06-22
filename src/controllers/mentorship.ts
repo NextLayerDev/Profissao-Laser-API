@@ -161,6 +161,22 @@ export const leaveRoomController = async (
 	}
 };
 
+/* ── acompanhamento admin ── */
+export const listSessionAttendeesController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	if (!requireStaff(request, reply)) return;
+	try {
+		const attendees = await mentorshipService.listSessionAttendees(
+			request.params.id,
+		);
+		return reply.send(attendees);
+	} catch (err) {
+		return fail(reply, err);
+	}
+};
+
 /* ── materiais ── */
 export const listMaterialsController = async (
 	request: FastifyRequest<{ Params: { id: string } }>,

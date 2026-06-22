@@ -41,6 +41,13 @@ export const sessionAttendeeSchema = z.object({
 	joinedAt: z.string(),
 });
 
+/** Presença completa p/ o admin acompanhar (inclui quem já saiu + se pagou). */
+export const adminAttendeeSchema = sessionAttendeeSchema.extend({
+	leftAt: z.string().nullable(),
+	paid: z.boolean(),
+});
+export type AdminAttendee = z.infer<typeof adminAttendeeSchema>;
+
 /** Estado da sala de uma sessão (timing + presença + acesso do usuário logado). */
 export const roomStateSchema = z.object({
 	session: mentorshipSessionSchema,

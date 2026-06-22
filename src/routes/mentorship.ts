@@ -10,6 +10,7 @@ import {
 	leaveRoomController,
 	listMaterialsController,
 	listMessagesController,
+	listSessionAttendeesController,
 	listSessionsController,
 	postMessageController,
 	updateSessionController,
@@ -17,6 +18,7 @@ import {
 import { authenticateCommunity } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import {
+	adminAttendeeSchema,
 	createMaterialSchema,
 	createSessionSchema,
 	joinResultSchema,
@@ -163,6 +165,28 @@ export async function mentorshipRoute(server: FastifyInstance) {
 			},
 		},
 		leaveRoomController,
+	);
+
+	// ── Acompanhamento admin ─────────────────────────────────────────────────────
+	server.get(
+		'/mentorship/sessions/:id/attendees',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Presença completa da sessão (ativos + que saíram) p/ o admin acompanhar — staff.',
+				params: z.object({ id: z.string() }),
+				response: {
+					200: z.array(adminAttendeeSchema),
+					401: ErrorSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: TAGS,
+				security: sec,
+			},
+		},
+		listSessionAttendeesController,
 	);
 
 	// ── Materiais ───────────────────────────────────────────────────────────────
