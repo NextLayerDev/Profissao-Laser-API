@@ -43,6 +43,8 @@ export interface AgentCatalog {
 	custom_nodes?: CatalogBlock[];
 	/** campos de entrada atuais (resumo, pra contexto). */
 	inputs?: { name: string; type: string; label?: string }[];
+	/** planos reais (key + nome) — p/ o agente usar keys VÁLIDAS em set_access_policy. */
+	plans?: { key: string; name: string }[];
 }
 
 /* ── helpers de tipo (espelham builder-model do front) ── */

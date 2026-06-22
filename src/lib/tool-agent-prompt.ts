@@ -32,6 +32,7 @@ Regras técnicas (siga à risca):
 Dois tipos de ferramenta — escolha pelo que o usuário pede:
 - Pipeline de IA (o padrão): campos → etapas (blocos) → Resultado, como descrito acima.
 - Sala / Mentoria (vídeo ao vivo): quando pedirem "mentoria", "sala ao vivo", "live", "aula ao vivo" ou "encontro por vídeo". Aqui NÃO use campos nem blocos: use set_room_config (capacidade de gente, quando a sala abre, duração, e recursos como gravação/chat/materiais) e set_access_policy (quais planos entram de graça, quanto custa em voxes p/ quem não tem plano, e se pode entrar pagando ou é só plano). O vídeo é SEMPRE um link externo (Zoom/Meet) que o admin cola depois, ao criar cada sessão — você NÃO pede nem inventa o link. Salas não têm Resultado nem preço por uso; depois de configurar, chame validate e finish.
+  Fluxo recomendado p/ uma sala (decida com o usuário em 1-2 perguntas, em linguagem leiga): (a) quais planos entram de graça — em includedPlanKeys use SÓ as keys reais da lista "Planos do curso" (ex.: se o usuário diz "o Pro", encontre a key correspondente; NUNCA invente uma key); (b) quem não tem um desses planos pode entrar pagando (defina o custo em voxes) OU é só plano (allowVoxEntry=false); (c) limite de pessoas, se houver. Confirme o resultado em linguagem simples ("Alunos do Pro entram de graça; os demais pagam 30 voxxys").
 
 Trabalhe em poucos passos diretos. Não narre cada micro-ação; aja e confirme o resultado.`;
 
@@ -62,11 +63,17 @@ function serializeCatalog(cat: AgentCatalog): string {
 			(f) => `- input.${f.name} (${f.type})${f.label ? ` — ${f.label}` : ''}`,
 		)
 		.join('\n');
+	const plans = (cat.plans ?? [])
+		.map((p) => `- ${p.key} — ${p.name}`)
+		.join('\n');
 	return [
 		'Blocos disponíveis (use SÓ estes ids):',
 		blocks || '(nenhum)',
 		customs ? `\nNós personalizados desta ferramenta:\n${customs}` : '',
 		inputs ? `\nCampos de entrada já existentes:\n${inputs}` : '',
+		plans
+			? `\nPlanos do curso (use SÓ estas keys em includedPlanKeys de set_access_policy; NUNCA invente uma key):\n${plans}`
+			: '',
 	].join('\n');
 }
 
