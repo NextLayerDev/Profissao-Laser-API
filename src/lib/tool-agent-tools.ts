@@ -1,4 +1,4 @@
-import type { ToolDefinitionDoc } from './tool-definitions.js';
+import type { RoomConfig, ToolDefinitionDoc } from './tool-definitions.js';
 import { validateDefinition } from './tool-validate.js';
 
 /**
@@ -362,6 +362,73 @@ function setBilling(doc: ToolDefinitionDoc, i: Input): ReducerResult {
 	return ok(d, `Preço definido: ${cost} vox/uso.`);
 }
 
+/**
+ * Transforma a ferramenta numa SALA (Mentoria/live): cria/atualiza `doc.room`
+ * (capacidade, agendamento, recursos). O link é SEMPRE externo (Zoom/Meet),
+ * colado depois ao criar cada sessão. Mutação pura; a validação fica no
+ * validateRoomDefinition (chamado em `validate`).
+ */
+function setRoomConfig(doc: ToolDefinitionDoc, i: Input): ReducerResult {
+	const d = clone(doc);
+	const room: RoomConfig = { ...(d.room ?? {}) };
+	if (typeof i.cap === 'number' || i.cap === null) {
+		room.cap = i.cap as number | null;
+	}
+	if (i.schedule && typeof i.schedule === 'object') {
+		const s = i.schedule as Record<string, unknown>;
+		const schedule = { ...(room.schedule ?? {}) };
+		if (typeof s.opensMinutesBefore === 'number') {
+			schedule.opensMinutesBefore = s.opensMinutesBefore;
+		}
+		if (typeof s.defaultDurationMin === 'number') {
+			schedule.defaultDurationMin = s.defaultDurationMin;
+		}
+		room.schedule = schedule;
+	}
+	if (i.features && typeof i.features === 'object') {
+		const f = i.features as Record<string, unknown>;
+		const features = { ...(room.features ?? {}) };
+		if (typeof f.recording === 'boolean') features.recording = f.recording;
+		if (typeof f.chat === 'boolean') features.chat = f.chat;
+		if (typeof f.materials === 'boolean') features.materials = f.materials;
+		room.features = features;
+	}
+	room.link = { mode: 'external' }; // sala = sempre link externo
+	d.room = room;
+	return ok(d, 'Sala configurada (capacidade, agendamento, recursos).');
+}
+
+/**
+ * Define o acesso de uma SALA: planos com entrada grátis, custo em voxes p/ quem
+ * não tem plano e se a entrada por voxes é permitida (false = só plano). Mutação
+ * pura; cria `doc.room` se ainda não existir.
+ */
+function setAccessPolicy(doc: ToolDefinitionDoc, i: Input): ReducerResult {
+	const hasPlans = Array.isArray(i.includedPlanKeys);
+	const hasCost = typeof i.voxCost === 'number';
+	const hasEntry = typeof i.allowVoxEntry === 'boolean';
+	if (!hasPlans && !hasCost && !hasEntry) {
+		return fail(
+			'Informe ao menos um: includedPlanKeys, voxCost ou allowVoxEntry.',
+		);
+	}
+	const d = clone(doc);
+	const room: RoomConfig = { ...(d.room ?? {}) };
+	const access = { ...(room.access ?? {}) };
+	if (Array.isArray(i.includedPlanKeys)) {
+		access.includedPlanKeys = (i.includedPlanKeys as unknown[]).filter(
+			(x): x is string => typeof x === 'string',
+		);
+	}
+	if (typeof i.voxCost === 'number') access.voxCost = i.voxCost;
+	if (typeof i.allowVoxEntry === 'boolean') {
+		access.allowVoxEntry = i.allowVoxEntry;
+	}
+	room.access = access;
+	d.room = room;
+	return ok(d, 'Política de acesso definida (planos / voxes).');
+}
+
 function createCustomNode(doc: ToolDefinitionDoc, i: Input): ReducerResult {
 	const id = String(i.id ?? '').replace(/[^a-z0-9_]/gi, '_');
 	const baseBlock = String(i.base_block ?? '');
@@ -469,6 +536,16 @@ export function applyAgentTool(
 			return { ...setOutput(doc, input), actionLabel: 'Definiu o resultado' };
 		case 'set_billing':
 			return { ...setBilling(doc, input), actionLabel: 'Definiu o preço' };
+		case 'set_room_config':
+			return {
+				...setRoomConfig(doc, input),
+				actionLabel: 'Configurou a sala',
+			};
+		case 'set_access_policy':
+			return {
+				...setAccessPolicy(doc, input),
+				actionLabel: 'Definiu o acesso',
+			};
 		case 'create_custom_node':
 			return {
 				...createCustomNode(doc, input),
@@ -637,6 +714,59 @@ export const AGENT_TOOLS = [
 				free_quota: { type: 'object' },
 			},
 			required: ['vox_cost'],
+		},
+	},
+	{
+		name: 'set_room_config',
+		description:
+			'Torna a ferramenta uma SALA (Mentoria / live de vídeo) e define capacidade, agendamento e recursos. Use ISTO (e set_access_policy) em vez de blocos quando o usuário pedir mentoria, sala ao vivo, live ou aula ao vivo. O vídeo é sempre um link externo (Zoom/Meet) colado depois ao criar cada sessão.',
+		input_schema: {
+			type: 'object',
+			properties: {
+				cap: {
+					type: ['integer', 'null'],
+					description: 'Limite de participantes; null = sem limite.',
+				},
+				schedule: {
+					type: 'object',
+					properties: {
+						opensMinutesBefore: {
+							type: 'integer',
+							description: 'Minutos antes do início em que a sala abre.',
+						},
+						defaultDurationMin: {
+							type: 'integer',
+							description: 'Duração padrão da sessão, em minutos.',
+						},
+					},
+				},
+				features: {
+					type: 'object',
+					properties: {
+						recording: { type: 'boolean' },
+						chat: { type: 'boolean' },
+						materials: { type: 'boolean' },
+					},
+				},
+			},
+		},
+	},
+	{
+		name: 'set_access_policy',
+		description:
+			'Define quem entra na SALA: includedPlanKeys (planos com entrada grátis), voxCost (custo em voxes p/ quem NÃO tem um plano incluído) e allowVoxEntry (false = só plano, sem comprar entrada). Use junto com set_room_config.',
+		input_schema: {
+			type: 'object',
+			properties: {
+				includedPlanKeys: {
+					type: 'array',
+					items: { type: 'string' },
+					description:
+						'Keys dos planos com entrada grátis (ex.: ["pro","max"]).',
+				},
+				voxCost: { type: 'number' },
+				allowVoxEntry: { type: 'boolean' },
+			},
 		},
 	},
 	{

@@ -53,6 +53,20 @@ function validateRoomDefinition(doc: ToolDefinitionDoc): ValidationResult {
 			message: 'Custo em voxes deve ser um número ≥ 0.',
 		});
 	}
+	const opens = room.schedule?.opensMinutesBefore;
+	if (opens != null && (!Number.isInteger(opens) || opens < 0 || opens > 120)) {
+		errors.push({
+			field: 'room.schedule.opensMinutesBefore',
+			message: 'A sala abre entre 0 e 120 minutos antes (inteiro).',
+		});
+	}
+	const dur = room.schedule?.defaultDurationMin;
+	if (dur != null && (!Number.isInteger(dur) || dur < 1 || dur > 1440)) {
+		errors.push({
+			field: 'room.schedule.defaultDurationMin',
+			message: 'Duração padrão deve ser um inteiro entre 1 e 1440 minutos.',
+		});
+	}
 	if (room.link?.mode && room.link.mode !== 'external') {
 		errors.push({
 			field: 'room.link.mode',

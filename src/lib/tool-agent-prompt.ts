@@ -23,11 +23,15 @@ Como você trabalha:
 
 Regras técnicas (siga à risca):
 - Use SOMENTE block_id que existam na lista de "Blocos disponíveis" abaixo. NUNCA invente um block_id.
-- Toda ferramenta precisa de: pelo menos um campo de entrada (add_input), um ou mais blocos (add_block), as ligações entre eles (connect), e um Resultado (set_output com a saída principal).
+- Toda ferramenta DO TIPO PIPELINE precisa de: pelo menos um campo de entrada (add_input), um ou mais blocos (add_block), as ligações entre eles (connect), e um Resultado (set_output com a saída principal). Salas (Mentoria) NÃO seguem essa regra — veja "Dois tipos de ferramenta" abaixo.
 - "connect" liga a SAÍDA de uma etapa anterior (ou um campo do formulário) na ENTRADA de um bloco. A fonte é "input.<campo>" ou "<id_do_nó>.<saída>".
 - Pré-preencha os valores fixos com set_param (ex.: material padrão, DPI).
 - Antes de dizer que terminou, chame "validate". Se houver erros, corrija e valide de novo. Só então chame "finish" com um resumo curto.
 - Se algo der errado numa ferramenta (tool_result com erro), leia a mensagem e corrija — não repita o mesmo erro.
+
+Dois tipos de ferramenta — escolha pelo que o usuário pede:
+- Pipeline de IA (o padrão): campos → etapas (blocos) → Resultado, como descrito acima.
+- Sala / Mentoria (vídeo ao vivo): quando pedirem "mentoria", "sala ao vivo", "live", "aula ao vivo" ou "encontro por vídeo". Aqui NÃO use campos nem blocos: use set_room_config (capacidade de gente, quando a sala abre, duração, e recursos como gravação/chat/materiais) e set_access_policy (quais planos entram de graça, quanto custa em voxes p/ quem não tem plano, e se pode entrar pagando ou é só plano). O vídeo é SEMPRE um link externo (Zoom/Meet) que o admin cola depois, ao criar cada sessão — você NÃO pede nem inventa o link. Salas não têm Resultado nem preço por uso; depois de configurar, chame validate e finish.
 
 Trabalhe em poucos passos diretos. Não narre cada micro-ação; aja e confirme o resultado.`;
 
@@ -68,10 +72,30 @@ function serializeCatalog(cat: AgentCatalog): string {
 
 /** Resumo curto do doc atual (volátil → vai como mensagem de usuário, não no cache). */
 export function summarizeDoc(doc: ToolDefinitionDoc): string {
+	const ui = (doc.ui ?? {}) as Record<string, unknown>;
+	// Tool de sala (Mentoria): resume room em vez de pipeline.
+	if (doc.room) {
+		const r = doc.room;
+		const feats = Object.entries(r.features ?? {})
+			.filter(([, v]) => v)
+			.map(([k]) => k);
+		const plans = r.access?.includedPlanKeys ?? [];
+		const voxCost = r.access?.voxCost;
+		const allowEntry = r.access?.allowVoxEntry;
+		return [
+			`Estado atual da ferramenta (tipo: Sala / Mentoria):`,
+			`- Nome: ${ui.title ?? '(sem nome)'}`,
+			`- Capacidade: ${r.cap == null ? 'sem limite' : r.cap}`,
+			`- Abre ${r.schedule?.opensMinutesBefore ?? 10} min antes; duração padrão ${r.schedule?.defaultDurationMin ?? 60} min`,
+			`- Planos com entrada grátis: ${plans.length ? plans.join(', ') : '(nenhum)'}`,
+			`- Custo p/ quem não tem plano: ${voxCost === undefined ? '(não definido)' : `${voxCost} vox`}`,
+			`- Entrada por voxes: ${allowEntry === false ? 'bloqueada (só plano)' : allowEntry === true ? 'permitida' : '(não definido)'}`,
+			`- Recursos: ${feats.length ? feats.join(', ') : '(nenhum)'}`,
+		].join('\n');
+	}
 	const inputs = Object.keys(doc.input ?? {});
 	const nodes = (doc.pipeline ?? []).map((n) => `${n.id}(${n.block})`);
 	const out = (doc.output ?? {}) as Record<string, unknown>;
-	const ui = (doc.ui ?? {}) as Record<string, unknown>;
 	return [
 		`Estado atual da ferramenta:`,
 		`- Nome: ${ui.title ?? '(sem nome)'}`,
