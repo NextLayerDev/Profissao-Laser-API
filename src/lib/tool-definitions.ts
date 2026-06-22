@@ -31,10 +31,25 @@ export interface PipelineNode {
 	params?: Record<string, unknown>;
 }
 
+/** Config de uma tool de "sala" (engine_runtime='room_v1' — Mentoria). */
+export interface RoomConfig {
+	cap?: number | null;
+	schedule?: { opensMinutesBefore?: number; defaultDurationMin?: number };
+	link?: { mode?: 'external' };
+	features?: { recording?: boolean; chat?: boolean; materials?: boolean };
+	access?: {
+		includedPlanKeys?: string[];
+		voxCost?: number;
+		allowVoxEntry?: boolean;
+	};
+}
+
 export interface ToolDefinitionDoc {
 	schemaVersion?: number;
 	input?: Record<string, InputSpec>;
 	pipeline?: PipelineNode[];
+	/** Presente só em tools de sala (room_v1). Pipeline tools omitem. */
+	room?: RoomConfig;
 	output?: Record<string, unknown>;
 	ui?: Record<string, unknown>;
 	billing?: {

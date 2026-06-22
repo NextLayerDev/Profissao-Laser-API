@@ -36,7 +36,36 @@ function refHead(v: unknown): string | null {
 	return path.slice(0, dot);
 }
 
+/** Validação de uma tool de sala (Mentoria): valida `room` em vez de pipeline. */
+function validateRoomDefinition(doc: ToolDefinitionDoc): ValidationResult {
+	const errors: ValidationIssue[] = [];
+	const room = doc.room ?? {};
+	if (room.cap != null && (!Number.isInteger(room.cap) || room.cap < 1)) {
+		errors.push({
+			field: 'room.cap',
+			message: 'Capacidade deve ser inteiro ≥ 1 (ou vazio = sem limite).',
+		});
+	}
+	const vox = room.access?.voxCost;
+	if (vox != null && (typeof vox !== 'number' || vox < 0)) {
+		errors.push({
+			field: 'room.access.voxCost',
+			message: 'Custo em voxes deve ser um número ≥ 0.',
+		});
+	}
+	if (room.link?.mode && room.link.mode !== 'external') {
+		errors.push({
+			field: 'room.link.mode',
+			message: 'Só link externo (Zoom/Meet) é suportado.',
+		});
+	}
+	return { valid: errors.length === 0, errors };
+}
+
 export function validateDefinition(doc: ToolDefinitionDoc): ValidationResult {
+	// Tool de sala (Mentoria) tem `room` e não tem pipeline — valida o room.
+	if (doc.room) return validateRoomDefinition(doc);
+
 	const errors: ValidationIssue[] = [];
 	const pipeline = doc.pipeline ?? [];
 
