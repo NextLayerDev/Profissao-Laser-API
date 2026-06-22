@@ -55,10 +55,48 @@ export const roomStateSchema = z.object({
 	/** Pode entrar? 'included' (plano) | 'pay' (voxes) | 'blocked' (só plano). */
 	access: z.enum(['included', 'pay', 'blocked']),
 	voxCost: z.number().nonnegative(),
+	/** Recursos ligados na tool (gravação/chat/materiais) — vêm da def publicada. */
+	features: z.object({
+		recording: z.boolean(),
+		chat: z.boolean(),
+		materials: z.boolean(),
+	}),
 	/** Link externo (Zoom/Meet): só presente quando o user já entrou. */
 	externalUrl: z.string().nullable(),
 });
 export type RoomState = z.infer<typeof roomStateSchema>;
+
+/* ── Materiais (M4) ── */
+export const materialSchema = z.object({
+	id: z.string(),
+	sessionId: z.string(),
+	title: z.string(),
+	url: z.string(),
+	createdAt: z.string(),
+});
+export type Material = z.infer<typeof materialSchema>;
+
+export const createMaterialSchema = z.object({
+	title: z.string().min(1),
+	url: z.string().url(),
+});
+export type CreateMaterial = z.infer<typeof createMaterialSchema>;
+
+/* ── Chat (M4) ── */
+export const messageSchema = z.object({
+	id: z.string(),
+	customerId: z.string(),
+	customerName: z.string().nullable(),
+	customerImage: z.string().nullable(),
+	content: z.string(),
+	createdAt: z.string(),
+});
+export type Message = z.infer<typeof messageSchema>;
+
+export const postMessageSchema = z.object({
+	content: z.string().min(1).max(2000),
+});
+export type PostMessage = z.infer<typeof postMessageSchema>;
 
 /** Resultado de entrar: revela o link + estado. */
 export const joinResultSchema = z.object({

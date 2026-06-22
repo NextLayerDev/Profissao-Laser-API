@@ -1,20 +1,29 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
+	addMaterialController,
 	createSessionController,
+	deleteMaterialController,
 	deleteSessionController,
 	getRoomController,
 	joinRoomController,
 	leaveRoomController,
+	listMaterialsController,
+	listMessagesController,
 	listSessionsController,
+	postMessageController,
 	updateSessionController,
 } from '../controllers/mentorship.js';
 import { authenticateCommunity } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import {
+	createMaterialSchema,
 	createSessionSchema,
 	joinResultSchema,
+	materialSchema,
 	mentorshipSessionSchema,
+	messageSchema,
+	postMessageSchema,
 	roomStateSchema,
 	updateSessionSchema,
 } from '../types/mentorship.js';
@@ -154,5 +163,99 @@ export async function mentorshipRoute(server: FastifyInstance) {
 			},
 		},
 		leaveRoomController,
+	);
+
+	// ── Materiais ───────────────────────────────────────────────────────────────
+	server.get(
+		'/mentorship/sessions/:id/materials',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description:
+					'Materiais da sessão. Visível a quem é incluído (plano/staff) ou já entrou.',
+				params: z.object({ id: z.string() }),
+				response: {
+					200: z.array(materialSchema),
+					401: ErrorSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+				},
+				tags: TAGS,
+				security: sec,
+			},
+		},
+		listMaterialsController,
+	);
+
+	server.post(
+		'/mentorship/sessions/:id/materials',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Adiciona um material (staff) — título + URL.',
+				params: z.object({ id: z.string() }),
+				body: createMaterialSchema,
+				response: { 201: materialSchema, 400: ErrorSchema, 403: ErrorSchema },
+				tags: TAGS,
+				security: sec,
+			},
+		},
+		addMaterialController,
+	);
+
+	server.delete(
+		'/mentorship/materials/:materialId',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Remove um material (staff).',
+				params: z.object({ materialId: z.string() }),
+				response: { 204: z.null(), 403: ErrorSchema, 500: ErrorSchema },
+				tags: TAGS,
+				security: sec,
+			},
+		},
+		deleteMaterialController,
+	);
+
+	// ── Chat ──────────────────────────────────────────────────────────────────
+	server.get(
+		'/mentorship/sessions/:id/messages',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Mensagens do chat da sessão (só quem está na sala).',
+				params: z.object({ id: z.string() }),
+				response: {
+					200: z.array(messageSchema),
+					401: ErrorSchema,
+					403: ErrorSchema, // not_in_room
+				},
+				tags: TAGS,
+				security: sec,
+			},
+		},
+		listMessagesController,
+	);
+
+	server.post(
+		'/mentorship/sessions/:id/messages',
+		{
+			preHandler: [authenticateCommunity],
+			schema: {
+				description: 'Envia uma mensagem no chat (só quem está na sala).',
+				params: z.object({ id: z.string() }),
+				body: postMessageSchema,
+				response: {
+					201: messageSchema,
+					400: ErrorSchema,
+					401: ErrorSchema,
+					403: ErrorSchema,
+				},
+				tags: TAGS,
+				security: sec,
+			},
+		},
+		postMessageController,
 	);
 }

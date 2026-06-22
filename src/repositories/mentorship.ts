@@ -163,6 +163,93 @@ class MentorshipRepository {
 			};
 		});
 	}
+
+	// ── materiais ───────────────────────────────────────────────────────────────
+
+	async listMaterials(sessionId: string) {
+		const { data, error } = await supabase
+			.from('pl_mentorship_material')
+			.select('id, "sessionId", title, url, "createdAt"')
+			.eq('sessionId', sessionId)
+			.order('createdAt', { ascending: false });
+		if (error) throw new Error(error.message);
+		return (data ?? []) as unknown as {
+			id: string;
+			sessionId: string;
+			title: string;
+			url: string;
+			createdAt: string;
+		}[];
+	}
+
+	async insertMaterial(sessionId: string, title: string, url: string) {
+		const { data, error } = await supabase
+			.from('pl_mentorship_material')
+			.insert({ sessionId, title, url })
+			.select('id, "sessionId", title, url, "createdAt"')
+			.single();
+		if (error) throw new Error(error.message);
+		return data as unknown as {
+			id: string;
+			sessionId: string;
+			title: string;
+			url: string;
+			createdAt: string;
+		};
+	}
+
+	async deleteMaterial(id: string): Promise<void> {
+		const { error } = await supabase
+			.from('pl_mentorship_material')
+			.delete()
+			.eq('id', id);
+		if (error) throw new Error(error.message);
+	}
+
+	// ── chat ──────────────────────────────────────────────────────────────────
+
+	async listMessages(sessionId: string, limit = 100) {
+		const { data, error } = await supabase
+			.from('pl_mentorship_message')
+			.select(
+				'id, "customerId", content, "createdAt", Customers!inner(id, name, pl_community_profile(image))',
+			)
+			.eq('sessionId', sessionId)
+			.order('createdAt', { ascending: false })
+			.limit(limit);
+		if (error) throw new Error(error.message);
+		// vem do mais novo → inverte p/ ordem cronológica.
+		return (data ?? []).reverse().map((row) => {
+			// biome-ignore lint/suspicious/noExplicitAny: join aninhado dinâmico
+			const r = row as any;
+			const customer = r.Customers;
+			const profileList = customer?.pl_community_profile;
+			const profile = Array.isArray(profileList) ? profileList[0] : profileList;
+			return {
+				id: r.id as string,
+				customerId: r.customerId as string,
+				customerName: (customer?.name as string | null) ?? null,
+				customerImage: (profile?.image as string | null) ?? null,
+				content: r.content as string,
+				createdAt: r.createdAt as string,
+			};
+		});
+	}
+
+	async insertMessage(sessionId: string, customerId: string, content: string) {
+		const { data, error } = await supabase
+			.from('pl_mentorship_message')
+			.insert({ sessionId, customerId, content })
+			.select('id, "customerId", content, "createdAt"')
+			.single();
+		if (error) throw new Error(error.message);
+		return data as unknown as {
+			id: string;
+			customerId: string;
+			content: string;
+			createdAt: string;
+		};
+	}
 }
 
 export const mentorshipRepository = new MentorshipRepository();

@@ -39,25 +39,42 @@ interface RoomAccessPolicy {
 	voxCost: number;
 	allowVoxEntry: boolean;
 }
+interface RoomFeatures {
+	recording: boolean;
+	chat: boolean;
+	materials: boolean;
+}
+interface RoomData {
+	access: RoomAccessPolicy;
+	features: RoomFeatures;
+}
 
-/** Lê o room.access da tool publicada (default permissivo se faltar). */
-async function loadAccess(
+/** Lê access + features do room da tool publicada (default permissivo se faltar). */
+async function loadRoom(
 	toolKey: string,
 	customerId: string,
 	authHeader?: string,
-): Promise<RoomAccessPolicy> {
+): Promise<RoomData> {
 	const def = await loadPublishedToolDefinition(
 		toolKey,
 		customerId,
 		authHeader,
 	);
 	const a = def.definition.room?.access ?? {};
+	const f = def.definition.room?.features ?? {};
 	return {
-		includedPlanKeys: Array.isArray(a.includedPlanKeys)
-			? a.includedPlanKeys
-			: [],
-		voxCost: Number(a.voxCost ?? 0),
-		allowVoxEntry: a.allowVoxEntry !== false,
+		access: {
+			includedPlanKeys: Array.isArray(a.includedPlanKeys)
+				? a.includedPlanKeys
+				: [],
+			voxCost: Number(a.voxCost ?? 0),
+			allowVoxEntry: a.allowVoxEntry !== false,
+		},
+		features: {
+			recording: !!f.recording,
+			chat: !!f.chat,
+			materials: !!f.materials,
+		},
 	};
 }
 
@@ -133,11 +150,7 @@ export const mentorshipService = {
 		ctx: RoomAccessCtx,
 	): Promise<RoomState> {
 		const session = await repo.findSessionById(sessionId);
-		const access = await loadAccess(
-			session.toolKey,
-			customerId,
-			ctx.authHeader,
-		);
+		const room = await loadRoom(session.toolKey, customerId, ctx.authHeader);
 		const t = timing(session);
 		const [attendees, activeRow, activeCount] = await Promise.all([
 			t.isOpen ? repo.listAttendees(sessionId) : Promise.resolve([]),
@@ -155,8 +168,9 @@ export const mentorshipService = {
 			attendees,
 			activeCount,
 			hasJoined,
-			access: decideAccess(access, ctx),
-			voxCost: access.voxCost,
+			access: decideAccess(room.access, ctx),
+			voxCost: room.access.voxCost,
+			features: room.features,
 			// Link só sai pra quem já entrou (defesa em profundidade).
 			externalUrl: hasJoined ? session.externalUrl : null,
 		};
@@ -178,7 +192,7 @@ export const mentorshipService = {
 			};
 		}
 
-		const access = await loadAccess(
+		const { access } = await loadRoom(
 			session.toolKey,
 			customerId,
 			ctx.authHeader,
@@ -242,5 +256,64 @@ export const mentorshipService = {
 
 	leaveRoom(sessionId: string, customerId: string) {
 		return repo.leaveAttendance(sessionId, customerId);
+	},
+
+	// ── materiais ──────────────────────────────────────────────────────────────
+
+	/** Lista materiais — visível a quem é incluído (plano/staff) ou já entrou. */
+	async listMaterials(
+		sessionId: string,
+		customerId: string,
+		ctx: RoomAccessCtx,
+	) {
+		const session = await repo.findSessionById(sessionId);
+		const { access } = await loadRoom(
+			session.toolKey,
+			customerId,
+			ctx.authHeader,
+		);
+		const activeRow = await repo.findActiveAttendance(sessionId, customerId);
+		if (decideAccess(access, ctx) !== 'included' && !activeRow) {
+			throw new MentorshipError(403, 'not_in_room');
+		}
+		return repo.listMaterials(sessionId);
+	},
+
+	addMaterial(sessionId: string, title: string, url: string) {
+		return repo.insertMaterial(sessionId, title, url);
+	},
+
+	deleteMaterial(id: string) {
+		return repo.deleteMaterial(id);
+	},
+
+	// ── chat ────────────────────────────────────────────────────────────────────
+
+	/** Pré-condição do chat: estar ATIVO na sala (entrou e não saiu). */
+	async assertInRoom(sessionId: string, customerId: string) {
+		const activeRow = await repo.findActiveAttendance(sessionId, customerId);
+		if (!activeRow) throw new MentorshipError(403, 'not_in_room');
+	},
+
+	async listMessages(sessionId: string, customerId: string) {
+		await this.assertInRoom(sessionId, customerId);
+		return repo.listMessages(sessionId);
+	},
+
+	async postMessage(
+		sessionId: string,
+		customer: { id: string; name: string | null; image: string | null },
+		content: string,
+	) {
+		await this.assertInRoom(sessionId, customer.id);
+		const row = await repo.insertMessage(sessionId, customer.id, content);
+		return {
+			id: row.id,
+			customerId: customer.id,
+			customerName: customer.name,
+			customerImage: customer.image,
+			content: row.content,
+			createdAt: row.createdAt,
+		};
 	},
 };

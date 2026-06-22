@@ -2,7 +2,9 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { isStaffRole } from '../lib/external-auth.js';
 import { MentorshipError, mentorshipService } from '../services/mentorship.js';
 import {
+	createMaterialSchema,
 	createSessionSchema,
+	postMessageSchema,
 	updateSessionSchema,
 } from '../types/mentorship.js';
 
@@ -154,6 +156,96 @@ export const leaveRoomController = async (
 	try {
 		await mentorshipService.leaveRoom(request.params.id, customerId);
 		return reply.status(204).send();
+	} catch (err) {
+		return fail(reply, err);
+	}
+};
+
+/* ── materiais ── */
+export const listMaterialsController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId) return reply.status(401).send({ message: 'Unauthorized' });
+	try {
+		const materials = await mentorshipService.listMaterials(
+			request.params.id,
+			customerId,
+			accessFrom(request),
+		);
+		return reply.send(materials);
+	} catch (err) {
+		return fail(reply, err);
+	}
+};
+
+export const addMaterialController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	if (!requireStaff(request, reply)) return;
+	try {
+		const body = createMaterialSchema.parse(request.body);
+		const material = await mentorshipService.addMaterial(
+			request.params.id,
+			body.title,
+			body.url,
+		);
+		return reply.status(201).send(material);
+	} catch (err) {
+		return fail(reply, err);
+	}
+};
+
+export const deleteMaterialController = async (
+	request: FastifyRequest<{ Params: { materialId: string } }>,
+	reply: FastifyReply,
+) => {
+	if (!requireStaff(request, reply)) return;
+	try {
+		await mentorshipService.deleteMaterial(request.params.materialId);
+		return reply.status(204).send();
+	} catch (err) {
+		return fail(reply, err);
+	}
+};
+
+/* ── chat ── */
+export const listMessagesController = async (
+	request: FastifyRequest<{ Params: { id: string } }>,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	if (!customerId) return reply.status(401).send({ message: 'Unauthorized' });
+	try {
+		const messages = await mentorshipService.listMessages(
+			request.params.id,
+			customerId,
+		);
+		return reply.send(messages);
+	} catch (err) {
+		return fail(reply, err);
+	}
+};
+
+export const postMessageController = async (
+	request: FastifyRequest<{
+		Params: { id: string };
+		Body: { content: string };
+	}>,
+	reply: FastifyReply,
+) => {
+	const customer = request.currentCustomer;
+	if (!customer?.id) return reply.status(401).send({ message: 'Unauthorized' });
+	try {
+		const body = postMessageSchema.parse(request.body);
+		const message = await mentorshipService.postMessage(
+			request.params.id,
+			{ id: customer.id, name: customer.name ?? null, image: customer.image },
+			body.content,
+		);
+		return reply.status(201).send(message);
 	} catch (err) {
 		return fail(reply, err);
 	}
