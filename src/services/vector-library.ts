@@ -79,7 +79,9 @@ export const vectorLibraryService = {
 	async deleteFolder(id: string) {
 		return withCapture(async () => {
 			const fileUrls = await vectorLibraryRepository.getAllFileUrlsInFolder(id);
-			await Promise.all(
+			// allSettled: um ficheiro problemático no storage nunca aborta a limpeza
+			// nem o delete no banco (que cascateia subpastas/ficheiros).
+			await Promise.allSettled(
 				fileUrls.map((url) => deleteVectorLibraryFileByUrl(url)),
 			);
 			await vectorLibraryRepository.deleteFolder(id);
