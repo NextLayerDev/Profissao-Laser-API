@@ -31,10 +31,40 @@ export interface PipelineNode {
 	params?: Record<string, unknown>;
 }
 
+/** Config de uma tool de "sala" (engine_runtime='room_v1' — Mentoria). */
+/** Aparência personalizável de UMA tela da sala (aluno OU admin). Tudo opcional. */
+export interface RoomScreenUi {
+	accent?: string;
+	theme?: 'app' | 'light' | 'dark';
+	labels?: Record<string, string>;
+	notice?: {
+		type?: 'info' | 'warning' | 'success';
+		title?: string;
+		message?: string;
+	} | null;
+	sections?: { materials?: boolean; chat?: boolean };
+}
+
+export interface RoomConfig {
+	cap?: number | null;
+	schedule?: { opensMinutesBefore?: number; defaultDurationMin?: number };
+	link?: { mode?: 'external' };
+	features?: { recording?: boolean; chat?: boolean; materials?: boolean };
+	access?: {
+		includedPlanKeys?: string[];
+		voxCost?: number;
+		allowVoxEntry?: boolean;
+	};
+	/** Aparência personalizável por tela (aluno/admin). Opcional. */
+	ui?: { customer?: RoomScreenUi; admin?: RoomScreenUi };
+}
+
 export interface ToolDefinitionDoc {
 	schemaVersion?: number;
 	input?: Record<string, InputSpec>;
 	pipeline?: PipelineNode[];
+	/** Presente só em tools de sala (room_v1). Pipeline tools omitem. */
+	room?: RoomConfig;
 	output?: Record<string, unknown>;
 	ui?: Record<string, unknown>;
 	billing?: {

@@ -270,6 +270,7 @@ export const authenticateCommunity = async (
 	}
 
 	grant(ent?.is_test_unlimited === true);
-	// Plano ativo (do mesmo `ent` já buscado) — usado p/ gatear eventos por plano.
+	// Plano ativo (do mesmo `ent` já buscado) — usado p/ gatear salas
+	// (Mentoria) e eventos por plano.
 	request.currentPlanKey = ent?.subscription?.plan?.key ?? null;
 };

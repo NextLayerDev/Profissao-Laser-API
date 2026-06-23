@@ -1,4 +1,8 @@
-import type { ToolDefinitionDoc } from './tool-definitions.js';
+import type {
+	RoomConfig,
+	RoomScreenUi,
+	ToolDefinitionDoc,
+} from './tool-definitions.js';
 import { validateDefinition } from './tool-validate.js';
 
 /**
@@ -43,6 +47,8 @@ export interface AgentCatalog {
 	custom_nodes?: CatalogBlock[];
 	/** campos de entrada atuais (resumo, pra contexto). */
 	inputs?: { name: string; type: string; label?: string }[];
+	/** planos reais (key + nome) — p/ o agente usar keys VÁLIDAS em set_access_policy. */
+	plans?: { key: string; name: string }[];
 }
 
 /* ── helpers de tipo (espelham builder-model do front) ── */
@@ -362,6 +368,158 @@ function setBilling(doc: ToolDefinitionDoc, i: Input): ReducerResult {
 	return ok(d, `Preço definido: ${cost} vox/uso.`);
 }
 
+/**
+ * Transforma a ferramenta numa SALA (Mentoria/live): cria/atualiza `doc.room`
+ * (capacidade, agendamento, recursos). O link é SEMPRE externo (Zoom/Meet),
+ * colado depois ao criar cada sessão. Mutação pura; a validação fica no
+ * validateRoomDefinition (chamado em `validate`).
+ */
+function setRoomConfig(doc: ToolDefinitionDoc, i: Input): ReducerResult {
+	const d = clone(doc);
+	const room: RoomConfig = { ...(d.room ?? {}) };
+	if (typeof i.cap === 'number' || i.cap === null) {
+		room.cap = i.cap as number | null;
+	}
+	if (i.schedule && typeof i.schedule === 'object') {
+		const s = i.schedule as Record<string, unknown>;
+		const schedule = { ...(room.schedule ?? {}) };
+		if (typeof s.opensMinutesBefore === 'number') {
+			schedule.opensMinutesBefore = s.opensMinutesBefore;
+		}
+		if (typeof s.defaultDurationMin === 'number') {
+			schedule.defaultDurationMin = s.defaultDurationMin;
+		}
+		room.schedule = schedule;
+	}
+	if (i.features && typeof i.features === 'object') {
+		const f = i.features as Record<string, unknown>;
+		const features = { ...(room.features ?? {}) };
+		if (typeof f.recording === 'boolean') features.recording = f.recording;
+		if (typeof f.chat === 'boolean') features.chat = f.chat;
+		if (typeof f.materials === 'boolean') features.materials = f.materials;
+		room.features = features;
+	}
+	room.link = { mode: 'external' }; // sala = sempre link externo
+	d.room = room;
+	return ok(d, 'Sala configurada (capacidade, agendamento, recursos).');
+}
+
+/**
+ * Define o acesso de uma SALA: planos com entrada grátis, custo em voxes p/ quem
+ * não tem plano e se a entrada por voxes é permitida (false = só plano). Mutação
+ * pura; cria `doc.room` se ainda não existir.
+ */
+function setAccessPolicy(doc: ToolDefinitionDoc, i: Input): ReducerResult {
+	const hasPlans = Array.isArray(i.includedPlanKeys);
+	const hasCost = typeof i.voxCost === 'number';
+	const hasEntry = typeof i.allowVoxEntry === 'boolean';
+	if (!hasPlans && !hasCost && !hasEntry) {
+		return fail(
+			'Informe ao menos um: includedPlanKeys, voxCost ou allowVoxEntry.',
+		);
+	}
+	const d = clone(doc);
+	const room: RoomConfig = { ...(d.room ?? {}) };
+	const access = { ...(room.access ?? {}) };
+	if (Array.isArray(i.includedPlanKeys)) {
+		access.includedPlanKeys = (i.includedPlanKeys as unknown[]).filter(
+			(x): x is string => typeof x === 'string',
+		);
+	}
+	if (typeof i.voxCost === 'number') access.voxCost = i.voxCost;
+	if (typeof i.allowVoxEntry === 'boolean') {
+		access.allowVoxEntry = i.allowVoxEntry;
+	}
+	room.access = access;
+	d.room = room;
+	return ok(d, 'Política de acesso definida (planos / voxes).');
+}
+
+/** Chaves de label que o renderer entende (ignora o resto p/ não inchar o doc). */
+const ROOM_LABEL_KEYS = new Set([
+	'headerSubtitle',
+	'enter',
+	'novaSessao',
+	'acompanhar',
+	'emptyText',
+	'emptyButton',
+	'materialsTitle',
+	'chatTitle',
+]);
+
+/** Personaliza a aparência da sala, por tela (customer/admin/both). */
+function setRoomUI(doc: ToolDefinitionDoc, i: Input): ReducerResult {
+	// Só vale p/ salas — não sintetiza `room` numa tool de pipeline (senão
+	// a validação trocaria de ramo). A sala já existe via set_room_config.
+	if (!doc.room) {
+		return fail('set_room_ui só vale p/ salas — use set_room_config primeiro.');
+	}
+	const screen =
+		i.screen === 'admin' || i.screen === 'customer' || i.screen === 'both'
+			? i.screen
+			: 'both';
+	const patch: RoomScreenUi = {};
+	if (typeof i.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(i.accent)) {
+		patch.accent = i.accent;
+	}
+	if (i.theme === 'app' || i.theme === 'light' || i.theme === 'dark') {
+		patch.theme = i.theme;
+	}
+	if (i.labels && typeof i.labels === 'object') {
+		const labels: Record<string, string> = {};
+		for (const [k, v] of Object.entries(i.labels as Record<string, unknown>)) {
+			if (typeof v === 'string' && ROOM_LABEL_KEYS.has(k)) labels[k] = v;
+		}
+		patch.labels = labels;
+	}
+	if (i.notice === null) {
+		patch.notice = null;
+	} else if (i.notice && typeof i.notice === 'object') {
+		const n = i.notice as Record<string, unknown>;
+		patch.notice = {
+			type: n.type === 'warning' || n.type === 'success' ? n.type : 'info',
+			title: typeof n.title === 'string' ? n.title : undefined,
+			message: typeof n.message === 'string' ? n.message : undefined,
+		};
+	}
+	if (i.sections && typeof i.sections === 'object') {
+		const s = i.sections as Record<string, unknown>;
+		patch.sections = {
+			...(typeof s.materials === 'boolean' ? { materials: s.materials } : {}),
+			...(typeof s.chat === 'boolean' ? { chat: s.chat } : {}),
+		};
+	}
+	if (Object.keys(patch).length === 0) {
+		return fail(
+			'Nada para mudar — informe accent, theme, labels, notice ou sections.',
+		);
+	}
+	const d = clone(doc);
+	const room: RoomConfig = { ...(d.room ?? {}) };
+	const ui = { ...(room.ui ?? {}) };
+	const apply = (key: 'customer' | 'admin') => {
+		const cur: RoomScreenUi = { ...(ui[key] ?? {}) };
+		if (patch.accent !== undefined) cur.accent = patch.accent;
+		if (patch.theme !== undefined) cur.theme = patch.theme;
+		if (patch.notice !== undefined) cur.notice = patch.notice;
+		// labels/sections fazem MERGE (não substituem o conjunto inteiro).
+		if (patch.labels) cur.labels = { ...(cur.labels ?? {}), ...patch.labels };
+		if (patch.sections) {
+			cur.sections = { ...(cur.sections ?? {}), ...patch.sections };
+		}
+		ui[key] = cur;
+	};
+	if (screen === 'both') {
+		apply('customer');
+		apply('admin');
+	} else {
+		apply(screen);
+	}
+	room.ui = ui;
+	d.room = room;
+	return ok(d, `Aparência da sala atualizada (${screen}).`);
+}
+
 function createCustomNode(doc: ToolDefinitionDoc, i: Input): ReducerResult {
 	const id = String(i.id ?? '').replace(/[^a-z0-9_]/gi, '_');
 	const baseBlock = String(i.base_block ?? '');
@@ -469,6 +627,21 @@ export function applyAgentTool(
 			return { ...setOutput(doc, input), actionLabel: 'Definiu o resultado' };
 		case 'set_billing':
 			return { ...setBilling(doc, input), actionLabel: 'Definiu o preço' };
+		case 'set_room_config':
+			return {
+				...setRoomConfig(doc, input),
+				actionLabel: 'Configurou a sala',
+			};
+		case 'set_access_policy':
+			return {
+				...setAccessPolicy(doc, input),
+				actionLabel: 'Definiu o acesso',
+			};
+		case 'set_room_ui':
+			return {
+				...setRoomUI(doc, input),
+				actionLabel: 'Personalizou a aparência',
+			};
 		case 'create_custom_node':
 			return {
 				...createCustomNode(doc, input),
@@ -637,6 +810,95 @@ export const AGENT_TOOLS = [
 				free_quota: { type: 'object' },
 			},
 			required: ['vox_cost'],
+		},
+	},
+	{
+		name: 'set_room_config',
+		description:
+			'Torna a ferramenta uma SALA (Mentoria / live de vídeo) e define capacidade, agendamento e recursos. Use ISTO (e set_access_policy) em vez de blocos quando o usuário pedir mentoria, sala ao vivo, live ou aula ao vivo. O vídeo é sempre um link externo (Zoom/Meet) colado depois ao criar cada sessão.',
+		input_schema: {
+			type: 'object',
+			properties: {
+				cap: {
+					type: ['integer', 'null'],
+					description: 'Limite de participantes; null = sem limite.',
+				},
+				schedule: {
+					type: 'object',
+					properties: {
+						opensMinutesBefore: {
+							type: 'integer',
+							description: 'Minutos antes do início em que a sala abre.',
+						},
+						defaultDurationMin: {
+							type: 'integer',
+							description: 'Duração padrão da sessão, em minutos.',
+						},
+					},
+				},
+				features: {
+					type: 'object',
+					properties: {
+						recording: { type: 'boolean' },
+						chat: { type: 'boolean' },
+						materials: { type: 'boolean' },
+					},
+				},
+			},
+		},
+	},
+	{
+		name: 'set_access_policy',
+		description:
+			'Define quem entra na SALA: includedPlanKeys (planos com entrada grátis), voxCost (custo em voxes p/ quem NÃO tem um plano incluído) e allowVoxEntry (false = só plano, sem comprar entrada). Use junto com set_room_config.',
+		input_schema: {
+			type: 'object',
+			properties: {
+				includedPlanKeys: {
+					type: 'array',
+					items: { type: 'string' },
+					description:
+						'Keys dos planos com entrada grátis (ex.: ["pro","max"]).',
+				},
+				voxCost: { type: 'number' },
+				allowVoxEntry: { type: 'boolean' },
+			},
+		},
+	},
+	{
+		name: 'set_room_ui',
+		description:
+			'Personaliza a APARÊNCIA da sala (Mentoria), SEPARADA por tela. screen: "customer" (aluno), "admin" ou "both". accent = cor de destaque hex (#rrggbb). theme = "app"|"light"|"dark". labels = textos (use SÓ estas chaves: headerSubtitle, enter, novaSessao, acompanhar, emptyText, emptyButton, materialsTitle, chatTitle). notice = banner no topo {type:info|warning|success, title, message} (ou null p/ remover). sections = mostrar/ocultar {materials, chat}. Só p/ tools de sala.',
+		input_schema: {
+			type: 'object',
+			properties: {
+				screen: { type: 'string', enum: ['customer', 'admin', 'both'] },
+				accent: {
+					type: 'string',
+					description: 'Cor de destaque hex, ex.: "#7c3aed".',
+				},
+				theme: { type: 'string', enum: ['app', 'light', 'dark'] },
+				labels: {
+					type: 'object',
+					description:
+						'Overrides de texto (chaves: headerSubtitle, enter, novaSessao, acompanhar, emptyText, emptyButton, materialsTitle, chatTitle).',
+				},
+				notice: {
+					type: ['object', 'null'],
+					properties: {
+						type: { type: 'string', enum: ['info', 'warning', 'success'] },
+						title: { type: 'string' },
+						message: { type: 'string' },
+					},
+				},
+				sections: {
+					type: 'object',
+					properties: {
+						materials: { type: 'boolean' },
+						chat: { type: 'boolean' },
+					},
+				},
+			},
 		},
 	},
 	{

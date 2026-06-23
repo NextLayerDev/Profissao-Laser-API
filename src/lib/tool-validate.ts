@@ -36,7 +36,74 @@ function refHead(v: unknown): string | null {
 	return path.slice(0, dot);
 }
 
+/** Validação de uma tool de sala (Mentoria): valida `room` em vez de pipeline. */
+function validateRoomDefinition(doc: ToolDefinitionDoc): ValidationResult {
+	const errors: ValidationIssue[] = [];
+	const room = doc.room ?? {};
+	if (room.cap != null && (!Number.isInteger(room.cap) || room.cap < 1)) {
+		errors.push({
+			field: 'room.cap',
+			message: 'Capacidade deve ser inteiro ≥ 1 (ou vazio = sem limite).',
+		});
+	}
+	const vox = room.access?.voxCost;
+	if (vox != null && (typeof vox !== 'number' || vox < 0)) {
+		errors.push({
+			field: 'room.access.voxCost',
+			message: 'Custo em voxes deve ser um número ≥ 0.',
+		});
+	}
+	const opens = room.schedule?.opensMinutesBefore;
+	if (opens != null && (!Number.isInteger(opens) || opens < 0 || opens > 120)) {
+		errors.push({
+			field: 'room.schedule.opensMinutesBefore',
+			message: 'A sala abre entre 0 e 120 minutos antes (inteiro).',
+		});
+	}
+	const dur = room.schedule?.defaultDurationMin;
+	if (dur != null && (!Number.isInteger(dur) || dur < 1 || dur > 1440)) {
+		errors.push({
+			field: 'room.schedule.defaultDurationMin',
+			message: 'Duração padrão deve ser um inteiro entre 1 e 1440 minutos.',
+		});
+	}
+	if (room.link?.mode && room.link.mode !== 'external') {
+		errors.push({
+			field: 'room.link.mode',
+			message: 'Só link externo (Zoom/Meet) é suportado.',
+		});
+	}
+	// Aparência (room.ui) — valida cor/tema/banner de cada tela.
+	for (const key of ['customer', 'admin'] as const) {
+		const screen = room.ui?.[key];
+		if (!screen) continue;
+		if (screen.accent && !/^#[0-9a-fA-F]{6}$/.test(screen.accent)) {
+			errors.push({
+				field: `room.ui.${key}.accent`,
+				message: 'A cor de destaque deve ser hex (#RRGGBB).',
+			});
+		}
+		if (screen.theme && !['app', 'light', 'dark'].includes(screen.theme)) {
+			errors.push({
+				field: `room.ui.${key}.theme`,
+				message: 'Tema deve ser app, light ou dark.',
+			});
+		}
+		const nt = screen.notice?.type;
+		if (nt && !['info', 'warning', 'success'].includes(nt)) {
+			errors.push({
+				field: `room.ui.${key}.notice.type`,
+				message: 'Tipo do aviso deve ser info, warning ou success.',
+			});
+		}
+	}
+	return { valid: errors.length === 0, errors };
+}
+
 export function validateDefinition(doc: ToolDefinitionDoc): ValidationResult {
+	// Tool de sala (Mentoria) tem `room` e não tem pipeline — valida o room.
+	if (doc.room) return validateRoomDefinition(doc);
+
 	const errors: ValidationIssue[] = [];
 	const pipeline = doc.pipeline ?? [];
 
