@@ -18,6 +18,10 @@ const turnBodySchema = z.object({
 				.max(64)
 				.optional(),
 			inputs: z.array(z.record(z.string(), z.unknown())).max(64).optional(),
+			plans: z
+				.array(z.object({ key: z.string(), name: z.string() }).passthrough())
+				.max(64)
+				.optional(),
 		})
 		.passthrough(),
 	message: z.string().min(1).max(8000),
