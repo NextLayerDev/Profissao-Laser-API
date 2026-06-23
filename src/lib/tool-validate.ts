@@ -73,6 +73,30 @@ function validateRoomDefinition(doc: ToolDefinitionDoc): ValidationResult {
 			message: 'Só link externo (Zoom/Meet) é suportado.',
 		});
 	}
+	// Aparência (room.ui) — valida cor/tema/banner de cada tela.
+	for (const key of ['customer', 'admin'] as const) {
+		const screen = room.ui?.[key];
+		if (!screen) continue;
+		if (screen.accent && !/^#[0-9a-fA-F]{6}$/.test(screen.accent)) {
+			errors.push({
+				field: `room.ui.${key}.accent`,
+				message: 'A cor de destaque deve ser hex (#RRGGBB).',
+			});
+		}
+		if (screen.theme && !['app', 'light', 'dark'].includes(screen.theme)) {
+			errors.push({
+				field: `room.ui.${key}.theme`,
+				message: 'Tema deve ser app, light ou dark.',
+			});
+		}
+		const nt = screen.notice?.type;
+		if (nt && !['info', 'warning', 'success'].includes(nt)) {
+			errors.push({
+				field: `room.ui.${key}.notice.type`,
+				message: 'Tipo do aviso deve ser info, warning ou success.',
+			});
+		}
+	}
 	return { valid: errors.length === 0, errors };
 }
 

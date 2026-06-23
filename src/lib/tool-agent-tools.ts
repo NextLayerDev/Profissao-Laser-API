@@ -1,4 +1,8 @@
-import type { RoomConfig, ToolDefinitionDoc } from './tool-definitions.js';
+import type {
+	RoomConfig,
+	RoomScreenUi,
+	ToolDefinitionDoc,
+} from './tool-definitions.js';
 import { validateDefinition } from './tool-validate.js';
 
 /**
@@ -431,6 +435,91 @@ function setAccessPolicy(doc: ToolDefinitionDoc, i: Input): ReducerResult {
 	return ok(d, 'Política de acesso definida (planos / voxes).');
 }
 
+/** Chaves de label que o renderer entende (ignora o resto p/ não inchar o doc). */
+const ROOM_LABEL_KEYS = new Set([
+	'headerSubtitle',
+	'enter',
+	'novaSessao',
+	'acompanhar',
+	'emptyText',
+	'emptyButton',
+	'materialsTitle',
+	'chatTitle',
+]);
+
+/** Personaliza a aparência da sala, por tela (customer/admin/both). */
+function setRoomUI(doc: ToolDefinitionDoc, i: Input): ReducerResult {
+	// Só vale p/ salas — não sintetiza `room` numa tool de pipeline (senão
+	// a validação trocaria de ramo). A sala já existe via set_room_config.
+	if (!doc.room) {
+		return fail('set_room_ui só vale p/ salas — use set_room_config primeiro.');
+	}
+	const screen =
+		i.screen === 'admin' || i.screen === 'customer' || i.screen === 'both'
+			? i.screen
+			: 'both';
+	const patch: RoomScreenUi = {};
+	if (typeof i.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(i.accent)) {
+		patch.accent = i.accent;
+	}
+	if (i.theme === 'app' || i.theme === 'light' || i.theme === 'dark') {
+		patch.theme = i.theme;
+	}
+	if (i.labels && typeof i.labels === 'object') {
+		const labels: Record<string, string> = {};
+		for (const [k, v] of Object.entries(i.labels as Record<string, unknown>)) {
+			if (typeof v === 'string' && ROOM_LABEL_KEYS.has(k)) labels[k] = v;
+		}
+		patch.labels = labels;
+	}
+	if (i.notice === null) {
+		patch.notice = null;
+	} else if (i.notice && typeof i.notice === 'object') {
+		const n = i.notice as Record<string, unknown>;
+		patch.notice = {
+			type: n.type === 'warning' || n.type === 'success' ? n.type : 'info',
+			title: typeof n.title === 'string' ? n.title : undefined,
+			message: typeof n.message === 'string' ? n.message : undefined,
+		};
+	}
+	if (i.sections && typeof i.sections === 'object') {
+		const s = i.sections as Record<string, unknown>;
+		patch.sections = {
+			...(typeof s.materials === 'boolean' ? { materials: s.materials } : {}),
+			...(typeof s.chat === 'boolean' ? { chat: s.chat } : {}),
+		};
+	}
+	if (Object.keys(patch).length === 0) {
+		return fail(
+			'Nada para mudar — informe accent, theme, labels, notice ou sections.',
+		);
+	}
+	const d = clone(doc);
+	const room: RoomConfig = { ...(d.room ?? {}) };
+	const ui = { ...(room.ui ?? {}) };
+	const apply = (key: 'customer' | 'admin') => {
+		const cur: RoomScreenUi = { ...(ui[key] ?? {}) };
+		if (patch.accent !== undefined) cur.accent = patch.accent;
+		if (patch.theme !== undefined) cur.theme = patch.theme;
+		if (patch.notice !== undefined) cur.notice = patch.notice;
+		// labels/sections fazem MERGE (não substituem o conjunto inteiro).
+		if (patch.labels) cur.labels = { ...(cur.labels ?? {}), ...patch.labels };
+		if (patch.sections) {
+			cur.sections = { ...(cur.sections ?? {}), ...patch.sections };
+		}
+		ui[key] = cur;
+	};
+	if (screen === 'both') {
+		apply('customer');
+		apply('admin');
+	} else {
+		apply(screen);
+	}
+	room.ui = ui;
+	d.room = room;
+	return ok(d, `Aparência da sala atualizada (${screen}).`);
+}
+
 function createCustomNode(doc: ToolDefinitionDoc, i: Input): ReducerResult {
 	const id = String(i.id ?? '').replace(/[^a-z0-9_]/gi, '_');
 	const baseBlock = String(i.base_block ?? '');
@@ -547,6 +636,11 @@ export function applyAgentTool(
 			return {
 				...setAccessPolicy(doc, input),
 				actionLabel: 'Definiu o acesso',
+			};
+		case 'set_room_ui':
+			return {
+				...setRoomUI(doc, input),
+				actionLabel: 'Personalizou a aparência',
 			};
 		case 'create_custom_node':
 			return {
@@ -768,6 +862,42 @@ export const AGENT_TOOLS = [
 				},
 				voxCost: { type: 'number' },
 				allowVoxEntry: { type: 'boolean' },
+			},
+		},
+	},
+	{
+		name: 'set_room_ui',
+		description:
+			'Personaliza a APARÊNCIA da sala (Mentoria), SEPARADA por tela. screen: "customer" (aluno), "admin" ou "both". accent = cor de destaque hex (#rrggbb). theme = "app"|"light"|"dark". labels = textos (use SÓ estas chaves: headerSubtitle, enter, novaSessao, acompanhar, emptyText, emptyButton, materialsTitle, chatTitle). notice = banner no topo {type:info|warning|success, title, message} (ou null p/ remover). sections = mostrar/ocultar {materials, chat}. Só p/ tools de sala.',
+		input_schema: {
+			type: 'object',
+			properties: {
+				screen: { type: 'string', enum: ['customer', 'admin', 'both'] },
+				accent: {
+					type: 'string',
+					description: 'Cor de destaque hex, ex.: "#7c3aed".',
+				},
+				theme: { type: 'string', enum: ['app', 'light', 'dark'] },
+				labels: {
+					type: 'object',
+					description:
+						'Overrides de texto (chaves: headerSubtitle, enter, novaSessao, acompanhar, emptyText, emptyButton, materialsTitle, chatTitle).',
+				},
+				notice: {
+					type: ['object', 'null'],
+					properties: {
+						type: { type: 'string', enum: ['info', 'warning', 'success'] },
+						title: { type: 'string' },
+						message: { type: 'string' },
+					},
+				},
+				sections: {
+					type: 'object',
+					properties: {
+						materials: { type: 'boolean' },
+						chat: { type: 'boolean' },
+					},
+				},
 			},
 		},
 	},
