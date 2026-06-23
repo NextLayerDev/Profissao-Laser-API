@@ -26,10 +26,17 @@ async function deleteByUrl(url: string): Promise<void> {
 	const prefix = `https://${BUNNY_CDN_HOSTNAME}/`;
 	if (!url.startsWith(prefix)) return;
 	const filePath = url.slice(prefix.length);
-	await axios.delete(
-		`https://${BUNNY_STORAGE_HOSTNAME}/${BUNNY_STORAGE_ZONE}/${filePath}`,
-		{ headers: { AccessKey: BUNNY_STORAGE_API_KEY } },
-	);
+	try {
+		await axios.delete(
+			`https://${BUNNY_STORAGE_HOSTNAME}/${BUNNY_STORAGE_ZONE}/${filePath}`,
+			{ headers: { AccessKey: BUNNY_STORAGE_API_KEY } },
+		);
+	} catch (err) {
+		// Arquivo já ausente no storage (404) = estado desejado; remover algo que
+		// não existe é no-op idempotente. Re-lança qualquer outro erro.
+		if (axios.isAxiosError(err) && err.response?.status === 404) return;
+		throw err;
+	}
 }
 
 export async function uploadMaterialFile(
