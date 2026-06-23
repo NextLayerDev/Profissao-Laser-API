@@ -10,7 +10,7 @@ declare module 'fastify' {
 			image: string | null;
 		} | null;
 		isUnlimitedCustomer?: boolean;
-		/** Key do plano ativo do customer (ex.: 'basic'|'pro'|'max'), do upvox. */
+		/** Key do plano ativo do customer (ex.: 'basic'|'pro'|'max'), resolvida no upvox. */
 		currentPlanKey?: string | null;
 		effectivePermissions?: string[];
 		isSuperAdminUser?: boolean;

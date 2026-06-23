@@ -57,8 +57,10 @@ export const vectorizeParamsSchema = z.object({
 		.nullable()
 		.default(null),
 	blackOnWhite: z.boolean().default(true),
-	// Posterize
-	mode: z.enum(['trace', 'posterize']).default('trace'),
+	// Algoritmo: trace (P&B) / posterize (níveis) / color (camadas por cor)
+	mode: z.enum(['trace', 'posterize', 'color']).default('trace'),
+	// Vetorização em cores: nº de cores da paleta (k-means)
+	maxColors: z.number().int().min(2).max(16).default(8),
 	posterizeLevels: z.number().int().min(2).max(10).default(4),
 	posterizeFillStrategy: z
 		.enum(['dominant', 'mean', 'median', 'spread'])
@@ -118,6 +120,38 @@ export const batchVectorizeResultSchema = z.object({
 });
 
 export const exportFormatSchema = z.enum(['dxf', 'png']);
+
+// ─── Análise automática (router + image analytics) ───────────────────
+export const imageProfileSchema = z.object({
+	class: z.enum([
+		'text',
+		'line_art',
+		'logo',
+		'color_flat',
+		'grayscale_tonal',
+		'photo',
+	]),
+	label: z.string(),
+	reason: z.string(),
+	confidence: z.number(),
+	metrics: z.object({
+		width: z.number(),
+		height: z.number(),
+		hasAlpha: z.boolean(),
+		colorCount: z.number(),
+		saturation: z.number(),
+		grayEntropy: z.number(),
+		otsuThreshold: z.number(),
+		bimodality: z.number(),
+		foregroundRatio: z.number(),
+		darkBackground: z.boolean(),
+		edgeDensity: z.number(),
+		noise: z.number(),
+	}),
+	// Parâmetros recomendados — subconjunto de vectorizeParamsSchema.
+	recommendedParams: vectorizeParamsSchema.partial(),
+	recommendTool: z.literal('engraving').optional(),
+});
 
 export type VectorCreate = z.infer<typeof createVectorSchema>;
 export type VectorUpdate = z.infer<typeof updateVectorSchema>;

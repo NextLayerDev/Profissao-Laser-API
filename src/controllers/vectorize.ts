@@ -78,6 +78,84 @@ export const vectorizeController = async (
 	}
 };
 
+export const vectorizePreviewController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	// Preview NÃO cobrado e sem storage: serve o feedback ao vivo dos sliders.
+	// Continua exigindo acesso à vetorização (authenticateVectorizacao), só não
+	// debita voxes nem grava nada.
+	try {
+		const customerId = request.currentCustomer?.id;
+		if (!customerId) {
+			return reply.status(403).send({ message: 'Customer not found' });
+		}
+
+		let fileBuffer: Buffer | null = null;
+		const fields: Record<string, string> = {};
+		for await (const part of request.parts()) {
+			if (part.type === 'file') {
+				fileBuffer = await part.toBuffer();
+			} else {
+				fields[part.fieldname] = part.value as string;
+			}
+		}
+
+		if (!fileBuffer) {
+			return reply.status(400).send({ message: 'File is required' });
+		}
+
+		const params = parseVectorizeParams(fields);
+		const { data, error } = await vectorizeService.preview({
+			buffer: fileBuffer,
+			params,
+		});
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(500).send({ message });
+		}
+		return reply.status(200).send(data);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
+export const vectorizeAnalyzeController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	// Análise NÃO cobrada e sem storage: alimenta o modo Automático no front.
+	try {
+		const customerId = request.currentCustomer?.id;
+		if (!customerId) {
+			return reply.status(403).send({ message: 'Customer not found' });
+		}
+
+		let fileBuffer: Buffer | null = null;
+		for await (const part of request.parts()) {
+			if (part.type === 'file') {
+				fileBuffer = await part.toBuffer();
+				break;
+			}
+		}
+
+		if (!fileBuffer) {
+			return reply.status(400).send({ message: 'File is required' });
+		}
+
+		const { data, error } = await vectorizeService.analyze(fileBuffer);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(500).send({ message });
+		}
+		return reply.status(200).send(data);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
 export const vectorizeBatchController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,

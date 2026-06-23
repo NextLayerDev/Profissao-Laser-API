@@ -4,6 +4,7 @@ import { authenticate, authenticateCustomer } from '@/middleware/auth.js';
 import {
 	createDoubtController,
 	createReplyController,
+	listAdminDoubtsController,
 	listDoubtsController,
 } from '../controllers/doubt.js';
 import {
@@ -11,6 +12,7 @@ import {
 	upsertRatingController,
 } from '../controllers/rating.js';
 import {
+	adminDoubtsResponseSchema,
 	createDoubtSchema,
 	createReplySchema,
 	doubtSchema,
@@ -19,6 +21,30 @@ import { ErrorSchema } from '../types/error.js';
 import { createRatingSchema, ratingResponseSchema } from '../types/rating.js';
 
 export async function doubtRoute(server: FastifyInstance) {
+	server.get(
+		'/doubts/admin',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Aggregated view of every lesson doubt across all lessons in a single call (staff only). Filter by answered status; pagination in-memory over the most recent 1000 doubts.',
+				querystring: z.object({
+					status: z.enum(['unanswered', 'answered', 'all']).optional(),
+					page: z.string().optional(),
+					limit: z.string().optional(),
+				}),
+				response: {
+					200: adminDoubtsResponseSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Doubts'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		listAdminDoubtsController,
+	);
+
 	server.get(
 		'/lesson/:lessonId/doubts',
 		{

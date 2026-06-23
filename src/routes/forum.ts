@@ -11,6 +11,7 @@ import {
 	getForumPostController,
 	listForumCategoriesController,
 	listForumPostsController,
+	suggestForumCategoryController,
 	updateForumCategoryController,
 	updateForumPostController,
 	updateForumReplyController,
@@ -26,6 +27,8 @@ import {
 	forumCategorySchema,
 	forumPostSchema,
 	forumPostsResponseSchema,
+	suggestForumCategoryResponseSchema,
+	suggestForumCategorySchema,
 	updateForumCategorySchema,
 	updateForumPostSchema,
 	updateForumReplySchema,
@@ -47,11 +50,31 @@ export async function forumRoute(server: FastifyInstance) {
 	);
 
 	server.post(
+		'/forum/suggest-category',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Suggest (and create if needed) the best forum category for a thread, based on its title/content. AI-powered with keyword fallback.',
+				body: suggestForumCategorySchema,
+				response: {
+					200: suggestForumCategoryResponseSchema,
+					400: ErrorSchema,
+				},
+				tags: ['Forum'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		suggestForumCategoryController,
+	);
+
+	server.post(
 		'/forum/category',
 		{
 			preHandler: [authenticateCustomer],
 			schema: {
-				description: 'Create a forum category (admin only).',
+				description:
+					'Create a forum category (any authenticated member; name is deduped case-insensitively).',
 				body: createForumCategorySchema,
 				response: {
 					201: forumCategorySchema,
@@ -111,6 +134,7 @@ export async function forumRoute(server: FastifyInstance) {
 					limit: z.string().optional(),
 					categoryId: z.string().optional(),
 					search: z.string().optional(),
+					sort: z.enum(['recent', 'top', 'unanswered']).optional(),
 				}),
 				response: { 200: forumPostsResponseSchema, 500: ErrorSchema },
 				tags: ['Forum'],

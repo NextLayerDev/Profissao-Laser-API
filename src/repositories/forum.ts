@@ -117,7 +117,7 @@ class ForumRepository {
 		}));
 	}
 
-	async createCategory(data: CreateForumCategory) {
+	async createCategory(data: CreateForumCategory & { color: string }) {
 		const { data: cat, error } = await supabase
 			.from('forum_categories')
 			.insert({ id: crypto.randomUUID(), name: data.name, color: data.color })
@@ -126,6 +126,17 @@ class ForumRepository {
 
 		if (error) throw new Error(error.message);
 		return { ...(cat as CategoryRow), postsCount: 0 };
+	}
+
+	/** Busca categoria por nome exato (case-insensitive) — dedupe na criação. */
+	async findCategoryByName(name: string) {
+		const { data, error } = await supabase
+			.from('forum_categories')
+			.select('*')
+			.ilike('name', name)
+			.maybeSingle();
+		if (error) throw new Error(error.message);
+		return data ? { ...(data as CategoryRow), postsCount: 0 } : null;
 	}
 
 	async updateCategory(id: string, data: UpdateForumCategory) {
@@ -165,86 +176,162 @@ class ForumRepository {
 		categoryId?: string;
 		search?: string;
 		currentUserId: string;
+		sort?: 'recent' | 'top' | 'unanswered';
 	}) {
 		const { page, limit, categoryId, search, currentUserId } = params;
+		const sort = params.sort ?? 'recent';
 		const from = (page - 1) * limit;
 		const to = from + limit - 1;
 
-		let query = supabase
+		// categoryId 'none' = posts sem tema (filtro de moderação do admin).
+		// biome-ignore lint/suspicious/noExplicitAny: supabase builder genérico
+		const applyFilters = (query: any) => {
+			let q = query;
+			if (categoryId === 'none') q = q.is('category_id', null);
+			else if (categoryId) q = q.eq('category_id', categoryId);
+			if (search) q = q.or(`title.ilike.%${search}%,content.ilike.%${search}%`);
+			return q;
+		};
+
+		if (sort === 'recent') {
+			let query = supabase
+				.from('forum_posts')
+				.select('*', { count: 'exact' })
+				.order('created_at', { ascending: false })
+				.range(from, to);
+			query = applyFilters(query);
+
+			const { data: posts, error, count } = await query;
+			if (error) throw new Error(error.message);
+			if (!posts || posts.length === 0) {
+				return { posts: [], total: 0, page, limit };
+			}
+			const mapped = await this._enrichPosts(posts as PostRow[], currentUserId);
+			return { posts: mapped, total: count ?? 0, page, limit };
+		}
+
+		// top/unanswered exigem agregação (upvotes/replies) ANTES de paginar:
+		// fase 1 = ids filtrados (cap 500, escala atual do fórum), fase 2 = counts
+		// agregados + sort/filtro em JS, fase 3 = rows completas só da página.
+		let idsQuery = supabase
 			.from('forum_posts')
-			.select('*', { count: 'exact' })
+			.select('id, created_at')
 			.order('created_at', { ascending: false })
-			.range(from, to);
-
-		if (categoryId) query = query.eq('category_id', categoryId);
-		if (search)
-			query = query.or(`title.ilike.%${search}%,content.ilike.%${search}%`);
-
-		const { data: posts, error, count } = await query;
-		if (error) throw new Error(error.message);
-		if (!posts || posts.length === 0) {
+			.limit(500);
+		idsQuery = applyFilters(idsQuery);
+		const { data: idRows, error: idsError } = await idsQuery;
+		if (idsError) throw new Error(idsError.message);
+		if (!idRows || idRows.length === 0) {
 			return { posts: [], total: 0, page, limit };
 		}
 
-		const postIds = posts.map((p: PostRow) => p.id);
-
-		// Load related data in parallel
-		const [
-			{ data: categories },
-			{ data: allUpvotes },
-			{ data: userUpvotes },
-			{ data: replyCounts },
-		] = await Promise.all([
-			supabase.from('forum_categories').select('*'),
+		const allIds = (idRows as Array<{ id: string; created_at: string }>).map(
+			(r) => r.id,
+		);
+		const [{ data: allUpvotes }, { data: allReplies }] = await Promise.all([
 			supabase
 				.from('forum_post_upvotes')
 				.select('post_id')
-				.in('post_id', postIds),
+				.in('post_id', allIds),
+			supabase.from('forum_replies').select('post_id').in('post_id', allIds),
+		]);
+		const upvoteCountMap = this._countByPostId(allUpvotes);
+		const replyCountMap = this._countByPostId(allReplies);
+
+		let ordered = idRows as Array<{ id: string; created_at: string }>;
+		if (sort === 'unanswered') {
+			ordered = ordered.filter((r) => (replyCountMap.get(r.id) ?? 0) === 0);
+		} else {
+			ordered = [...ordered].sort(
+				(a, b) =>
+					(upvoteCountMap.get(b.id) ?? 0) - (upvoteCountMap.get(a.id) ?? 0) ||
+					b.created_at.localeCompare(a.created_at),
+			);
+		}
+
+		const total = ordered.length;
+		const pageIds = ordered.slice(from, to + 1).map((r) => r.id);
+		if (pageIds.length === 0) return { posts: [], total, page, limit };
+
+		const { data: posts, error: postsError } = await supabase
+			.from('forum_posts')
+			.select('*')
+			.in('id', pageIds);
+		if (postsError) throw new Error(postsError.message);
+
+		const mapped = await this._enrichPosts(
+			(posts as PostRow[]) ?? [],
+			currentUserId,
+			{ upvoteCountMap, replyCountMap },
+		);
+		// preserva a ordem calculada (in() não garante ordem)
+		const byId = new Map(mapped.map((p) => [p.id, p]));
+		const sorted = pageIds
+			.map((id) => byId.get(id))
+			.filter((p): p is NonNullable<typeof p> => !!p);
+		return { posts: sorted, total, page, limit };
+	}
+
+	private _countByPostId(rows: unknown[] | null) {
+		const map = new Map<string, number>();
+		for (const r of rows ?? []) {
+			const row = r as { post_id: string };
+			map.set(row.post_id, (map.get(row.post_id) ?? 0) + 1);
+		}
+		return map;
+	}
+
+	/** Enriquecimento compartilhado: categoria, upvotes, meu upvote, nº de respostas. */
+	private async _enrichPosts(
+		posts: PostRow[],
+		currentUserId: string,
+		precomputed?: {
+			upvoteCountMap: Map<string, number>;
+			replyCountMap: Map<string, number>;
+		},
+	) {
+		if (posts.length === 0) return [];
+		const postIds = posts.map((p) => p.id);
+
+		const [{ data: categories }, { data: userUpvotes }] = await Promise.all([
+			supabase.from('forum_categories').select('*'),
 			supabase
 				.from('forum_post_upvotes')
 				.select('post_id')
 				.in('post_id', postIds)
 				.eq('user_id', currentUserId),
-			supabase.from('forum_replies').select('post_id').in('post_id', postIds),
 		]);
+
+		let upvoteCountMap = precomputed?.upvoteCountMap;
+		let replyCountMap = precomputed?.replyCountMap;
+		if (!upvoteCountMap || !replyCountMap) {
+			const [{ data: allUpvotes }, { data: replyCounts }] = await Promise.all([
+				supabase
+					.from('forum_post_upvotes')
+					.select('post_id')
+					.in('post_id', postIds),
+				supabase.from('forum_replies').select('post_id').in('post_id', postIds),
+			]);
+			upvoteCountMap = this._countByPostId(allUpvotes);
+			replyCountMap = this._countByPostId(replyCounts);
+		}
 
 		const catMap = new Map<string, CategoryRow>(
 			((categories as CategoryRow[]) ?? []).map((c) => [c.id, c]),
 		);
-
-		const upvoteCountMap = new Map<string, number>();
-		for (const u of allUpvotes ?? []) {
-			const row = u as { post_id: string };
-			upvoteCountMap.set(
-				row.post_id,
-				(upvoteCountMap.get(row.post_id) ?? 0) + 1,
-			);
-		}
-
 		const userUpvotedSet = new Set<string>(
 			(userUpvotes ?? []).map((u: { post_id: string }) => u.post_id),
 		);
 
-		const replyCountMap = new Map<string, number>();
-		for (const r of replyCounts ?? []) {
-			const row = r as { post_id: string };
-			replyCountMap.set(row.post_id, (replyCountMap.get(row.post_id) ?? 0) + 1);
-		}
-
-		return {
-			posts: (posts as PostRow[]).map((post) =>
-				mapPost(
-					post,
-					catMap.get(post.category_id ?? '') ?? null,
-					upvoteCountMap.get(post.id) ?? 0,
-					userUpvotedSet.has(post.id),
-					replyCountMap.get(post.id) ?? 0,
-				),
+		return posts.map((post) =>
+			mapPost(
+				post,
+				catMap.get(post.category_id ?? '') ?? null,
+				upvoteCountMap.get(post.id) ?? 0,
+				userUpvotedSet.has(post.id),
+				replyCountMap.get(post.id) ?? 0,
 			),
-			total: count ?? 0,
-			page,
-			limit,
-		};
+		);
 	}
 
 	async getPost(id: string, currentUserId: string) {

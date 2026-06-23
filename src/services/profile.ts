@@ -12,6 +12,7 @@ export interface MyProfile {
 	nickname: string | null;
 	bio: string | null;
 	avatar: string | null;
+	banner: string | null;
 }
 
 export const profileService = {
@@ -34,6 +35,7 @@ export const profileService = {
 				nickname: prof?.nickname ?? null,
 				bio: prof?.bio ?? null,
 				avatar: prof?.image ?? null,
+				banner: prof?.banner ?? null,
 			};
 		});
 	},
@@ -45,6 +47,7 @@ export const profileService = {
 			nickname?: string | null;
 			bio?: string | null;
 			image?: string | null;
+			banner?: string | null;
 		},
 		ctx: {
 			token?: string;
@@ -60,8 +63,14 @@ export const profileService = {
 				// Nome = fonte de verdade no upvox pós-migração. Encaminha p/ o upvox
 				// (PATCH /v1/me) repassando o Bearer — clientes nativos do upvox não
 				// têm linha em `Customers`, então gravar só na tabela legada não valia.
+				// Não-fatal: um erro transitório do upvox não deve derrubar (500) o
+				// salvamento de nickname/bio/foto que vem logo abaixo.
 				if (ctx.token) {
-					await updateExternalUser(ctx.token, { name: input.name });
+					try {
+						await updateExternalUser(ctx.token, { name: input.name });
+					} catch (err) {
+						console.error('[profile] falha ao encaminhar nome ao upvox:', err);
+					}
 				}
 				// Mantém `Customers.name` em sincronia quando a linha existe (migrados):
 				// joins de comunidade/membros ainda leem o nome da tabela legada.
@@ -78,12 +87,16 @@ export const profileService = {
 				nickname: string | null;
 				bio: string | null;
 				image: string | null;
+				banner: string | null;
 			}> = {};
 			if (input.nickname !== undefined) profFields.nickname = input.nickname;
 			if (input.bio !== undefined) profFields.bio = input.bio;
 			// Troca de ícone/foto pelo perfil (picker estilo Netflix) grava o mesmo
 			// campo `image` que o upload de foto usa.
 			if (input.image !== undefined) profFields.image = input.image;
+			// Escolha de banner-preset pelo perfil grava o mesmo campo `banner` que o
+			// upload de banner usa.
+			if (input.banner !== undefined) profFields.banner = input.banner;
 			if (Object.keys(profFields).length > 0) {
 				await profileRepository.upsertByCustomerId(customerId, profFields);
 			}
@@ -96,6 +109,7 @@ export const profileService = {
 				nickname: prof?.nickname ?? null,
 				bio: prof?.bio ?? null,
 				avatar: prof?.image ?? null,
+				banner: prof?.banner ?? null,
 			};
 		});
 	},
@@ -111,6 +125,21 @@ export const profileService = {
 		return withCapture(async () => {
 			await profileRepository.upsertByCustomerId(customerId, { image: null });
 			return { avatar: null };
+		});
+	},
+
+	async setMyBanner(customerId: string, url: string) {
+		return withCapture(async () => {
+			await profileRepository.upsertByCustomerId(customerId, { banner: url });
+			return { banner: url };
+		});
+	},
+
+	async removeMyBanner(customerId: string) {
+		return withCapture(async () => {
+			// Volta ao padrão via fallback no front (banner = null).
+			await profileRepository.upsertByCustomerId(customerId, { banner: null });
+			return { banner: null };
 		});
 	},
 

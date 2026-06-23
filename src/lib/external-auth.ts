@@ -135,7 +135,7 @@ export interface ExternalEntitlements {
 	is_test_unlimited: boolean;
 	subscription: {
 		status: string;
-		// O JSON do upvox já traz o plano ativo; tipamos o que a auth precisa.
+		// O JSON do upvox já traz o plano ativo; tipamos só o que a auth precisa.
 		plan?: { key: string; name: string } | null;
 	} | null;
 }

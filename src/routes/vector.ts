@@ -10,8 +10,10 @@ import {
 } from '../controllers/vector.js';
 import {
 	exportVectorController,
+	vectorizeAnalyzeController,
 	vectorizeBatchController,
 	vectorizeController,
+	vectorizePreviewController,
 } from '../controllers/vectorize.js';
 import { authenticateVectorizacao } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
@@ -19,6 +21,7 @@ import { laserPrepResultSchema } from '../types/laser-prep.js';
 import {
 	batchVectorizeResultSchema,
 	createVectorSchema,
+	imageProfileSchema,
 	listVectorsQuery,
 	updateVectorSchema,
 	vectorizeResultSchema,
@@ -186,6 +189,55 @@ export async function vectorRoute(server: FastifyInstance) {
 			},
 		},
 		vectorizeController,
+	);
+
+	server.post(
+		'/api/vectorize/analyze',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Análise automática (router + image analytics) — **NÃO cobrada**, sem',
+					'storage. Recebe a imagem (multipart, campo `file`) e devolve o tipo',
+					'detectado + `recommendedParams` que o modo Automático do front aplica.',
+				].join('\n'),
+				consumes: ['multipart/form-data'],
+				response: {
+					200: imageProfileSchema,
+					400: ErrorSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		vectorizeAnalyzeController,
+	);
+
+	server.post(
+		'/api/vectorize/preview',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Preview rápido e **NÃO cobrado** da vetorização (sem storage/DB).',
+					'Mesmos campos de `POST /api/vectorize`; o input é reduzido p/ ~600px',
+					'e a resposta traz apenas `{ svgContent }`. Para feedback ao vivo dos',
+					'sliders — o run final (cobrado) continua em `POST /api/vectorize`.',
+				].join('\n'),
+				consumes: ['multipart/form-data'],
+				response: {
+					200: z.object({ svgContent: z.string() }),
+					400: ErrorSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		vectorizePreviewController,
 	);
 
 	server.post(

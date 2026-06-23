@@ -7,6 +7,7 @@ import {
 	uploadVectorPng,
 } from '../lib/storage.js';
 import { svgToDxf, vectorizeImage } from '../lib/vectorize.js';
+import { analyzeImage } from '../lib/vectorize-analyze.js';
 import { vectorRepository } from '../repositories/vector.js';
 import type { VectorizeParams } from '../types/vector.js';
 
@@ -56,12 +57,43 @@ export const vectorizeService = {
 				...record,
 				svgContent,
 				originalName: filename,
-				isColor: params.mode === 'posterize',
+				isColor: params.mode !== 'trace',
 				svgUrl,
 				pngUrl,
 				dxfContent,
 			};
 		});
+	},
+
+	/**
+	 * Preview rápido e NÃO cobrado: reduz o input (~600px) p/ baratear a CPU,
+	 * roda o motor sem supersampling e devolve só o SVG inline — sem upload e sem
+	 * gravar no banco. Serve o feedback ao vivo dos sliders na vetorização.
+	 */
+	async preview(input: { buffer: Buffer; params: VectorizeParams }) {
+		return withCapture(async () => {
+			const downscaled = await sharp(input.buffer)
+				.resize({
+					width: 600,
+					height: 600,
+					fit: 'inside',
+					withoutEnlargement: true,
+				})
+				.png()
+				.toBuffer();
+			const svgContent = await vectorizeImage(downscaled, input.params, {
+				supersample: false,
+			});
+			return { svgContent };
+		});
+	},
+
+	/**
+	 * Análise automática (router + image analytics): devolve o tipo detectado
+	 * e os parâmetros recomendados. Não grava nada e não cobra.
+	 */
+	async analyze(buffer: Buffer) {
+		return withCapture(async () => analyzeImage(buffer));
 	},
 
 	async vectorizeBatch(customerId: string, inputs: VectorizeInput[]) {

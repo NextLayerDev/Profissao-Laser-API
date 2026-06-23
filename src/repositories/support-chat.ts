@@ -19,7 +19,7 @@ interface UpdateStatusExtra {
 }
 
 const CHAT_COLS =
-	'id, customerId, customerName, attendantId, status, subject, handoffReason, createdAt, updatedAt, closedAt';
+	'id, customerId, customerName, attendantId, status, subject, handoffReason, createdAt, updatedAt, closedAt, lastMessageAt, lastMessageRole, lastMessagePreview';
 const MSG_COLS =
 	'id, chatId, role, authorId, authorName, content, fileUrl, createdAt';
 
@@ -69,7 +69,12 @@ class SupportChatRepository {
 
 		await supabase
 			.from('pl_support_chat')
-			.update({ updatedAt: now })
+			.update({
+				updatedAt: now,
+				lastMessageAt: now,
+				lastMessageRole: input.role,
+				lastMessagePreview: input.content.slice(0, 120),
+			})
 			.eq('id', chatId);
 
 		return data;
@@ -184,12 +189,61 @@ class SupportChatRepository {
 				.in('id', attendantIds);
 			for (const u of data ?? []) nameMap[u.id] = u.name;
 		}
-		return chats.map((c) => ({
-			...c,
-			attendantName: c.attendantId
-				? (nameMap[c.attendantId as string] ?? null)
-				: null,
-		}));
+
+		// Chats criados antes da denormalização vêm com lastMessageAt null —
+		// resolve a última mensagem on the fly e persiste (backfill one-time).
+		const missingIds = chats
+			.filter((c) => !c.lastMessageAt)
+			.map((c) => c.id as string);
+		const lastMap: Record<
+			string,
+			{ createdAt: string; role: string; content: string }
+		> = {};
+		if (missingIds.length > 0) {
+			const { data: msgs } = await supabase
+				.from('pl_support_chat_message')
+				.select('chatId, role, content, createdAt')
+				.in('chatId', missingIds)
+				.order('createdAt', { ascending: false });
+			for (const m of msgs ?? []) {
+				if (!lastMap[m.chatId]) {
+					lastMap[m.chatId] = {
+						createdAt: m.createdAt,
+						role: m.role,
+						content: m.content,
+					};
+				}
+			}
+			// Melhor esforço: grava pra não recalcular nas próximas listagens.
+			void Promise.allSettled(
+				Object.entries(lastMap).map(([chatId, m]) =>
+					supabase
+						.from('pl_support_chat')
+						.update({
+							lastMessageAt: m.createdAt,
+							lastMessageRole: m.role,
+							lastMessagePreview: String(m.content).slice(0, 120),
+						})
+						.eq('id', chatId)
+						.is('lastMessageAt', null),
+				),
+			);
+		}
+
+		return chats.map((c) => {
+			const fallback = lastMap[c.id as string];
+			return {
+				...c,
+				attendantName: c.attendantId
+					? (nameMap[c.attendantId as string] ?? null)
+					: null,
+				lastMessageAt: c.lastMessageAt ?? fallback?.createdAt ?? null,
+				lastMessageRole: c.lastMessageRole ?? fallback?.role ?? null,
+				lastMessagePreview:
+					c.lastMessagePreview ??
+					(fallback ? String(fallback.content).slice(0, 120) : null),
+			};
+		});
 	}
 }
 

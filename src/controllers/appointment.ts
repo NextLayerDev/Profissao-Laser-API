@@ -134,8 +134,8 @@ export const getMyAppointmentsController = async (
 			return reply.status(403).send({ message: 'Forbidden' });
 		}
 
-		const appointments = await appointmentRepository.listByTechnicianId(
-			request.currentUser.id,
+		const appointments = await appointmentRepository.listByTechnicianEmail(
+			request.currentUser.email,
 		);
 		return reply.send(appointments);
 	} catch (err) {

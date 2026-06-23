@@ -68,8 +68,11 @@ export const communityMemberSchema = z.object({
 	featured: z.boolean(),
 	category: z.string().nullable(),
 	image: z.string().nullable(),
+	banner: z.string().nullable(),
 	isOnline: z.boolean(),
 	lastSeenAt: z.string().nullable(),
+	/** Só presente quando o requester é staff/admin (técnicos). */
+	phone: z.string().nullable().optional(),
 });
 
 export const communityProjectSchema = z.object({
@@ -141,6 +144,8 @@ export const communityEventSchema = z.object({
 	streamProvider: z.enum(['youtube', 'vimeo']).nullable().optional(),
 	waitingRoomOpensMinutesBefore: z.number().int().nonnegative().default(15),
 	hostId: z.string().nullable().optional(),
+	// Keys de planos que podem acessar (vazio = todos). Gating de live por plano.
+	allowedPlanKeys: z.array(z.string()).default([]),
 });
 
 export const communityRankingEntrySchema = z.object({
@@ -164,6 +169,7 @@ export const createEventSchema = z.object({
 	streamProvider: z.enum(['youtube', 'vimeo']).optional(),
 	waitingRoomOpensMinutesBefore: z.number().int().min(0).max(120).optional(),
 	hostId: z.uuid().optional(),
+	allowedPlanKeys: z.array(z.string()).optional(),
 });
 
 export const updateEventSchema = z.object({
@@ -176,6 +182,7 @@ export const updateEventSchema = z.object({
 	streamProvider: z.enum(['youtube', 'vimeo']).nullable().optional(),
 	waitingRoomOpensMinutesBefore: z.number().int().min(0).max(120).optional(),
 	hostId: z.uuid().nullable().optional(),
+	allowedPlanKeys: z.array(z.string()).optional(),
 });
 
 // ─── Sala de espera ──────────────────────────────────────────────────────────

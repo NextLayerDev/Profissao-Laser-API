@@ -1,6 +1,7 @@
 import { cache } from '@/lib/redis.js';
 import { withCapture } from '@/lib/sentry.js';
 import { communityRepository } from '../repositories/community.js';
+import { profileRepository } from '../repositories/profile.js';
 import type {
 	CreateChannel,
 	CreateComment,
@@ -22,6 +23,30 @@ const RANKING_TTL = 120;
 const MEMBERS_TTL = 60;
 const ACTIVITY_TTL = 30;
 const PROJECTS_TTL = 60;
+const PRESENCE_TTL = 30;
+
+/** Contexto de acesso p/ gatear eventos por plano (vem da auth da comunidade). */
+export interface EventAccess {
+	planKey?: string | null;
+	isUnlimited?: boolean;
+	isStaff?: boolean;
+}
+
+/**
+ * Evento bloqueado p/ este usuário? `allowedPlanKeys` vazio = aberto a todos.
+ * Staff e conta-teste-ilimitada sempre passam; senão exige que a key do plano
+ * ativo esteja na lista.
+ */
+function isEventLockedFor(
+	allowedPlanKeys: unknown,
+	access: EventAccess = {},
+): boolean {
+	if (!Array.isArray(allowedPlanKeys) || allowedPlanKeys.length === 0) {
+		return false;
+	}
+	if (access.isUnlimited || access.isStaff) return false;
+	return !access.planKey || !allowedPlanKeys.includes(access.planKey);
+}
 
 export const communityService = {
 	async listPosts(page: number, limit: number, currentUserId: string) {
@@ -105,8 +130,11 @@ export const communityService = {
 		online?: boolean,
 		limit?: number,
 		offset?: number,
+		includePhone = false,
 	) {
-		const key = `community:members:${JSON.stringify({ search, category, featured, online, limit, offset })}`;
+		// includePhone NA CHAVE: telefone (PII, só staff) nunca pode vazar pra
+		// resposta cacheada de customer.
+		const key = `community:members:${JSON.stringify({ search, category, featured, online, limit, offset, includePhone })}`;
 		return withCapture(() =>
 			cache.cacheAside(key, MEMBERS_TTL, () =>
 				communityRepository.listMembers(
@@ -116,7 +144,26 @@ export const communityService = {
 					online,
 					limit,
 					offset,
+					includePhone,
 				),
+			),
+		);
+	},
+
+	/** Marca o customer como visto agora (presença online). */
+	async heartbeat(customerId: string) {
+		return withCapture(() =>
+			profileRepository.upsertByCustomerId(customerId, {
+				lastSeenAt: new Date().toISOString(),
+			}),
+		);
+	},
+
+	/** Totais p/ visão admin: membros cadastrados + online agora. */
+	async presenceSummary() {
+		return withCapture(() =>
+			cache.cacheAside('community:presence-summary', PRESENCE_TTL, () =>
+				communityRepository.presenceCounts(),
 			),
 		);
 	},
@@ -237,8 +284,20 @@ export const communityService = {
 		);
 	},
 
-	async listEvents(from?: string, to?: string) {
-		return withCapture(() => communityRepository.listEvents(from, to));
+	async listEvents(from?: string, to?: string, access?: EventAccess) {
+		return withCapture(async () => {
+			const events = await communityRepository.listEvents(from, to);
+			// Defesa em profundidade: não vaza o link/stream de eventos bloqueados
+			// (o front ainda recebe `allowedPlanKeys` p/ desenhar o cadeado).
+			return events.map((ev) => {
+				// biome-ignore lint/suspicious/noExplicitAny: linha dinâmica do supabase
+				const e = ev as any;
+				if (isEventLockedFor(e.allowedPlanKeys, access)) {
+					return { ...e, streamUrl: null, streamProvider: null };
+				}
+				return e;
+			});
+		});
 	},
 
 	async createEvent(data: CreateEvent) {
@@ -255,10 +314,19 @@ export const communityService = {
 
 	// ── Sala de espera ────────────────────────────────────────────────────
 
-	async joinEventWaitingRoom(eventId: string, customerId: string) {
-		return withCapture(() =>
-			communityRepository.joinEventWaitingRoom(eventId, customerId),
-		);
+	async joinEventWaitingRoom(
+		eventId: string,
+		customerId: string,
+		access?: EventAccess,
+	) {
+		return withCapture(async () => {
+			const event = await communityRepository.findEventById(eventId);
+			// biome-ignore lint/suspicious/noExplicitAny: linha dinâmica do supabase
+			if (isEventLockedFor((event as any).allowedPlanKeys, access)) {
+				throw new Error('plan_not_allowed');
+			}
+			return communityRepository.joinEventWaitingRoom(eventId, customerId);
+		});
 	},
 
 	async leaveEventWaitingRoom(eventId: string, customerId: string) {
@@ -267,9 +335,17 @@ export const communityService = {
 		);
 	},
 
-	async getWaitingRoomState(eventId: string, customerId: string) {
+	async getWaitingRoomState(
+		eventId: string,
+		customerId: string,
+		access?: EventAccess,
+	) {
 		return withCapture(async () => {
 			const event = await communityRepository.findEventById(eventId);
+			// biome-ignore lint/suspicious/noExplicitAny: linha dinâmica do supabase
+			if (isEventLockedFor((event as any).allowedPlanKeys, access)) {
+				throw new Error('plan_not_allowed');
+			}
 
 			// Combina date (YYYY-MM-DD) + time (HH:MM, opcional) em ISO BRT (UTC-3).
 			const time = event.time && event.time.length > 0 ? event.time : '00:00';

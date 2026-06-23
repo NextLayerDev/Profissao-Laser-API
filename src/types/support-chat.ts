@@ -37,6 +37,9 @@ export const supportChatSummarySchema = z.object({
 	createdAt: z.string(),
 	updatedAt: z.string(),
 	closedAt: z.string().nullable().optional(),
+	lastMessageAt: z.string().nullable().optional(),
+	lastMessageRole: supportMessageRoleSchema.nullable().optional(),
+	lastMessagePreview: z.string().nullable().optional(),
 });
 
 export const supportChatSchema = supportChatSummarySchema.extend({

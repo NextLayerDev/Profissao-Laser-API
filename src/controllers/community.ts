@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { isStaffRole } from '../lib/external-auth.js';
 import { uploadCommunityFile } from '../lib/storage.js';
 import { communityService } from '../services/community.js';
 import {
@@ -11,6 +12,13 @@ import {
 	updateEventSchema,
 	updateProjectSchema,
 } from '../types/community.js';
+
+/** Contexto de acesso p/ gating de eventos por plano (vem da auth da comunidade). */
+const eventAccessFrom = (request: FastifyRequest) => ({
+	planKey: request.currentPlanKey ?? null,
+	isUnlimited: request.isUnlimitedCustomer === true,
+	isStaff: isStaffRole(request.currentRole),
+});
 
 export const getPostsController = async (
 	request: FastifyRequest<{ Querystring: { page?: string; limit?: string } }>,
@@ -306,6 +314,8 @@ export const getMembersController = async (
 	reply: FastifyReply,
 ) => {
 	const { search, category, featured, online, limit, offset } = request.query;
+	// Telefone (PII) só para staff/admin — técnicos atendem membros pelo WhatsApp.
+	const includePhone = isStaffRole(request.currentRole);
 	const { data: members, error } = await communityService.listMembers(
 		search,
 		category,
@@ -313,12 +323,42 @@ export const getMembersController = async (
 		online === 'true',
 		limit ? Number(limit) : undefined,
 		offset ? Number(offset) : undefined,
+		includePhone,
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
 	return reply.send(members);
+};
+
+export const presenceHeartbeatController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id ?? request.currentUser?.id;
+	if (!customerId) return reply.status(401).send({ message: 'Unauthorized' });
+	const { error } = await communityService.heartbeat(customerId);
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.status(204).send();
+};
+
+export const getPresenceSummaryController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	if (!isStaffRole(request.currentRole)) {
+		return reply.status(403).send({ message: 'Forbidden' });
+	}
+	const { data, error } = await communityService.presenceSummary();
+	if (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.send(data);
 };
 
 export const getProjectsController = async (
@@ -506,7 +546,11 @@ export const getEventsController = async (
 	reply: FastifyReply,
 ) => {
 	const { from, to } = request.query;
-	const { data: events, error } = await communityService.listEvents(from, to);
+	const { data: events, error } = await communityService.listEvents(
+		from,
+		to,
+		eventAccessFrom(request),
+	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		return reply.status(500).send({ message });
@@ -579,10 +623,12 @@ export const joinWaitingRoomController = async (
 	const { error } = await communityService.joinEventWaitingRoom(
 		eventId,
 		customerId,
+		eventAccessFrom(request),
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
-		return reply.status(400).send({ message });
+		const status = message === 'plan_not_allowed' ? 403 : 400;
+		return reply.status(status).send({ message });
 	}
 	return reply.status(204).send();
 };
@@ -619,10 +665,16 @@ export const getWaitingRoomController = async (
 	const { data, error } = await communityService.getWaitingRoomState(
 		eventId,
 		customerId,
+		eventAccessFrom(request),
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
-		const status = message === 'Event not found' ? 404 : 500;
+		const status =
+			message === 'Event not found'
+				? 404
+				: message === 'plan_not_allowed'
+					? 403
+					: 500;
 		return reply.status(status).send({ message });
 	}
 	return reply.send(data);
