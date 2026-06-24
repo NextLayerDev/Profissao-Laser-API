@@ -19,6 +19,23 @@ const ALLOWED_IMAGE_MIMETYPES = [
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 const IMAGE_FIELDS = new Set(['example_before', 'example_after']);
 
+/**
+ * O Bunny CDN serve cada arquivo pelo Content-Type derivado da EXTENSÃO, não
+ * pelo Content-Type enviado no PUT. `mimetype.split('/')[1]` daria `svg+xml`
+ * p/ SVG → o CDN serve como octet-stream e o browser NÃO renderiza SVG sem
+ * `image/svg+xml`. Este mapa garante a extensão canônica (svg, jpg, …).
+ */
+const MIME_EXT: Record<string, string> = {
+	'image/jpeg': 'jpg',
+	'image/png': 'png',
+	'image/webp': 'webp',
+	'image/gif': 'gif',
+	'image/svg+xml': 'svg',
+};
+function extFor(mimetype: string): string {
+	return MIME_EXT[mimetype] ?? mimetype.split('/')[1] ?? 'bin';
+}
+
 interface KeyParams {
 	key: string;
 }
@@ -81,7 +98,7 @@ async function collectMultipart(request: FastifyRequest): Promise<{
 				if (buffer.byteLength > MAX_IMAGE_SIZE) {
 					throw new Error('Imagem grande demais (máx 5MB).');
 				}
-				const ext = part.mimetype.split('/')[1];
+				const ext = extFor(part.mimetype);
 				images[part.fieldname] = await uploadToolOutput(
 					'tool-bank',
 					buffer,
@@ -242,7 +259,7 @@ export const uploadToolBankImageController = async (
 				.status(400)
 				.send({ message: 'Imagem grande demais (máx 5MB).' });
 		}
-		const ext = data.mimetype.split('/')[1];
+		const ext = extFor(data.mimetype);
 		const url = await uploadToolOutput(
 			'tool-bank',
 			buffer,
