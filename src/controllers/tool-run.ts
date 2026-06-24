@@ -78,14 +78,17 @@ export const toolRunController = async (
 
 		const { key } = request.params as ToolRunParams;
 
-		// ── multipart: 1 arquivo (opcional) + campos string ──
-		let fileBuffer: Buffer | null = null;
-		let mimetype = 'application/octet-stream';
+		// ── multipart: N arquivos por fieldname (opcionais) + campos string ──
+		// Mapeia cada arquivo pelo SEU fieldname (ex.: `referencia`, `referencia2`)
+		// pra o motor casar cada input de imagem com seu arquivo. A validação de
+		// tipo roda por arquivo (`fileMimes`).
+		const files: Record<string, Buffer> = {};
+		const fileMimes: Record<string, string> = {};
 		const fields: Record<string, string> = {};
 		for await (const part of request.parts()) {
 			if (part.type === 'file') {
-				fileBuffer = await part.toBuffer();
-				mimetype = part.mimetype;
+				files[part.fieldname] = await part.toBuffer();
+				fileMimes[part.fieldname] = part.mimetype;
 			} else {
 				fields[part.fieldname] = part.value as string;
 			}
@@ -179,8 +182,12 @@ export const toolRunController = async (
 		}
 
 		// Falha rápida em tipo não-imagem (defense-in-depth; mimetype é spoofável).
-		// Refund se já houver invocação pendente, pra não deixá-la presa.
-		if (fileBuffer && !ALLOWED_IMAGE_MIME.has(mimetype)) {
+		// Valida CADA arquivo enviado. Refund se já houver invocação pendente, pra
+		// não deixá-la presa.
+		const badFile = Object.values(fileMimes).some(
+			(m) => !ALLOWED_IMAGE_MIME.has(m),
+		);
+		if (badFile) {
 			if (invocationId) {
 				await refundInvocation(customerId, invocationId, authHeader);
 			}
@@ -192,7 +199,7 @@ export const toolRunController = async (
 		// ── executa o pipeline ──
 		let output: Record<string, unknown>;
 		try {
-			const bag = coerceInputs(doc.input ?? {}, fields, fileBuffer);
+			const bag = coerceInputs(doc.input ?? {}, fields, files);
 			output = await executeTool(doc, bag, { customerId, authHeader });
 		} catch (err) {
 			if (invocationId) {
