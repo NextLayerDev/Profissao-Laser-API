@@ -17,7 +17,9 @@ import {
 	resolveToolBilling,
 	settleInvocation,
 } from '../lib/upvox-tools.js';
+import { toolBankRepository } from '../repositories/tool-bank.js';
 import { registerCoreBlocks } from '../tool-blocks/index.js';
+import type { ToolBankEntry } from '../types/tool-bank.js';
 
 // Garante que os blocos curados estejam no registry (idempotente).
 registerCoreBlocks();
@@ -37,6 +39,21 @@ const ALLOWED_IMAGE_MIME = new Set([
 
 interface ToolRunParams {
 	key: string;
+}
+
+/** Resolve um path do registro do banco: `data.x` → entry.data.x; senão coluna. */
+function resolveBankPath(entry: ToolBankEntry, path: string): unknown {
+	if (path.startsWith('data.')) {
+		return (entry.data ?? {})[path.slice('data.'.length)];
+	}
+	return (entry as unknown as Record<string, unknown>)[path];
+}
+
+/** Troca `{var}` pelos campos do cliente; deixa o placeholder se faltar a var. */
+function substituteVars(template: string, ctx: Record<string, string>): string {
+	return template.replace(/\{(\w+)\}/g, (_m, k: string) =>
+		ctx[k] !== undefined ? ctx[k] : `{${k}}`,
+	);
 }
 
 /**
@@ -110,6 +127,41 @@ export const toolRunController = async (
 			return reply.status(400).send({
 				message: `engine_runtime '${runtime}' não suportado (MVP: blocks_v1)`,
 			});
+		}
+
+		// ── banco do admin (opcional): injeta o registro escolhido nos inputs ──
+		const bank = doc.bank;
+		if (bank?.enabled) {
+			const bankEntryId = fields.bank_entry_id;
+			if (!bankEntryId) {
+				// Staff em preview (billed=false) pode testar sem escolher um item.
+				if (billed) {
+					return reply
+						.status(400)
+						.send({ message: 'Escolha um item do banco.' });
+				}
+			} else {
+				const entry = await toolBankRepository.findById(bankEntryId, key, {
+					activeOnly: !isStaff,
+				});
+				if (!entry) {
+					return reply.status(400).send({ message: 'Item do banco inválido.' });
+				}
+				const injectMap: Record<
+					string,
+					{ from: string; substitute?: boolean }
+				> = bank.inject ?? {};
+				for (const [inputName, rule] of Object.entries(injectMap)) {
+					const value = resolveBankPath(entry, rule.from);
+					if (value === undefined || value === null) continue;
+					let str = typeof value === 'string' ? value : JSON.stringify(value);
+					if (rule.substitute) str = substituteVars(str, fields);
+					const name = inputName.startsWith('input.')
+						? inputName.slice('input.'.length)
+						: inputName;
+					fields[name] = str;
+				}
+			}
 		}
 
 		// ── billing (autoritativo no upvox) ──
