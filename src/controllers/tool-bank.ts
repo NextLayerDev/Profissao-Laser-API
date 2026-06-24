@@ -14,6 +14,7 @@ const ALLOWED_IMAGE_MIMETYPES = [
 	'image/png',
 	'image/webp',
 	'image/gif',
+	'image/svg+xml',
 ];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 const IMAGE_FIELDS = new Set(['example_before', 'example_after']);
@@ -74,7 +75,7 @@ async function collectMultipart(request: FastifyRequest): Promise<{
 		if (part.type === 'file') {
 			if (IMAGE_FIELDS.has(part.fieldname)) {
 				if (!ALLOWED_IMAGE_MIMETYPES.includes(part.mimetype)) {
-					throw new Error('Tipo de imagem inválido (png/jpg/webp/gif).');
+					throw new Error('Tipo de imagem inválido (png/jpg/webp/gif/svg).');
 				}
 				const buffer = await part.toBuffer();
 				if (buffer.byteLength > MAX_IMAGE_SIZE) {
@@ -233,7 +234,7 @@ export const uploadToolBankImageController = async (
 		if (!ALLOWED_IMAGE_MIMETYPES.includes(data.mimetype)) {
 			return reply
 				.status(400)
-				.send({ message: 'Tipo de imagem inválido (png/jpg/webp/gif).' });
+				.send({ message: 'Tipo de imagem inválido (png/jpg/webp/gif/svg).' });
 		}
 		const buffer = await data.toBuffer();
 		if (buffer.byteLength > MAX_IMAGE_SIZE) {
