@@ -1,4 +1,16 @@
-const BASE_URL = process.env.LASERIA_API_URL ?? '';
+/** Aceita o valor como URL direta ou em base64 (config ofuscada). */
+function resolveBase(raw: string): string {
+	if (!raw) return '';
+	if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, '');
+	try {
+		const decoded = Buffer.from(raw, 'base64').toString('utf8');
+		return /^https?:\/\//i.test(decoded) ? decoded.replace(/\/+$/, '') : '';
+	} catch {
+		return '';
+	}
+}
+
+const BASE_URL = resolveBase(process.env.LASERIA_API_URL ?? '');
 const API_KEY = process.env.LASERIA_API_KEY ?? '';
 const MODEL = process.env.LASERIA_API_MODEL ?? 'laserpro';
 
