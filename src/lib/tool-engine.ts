@@ -25,25 +25,45 @@ const MAX_PIPELINE_NODES = 32;
 
 /**
  * Coage os inputs do multipart (strings) em valores tipados conforme
- * `definition.input`. A imagem do upload é injetada como `input.<nome>` (Buffer).
- * O bloco revalida a fundo; aqui é a 1ª barreira (mensagens claras de 400).
+ * `definition.input`. Cada input `type:'image'` resolve pelo SEU arquivo, mapeado
+ * por fieldname (`files['<nome>']`), permitindo várias imagens de referência (ex.:
+ * `referencia`, `referencia2`, `referencia3`). O bloco revalida a fundo; aqui é a
+ * 1ª barreira (mensagens claras de 400).
+ *
+ * Compat com tools de 1 imagem: se existe EXATAMENTE 1 input de imagem e nenhum
+ * arquivo casa pelo nome, o único arquivo enviado (qualquer fieldname) é atribuído
+ * a esse input — cobre o caso de o front mandar o arquivo sob um fieldname genérico.
  */
 export function coerceInputs(
 	inputSpec: Record<string, InputSpec>,
 	fields: Record<string, string>,
-	fileBuffer: Buffer | null,
+	files: Record<string, Buffer>,
 ): Bag {
 	const bag: Bag = Object.create(null);
 
+	const imageInputNames = Object.entries(inputSpec)
+		.filter(([, spec]) => spec.type === 'image')
+		.map(([name]) => name);
+	const fileEntries = Object.entries(files);
+	// Fallback de 1 imagem: só quando há um único input de imagem, um único arquivo
+	// enviado, e esse arquivo NÃO casa por nome com o input (fieldname genérico).
+	const singleImageFallback =
+		imageInputNames.length === 1 &&
+		fileEntries.length === 1 &&
+		!(imageInputNames[0] in files)
+			? fileEntries[0][1]
+			: null;
+
 	for (const [name, spec] of Object.entries(inputSpec)) {
 		if (spec.type === 'image') {
-			if (spec.required && !fileBuffer) {
+			const buf = files[name] ?? singleImageFallback ?? null;
+			if (spec.required && !buf) {
 				throw new ToolEngineError(
 					400,
 					`input '${name}' (imagem) é obrigatório`,
 				);
 			}
-			bag[`input.${name}`] = fileBuffer ?? null;
+			bag[`input.${name}`] = buf;
 			continue;
 		}
 

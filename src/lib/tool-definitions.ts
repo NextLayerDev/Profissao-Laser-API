@@ -59,12 +59,43 @@ export interface RoomConfig {
 	ui?: { customer?: RoomScreenUi; admin?: RoomScreenUi };
 }
 
+/** Um campo do registro do banco (form do admin, gerado pelo front). */
+export interface BankFieldSpec {
+	name: string;
+	label?: string;
+	type: 'text' | 'textarea' | 'enum' | 'image';
+	options?: string[];
+	required?: boolean;
+	placeholder?: string;
+}
+
+/**
+ * "Banco do Admin" de uma tool. Quando `enabled`, o admin alimenta registros
+ * (campos `fields`) e o cliente os consome como galeria; o registro escolhido é
+ * injetado nos inputs do pipeline via `inject` (com substituição de `{var}`).
+ */
+export interface BankConfig {
+	enabled?: boolean;
+	fields?: BankFieldSpec[];
+	/** De onde sai cada peça do card da galeria (path no registro, ex.: 'title'). */
+	card?: {
+		image?: string;
+		title?: string;
+		subtitle?: string;
+		category?: string;
+	};
+	/** input → de onde vem (path 'data.x'/'title'…) + se substitui `{var}` dos campos do cliente. */
+	inject?: Record<string, { from: string; substitute?: boolean }>;
+}
+
 export interface ToolDefinitionDoc {
 	schemaVersion?: number;
 	input?: Record<string, InputSpec>;
 	pipeline?: PipelineNode[];
 	/** Presente só em tools de sala (room_v1). Pipeline tools omitem. */
 	room?: RoomConfig;
+	/** Banco do admin (galeria de registros). Opcional. */
+	bank?: BankConfig;
 	output?: Record<string, unknown>;
 	ui?: Record<string, unknown>;
 	billing?: {
@@ -147,6 +178,7 @@ const inlineDocSchema = z
 			.optional(),
 		output: z.record(z.string(), z.unknown()).optional(),
 		ui: z.record(z.string(), z.unknown()).optional(),
+		bank: z.record(z.string(), z.unknown()).optional(),
 		billing: z.record(z.string(), z.unknown()).optional(),
 	})
 	.passthrough();
