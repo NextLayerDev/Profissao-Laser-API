@@ -17,7 +17,9 @@ import {
 	resolveToolBilling,
 	settleInvocation,
 } from '../lib/upvox-tools.js';
+import { toolBankRepository } from '../repositories/tool-bank.js';
 import { registerCoreBlocks } from '../tool-blocks/index.js';
+import type { ToolBankEntry } from '../types/tool-bank.js';
 
 // Garante que os blocos curados estejam no registry (idempotente).
 registerCoreBlocks();
@@ -37,6 +39,21 @@ const ALLOWED_IMAGE_MIME = new Set([
 
 interface ToolRunParams {
 	key: string;
+}
+
+/** Resolve um path do registro do banco: `data.x` → entry.data.x; senão coluna. */
+function resolveBankPath(entry: ToolBankEntry, path: string): unknown {
+	if (path.startsWith('data.')) {
+		return (entry.data ?? {})[path.slice('data.'.length)];
+	}
+	return (entry as unknown as Record<string, unknown>)[path];
+}
+
+/** Troca `{var}` pelos campos do cliente; deixa o placeholder se faltar a var. */
+function substituteVars(template: string, ctx: Record<string, string>): string {
+	return template.replace(/\{(\w+)\}/g, (_m, k: string) =>
+		ctx[k] !== undefined ? ctx[k] : `{${k}}`,
+	);
 }
 
 /**
@@ -61,14 +78,17 @@ export const toolRunController = async (
 
 		const { key } = request.params as ToolRunParams;
 
-		// ── multipart: 1 arquivo (opcional) + campos string ──
-		let fileBuffer: Buffer | null = null;
-		let mimetype = 'application/octet-stream';
+		// ── multipart: N arquivos por fieldname (opcionais) + campos string ──
+		// Mapeia cada arquivo pelo SEU fieldname (ex.: `referencia`, `referencia2`)
+		// pra o motor casar cada input de imagem com seu arquivo. A validação de
+		// tipo roda por arquivo (`fileMimes`).
+		const files: Record<string, Buffer> = {};
+		const fileMimes: Record<string, string> = {};
 		const fields: Record<string, string> = {};
 		for await (const part of request.parts()) {
 			if (part.type === 'file') {
-				fileBuffer = await part.toBuffer();
-				mimetype = part.mimetype;
+				files[part.fieldname] = await part.toBuffer();
+				fileMimes[part.fieldname] = part.mimetype;
 			} else {
 				fields[part.fieldname] = part.value as string;
 			}
@@ -112,6 +132,41 @@ export const toolRunController = async (
 			});
 		}
 
+		// ── banco do admin (opcional): injeta o registro escolhido nos inputs ──
+		const bank = doc.bank;
+		if (bank?.enabled) {
+			const bankEntryId = fields.bank_entry_id;
+			if (!bankEntryId) {
+				// Staff em preview (billed=false) pode testar sem escolher um item.
+				if (billed) {
+					return reply
+						.status(400)
+						.send({ message: 'Escolha um item do banco.' });
+				}
+			} else {
+				const entry = await toolBankRepository.findById(bankEntryId, key, {
+					activeOnly: !isStaff,
+				});
+				if (!entry) {
+					return reply.status(400).send({ message: 'Item do banco inválido.' });
+				}
+				const injectMap: Record<
+					string,
+					{ from: string; substitute?: boolean }
+				> = bank.inject ?? {};
+				for (const [inputName, rule] of Object.entries(injectMap)) {
+					const value = resolveBankPath(entry, rule.from);
+					if (value === undefined || value === null) continue;
+					let str = typeof value === 'string' ? value : JSON.stringify(value);
+					if (rule.substitute) str = substituteVars(str, fields);
+					const name = inputName.startsWith('input.')
+						? inputName.slice('input.'.length)
+						: inputName;
+					fields[name] = str;
+				}
+			}
+		}
+
 		// ── billing (autoritativo no upvox) ──
 		if (billed) {
 			const gate = await resolveToolBilling(
@@ -127,8 +182,12 @@ export const toolRunController = async (
 		}
 
 		// Falha rápida em tipo não-imagem (defense-in-depth; mimetype é spoofável).
-		// Refund se já houver invocação pendente, pra não deixá-la presa.
-		if (fileBuffer && !ALLOWED_IMAGE_MIME.has(mimetype)) {
+		// Valida CADA arquivo enviado. Refund se já houver invocação pendente, pra
+		// não deixá-la presa.
+		const badFile = Object.values(fileMimes).some(
+			(m) => !ALLOWED_IMAGE_MIME.has(m),
+		);
+		if (badFile) {
 			if (invocationId) {
 				await refundInvocation(customerId, invocationId, authHeader);
 			}
@@ -140,7 +199,7 @@ export const toolRunController = async (
 		// ── executa o pipeline ──
 		let output: Record<string, unknown>;
 		try {
-			const bag = coerceInputs(doc.input ?? {}, fields, fileBuffer);
+			const bag = coerceInputs(doc.input ?? {}, fields, files);
 			output = await executeTool(doc, bag, { customerId, authHeader });
 		} catch (err) {
 			if (invocationId) {
