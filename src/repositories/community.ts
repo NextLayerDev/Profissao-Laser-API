@@ -792,28 +792,51 @@ class CommunityRepository {
 	}
 
 	async listEventAttendees(eventId: string) {
-		// Pega presenças ativas + faz JOIN com Customers e pl_community_profile.image
+		// Presenças ativas + nome/foto resolvidos SEM embed: as pl_* perderam o FK
+		// → Customers (drop p/ usuários nativos do upvox), então `!inner(Customers)`
+		// estoura no schema cache. Buscamos FROM Customers (FK → pl_community_profile
+		// ainda existe) e mapeamos por id; ids sem Customers caem em null.
 		const { data, error } = await supabase
 			.from('pl_event_attendance')
-			.select(
-				'customerId, joinedAt, Customers!inner(id, name, pl_community_profile(image))',
-			)
+			.select('customerId, joinedAt')
 			.eq('eventId', eventId)
 			.is('leftAt', null)
 			.order('joinedAt', { ascending: true });
 		if (error) throw new Error(error.message);
+		const rows = (data ?? []) as { customerId: string; joinedAt: string }[];
 
-		return (data ?? []).map((row) => {
-			// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
-			const r = row as any;
-			const customer = r.Customers;
-			const profileList = customer?.pl_community_profile;
-			const profile = Array.isArray(profileList) ? profileList[0] : profileList;
+		const ids = [...new Set(rows.map((r) => r.customerId))];
+		const byId = new Map<
+			string,
+			{ name: string | null; image: string | null }
+		>();
+		if (ids.length > 0) {
+			const { data: customers, error: cErr } = await supabase
+				.from('Customers')
+				.select('id, name, pl_community_profile(image)')
+				.in('id', ids);
+			if (cErr) throw new Error(cErr.message);
+			for (const row of customers ?? []) {
+				// biome-ignore lint/suspicious/noExplicitAny: dynamic nested join result
+				const r = row as any;
+				const profileList = r.pl_community_profile;
+				const profile = Array.isArray(profileList)
+					? profileList[0]
+					: profileList;
+				byId.set(r.id as string, {
+					name: (r.name as string | null) ?? null,
+					image: (profile?.image as string | null) ?? null,
+				});
+			}
+		}
+
+		return rows.map((r) => {
+			const c = byId.get(r.customerId);
 			return {
-				customerId: r.customerId as string,
-				customerName: (customer?.name as string | null) ?? null,
-				customerImage: (profile?.image as string | null) ?? null,
-				joinedAt: r.joinedAt as string,
+				customerId: r.customerId,
+				customerName: c?.name ?? null,
+				customerImage: c?.image ?? null,
+				joinedAt: r.joinedAt,
 			};
 		});
 	}

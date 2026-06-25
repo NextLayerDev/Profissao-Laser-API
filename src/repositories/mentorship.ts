@@ -139,27 +139,58 @@ class MentorshipRepository {
 		if (error) throw new Error(error.message);
 	}
 
+	/**
+	 * Resolve nome + foto por id SEM embed PostgREST. As tabelas pl_* perderam o
+	 * FK → Customers (drop p/ não quebrar usuários nativos do upvox), então
+	 * `pl_*!inner(Customers...)` estoura no schema cache ("Could not find a
+	 * relationship..."). Aqui consultamos FROM Customers (cujo FK →
+	 * pl_community_profile ainda existe) e mapeamos por id; ids sem linha em
+	 * Customers (nativos do upvox) caem em null, sem sumir da lista.
+	 */
+	private async resolveCustomers(
+		ids: string[],
+	): Promise<Map<string, { name: string | null; image: string | null }>> {
+		const map = new Map<
+			string,
+			{ name: string | null; image: string | null }
+		>();
+		const unique = [...new Set(ids)];
+		if (unique.length === 0) return map;
+		const { data, error } = await supabase
+			.from('Customers')
+			.select('id, name, pl_community_profile(image)')
+			.in('id', unique);
+		if (error) throw new Error(error.message);
+		for (const row of data ?? []) {
+			// biome-ignore lint/suspicious/noExplicitAny: join aninhado dinâmico
+			const r = row as any;
+			const profileList = r.pl_community_profile;
+			const profile = Array.isArray(profileList) ? profileList[0] : profileList;
+			map.set(r.id as string, {
+				name: (r.name as string | null) ?? null,
+				image: (profile?.image as string | null) ?? null,
+			});
+		}
+		return map;
+	}
+
 	async listAttendees(sessionId: string) {
 		const { data, error } = await supabase
 			.from('pl_mentorship_attendance')
-			.select(
-				'customerId, joinedAt, Customers!inner(id, name, pl_community_profile(image))',
-			)
+			.select('customerId, joinedAt')
 			.eq('sessionId', sessionId)
 			.is('leftAt', null)
 			.order('joinedAt', { ascending: true });
 		if (error) throw new Error(error.message);
-		return (data ?? []).map((row) => {
-			// biome-ignore lint/suspicious/noExplicitAny: join aninhado dinâmico
-			const r = row as any;
-			const customer = r.Customers;
-			const profileList = customer?.pl_community_profile;
-			const profile = Array.isArray(profileList) ? profileList[0] : profileList;
+		const rows = (data ?? []) as { customerId: string; joinedAt: string }[];
+		const byId = await this.resolveCustomers(rows.map((r) => r.customerId));
+		return rows.map((r) => {
+			const c = byId.get(r.customerId);
 			return {
-				customerId: r.customerId as string,
-				customerName: (customer?.name as string | null) ?? null,
-				customerImage: (profile?.image as string | null) ?? null,
-				joinedAt: r.joinedAt as string,
+				customerId: r.customerId,
+				customerName: c?.name ?? null,
+				customerImage: c?.image ?? null,
+				joinedAt: r.joinedAt,
 			};
 		});
 	}
@@ -168,24 +199,25 @@ class MentorshipRepository {
 	async listAllAttendees(sessionId: string) {
 		const { data, error } = await supabase
 			.from('pl_mentorship_attendance')
-			.select(
-				'customerId, joinedAt, leftAt, paidInvocationId, Customers!inner(id, name, pl_community_profile(image))',
-			)
+			.select('customerId, joinedAt, leftAt, paidInvocationId')
 			.eq('sessionId', sessionId)
 			.order('joinedAt', { ascending: true });
 		if (error) throw new Error(error.message);
-		return (data ?? []).map((row) => {
-			// biome-ignore lint/suspicious/noExplicitAny: join aninhado dinâmico
-			const r = row as any;
-			const customer = r.Customers;
-			const profileList = customer?.pl_community_profile;
-			const profile = Array.isArray(profileList) ? profileList[0] : profileList;
+		const rows = (data ?? []) as {
+			customerId: string;
+			joinedAt: string;
+			leftAt: string | null;
+			paidInvocationId: string | null;
+		}[];
+		const byId = await this.resolveCustomers(rows.map((r) => r.customerId));
+		return rows.map((r) => {
+			const c = byId.get(r.customerId);
 			return {
-				customerId: r.customerId as string,
-				customerName: (customer?.name as string | null) ?? null,
-				customerImage: (profile?.image as string | null) ?? null,
-				joinedAt: r.joinedAt as string,
-				leftAt: (r.leftAt as string | null) ?? null,
+				customerId: r.customerId,
+				customerName: c?.name ?? null,
+				customerImage: c?.image ?? null,
+				joinedAt: r.joinedAt,
+				leftAt: r.leftAt ?? null,
 				paid: !!r.paidInvocationId,
 			};
 		});
@@ -238,27 +270,28 @@ class MentorshipRepository {
 	async listMessages(sessionId: string, limit = 100) {
 		const { data, error } = await supabase
 			.from('pl_mentorship_message')
-			.select(
-				'id, "customerId", content, "createdAt", Customers!inner(id, name, pl_community_profile(image))',
-			)
+			.select('id, "customerId", content, "createdAt"')
 			.eq('sessionId', sessionId)
 			.order('createdAt', { ascending: false })
 			.limit(limit);
 		if (error) throw new Error(error.message);
+		const rows = (data ?? []) as {
+			id: string;
+			customerId: string;
+			content: string;
+			createdAt: string;
+		}[];
+		const byId = await this.resolveCustomers(rows.map((r) => r.customerId));
 		// vem do mais novo → inverte p/ ordem cronológica.
-		return (data ?? []).reverse().map((row) => {
-			// biome-ignore lint/suspicious/noExplicitAny: join aninhado dinâmico
-			const r = row as any;
-			const customer = r.Customers;
-			const profileList = customer?.pl_community_profile;
-			const profile = Array.isArray(profileList) ? profileList[0] : profileList;
+		return rows.reverse().map((r) => {
+			const c = byId.get(r.customerId);
 			return {
-				id: r.id as string,
-				customerId: r.customerId as string,
-				customerName: (customer?.name as string | null) ?? null,
-				customerImage: (profile?.image as string | null) ?? null,
-				content: r.content as string,
-				createdAt: r.createdAt as string,
+				id: r.id,
+				customerId: r.customerId,
+				customerName: c?.name ?? null,
+				customerImage: c?.image ?? null,
+				content: r.content,
+				createdAt: r.createdAt,
 			};
 		});
 	}
