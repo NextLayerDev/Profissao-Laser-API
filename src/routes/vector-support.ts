@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticateCustomer, requireModule } from '@/middleware/auth.js';
+import { advancedVectorizeController } from '../controllers/advanced-vectorize.js';
 import {
 	closeTicketController,
 	createTicketController,
@@ -128,5 +129,25 @@ export async function vectorSupportRoute(server: FastifyInstance) {
 			},
 		},
 		closeTicketController,
+	);
+
+	server.post(
+		'/vector-support/advanced-vectorize',
+		{
+			preHandler: [requireModule('vetorizacao')],
+			schema: {
+				description:
+					'Vetorização pelo modelo avançado (em teste, staff only). multipart/form-data: file (imagem). Devolve o SVG.',
+				response: {
+					200: z.object({ svgContent: z.string() }),
+					400: ErrorSchema,
+					403: ErrorSchema,
+					502: ErrorSchema,
+				},
+				tags: ['Vector Support'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		advancedVectorizeController,
 	);
 }
