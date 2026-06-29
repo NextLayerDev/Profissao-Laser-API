@@ -29,7 +29,28 @@ async function sample(): Promise<Buffer> {
 // Params mínimos por bloco (usa defaults; só passa o que não tem default sensato).
 const PARAMS: Record<string, Record<string, unknown>> = {
 	'adjust.channelMixer': { rr: 0.9, gg: 0.9, bb: 0.9, rg: 0.1 },
+	'laser.photoengrave': { material: 'wood', width_mm: 100 },
 };
+
+// Blocos que tocam rede/IA/storage — não entram no smoke local.
+const NETWORK = new Set([
+	'ai.generate_image',
+	'ai.backgroundRemoval',
+	'ai.colorize',
+	'ai.restoration',
+	'output.upload_png',
+	'output.upload_svg',
+	'output.export_dxf',
+	'output.export_lbrn2',
+	'util.http_request',
+	'util.text_template',
+	'util.math',
+	'util.condition',
+]);
+// Blocos cujo input é `from` (não `image`).
+const NEEDS_FROM = new Set(['image.input', 'output.return_base64']);
+// Blocos sem imagem de entrada.
+const NO_IMAGE = new Set(['util.dpiTest']);
 
 async function isPng(out: Record<string, unknown>): Promise<boolean> {
 	const png = (out.png ?? out.buffer) as Buffer | undefined;
@@ -49,13 +70,17 @@ async function isPng(out: Record<string, unknown>): Promise<boolean> {
 async function main() {
 	const buf = await sample();
 	const ctx = { customerId: 'smoke' };
-	const ids = blockRegistry.keys().filter((id) => id.startsWith('adjust.'));
+	const ids = blockRegistry.keys().filter((id) => !NETWORK.has(id));
 	let ok = 0;
 	let fail = 0;
 	for (const id of ids) {
 		const block = blockRegistry.get(id);
 		if (!block) continue;
-		const params = { image: buf, ...(PARAMS[id] ?? {}) };
+		const params = NO_IMAGE.has(id)
+			? { ...(PARAMS[id] ?? {}) }
+			: NEEDS_FROM.has(id)
+				? { from: buf, ...(PARAMS[id] ?? {}) }
+				: { image: buf, ...(PARAMS[id] ?? {}) };
 		const parsed = block.paramsSchema.safeParse(params);
 		if (!parsed.success) {
 			console.error(`✗ ${id}: schema — ${parsed.error.issues[0]?.message}`);

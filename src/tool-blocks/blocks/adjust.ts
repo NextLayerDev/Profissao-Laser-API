@@ -9,7 +9,6 @@ import {
 	loadRaster,
 	luma,
 	mapPixels,
-	type Raster,
 } from '../lib/pixels.js';
 import type { ToolBlock } from '../types.js';
 
