@@ -1,3 +1,4 @@
+import { adjustBlocks } from './blocks/adjust.js';
 import { aiGenerateImageBlock } from './blocks/ai.js';
 import { imageInputBlock, imageVectorizeBlock } from './blocks/image.js';
 import { laserPhotoengraveBlock } from './blocks/laser.js';
@@ -37,6 +38,8 @@ export function registerCoreBlocks(): void {
 	blockRegistry.register(mathBlock);
 	blockRegistry.register(conditionBlock);
 	blockRegistry.register(httpRequestBlock);
+	// Biblioteca ImagR — Ajustes (luz/cor/WB/detalhe).
+	for (const b of adjustBlocks) blockRegistry.register(b);
 }
 
 export { blockRegistry } from './registry.js';
