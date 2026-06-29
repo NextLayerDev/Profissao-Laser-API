@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import sharp from 'sharp';
 import { isStaffRole } from '../lib/external-auth.js';
 import {
 	loadPublishedToolDefinition,
@@ -221,6 +222,114 @@ export const toolRunController = async (
 			await refundInvocation(customerId, invocationId, authHeader);
 		}
 		if (err instanceof ToolDefinitionLoadError) {
+			return reply.status(err.status).send({ message: err.message });
+		}
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+};
+
+/** Lado máximo da imagem no preview (acelera o feedback ao vivo). */
+const PREVIEW_MAX_SIDE = 900;
+
+/** Nós pulados no preview: sobem ao storage ou batem em IA (rede/custo). */
+function skipInPreview(block: string): boolean {
+	return (
+		block.startsWith('output.') ||
+		block.startsWith('ai.') ||
+		block === 'image.upscale'
+	);
+}
+
+/**
+ * `POST /api/tool-run/:key/preview` — preview NÃO COBRADO e sem storage, pro
+ * feedback ao vivo dos sliders no estúdio (espelha o `vectorizePreviewController`).
+ * Reduz a imagem (~900px), TIRA os nós de saída/IA do pipeline (nada de Bunny
+ * nem Gemini de graça) e devolve só `{ preview }` (base64). Gateado pelo mesmo
+ * `authenticateVectorizacao` da rota; staff pode mandar `definition` inline
+ * (preview de rascunho da Fábrica).
+ */
+export const toolPreviewController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	const authHeader = request.headers.authorization;
+	if (!customerId) {
+		return reply.status(403).send({ message: 'Customer not found' });
+	}
+	try {
+		const { key } = request.params as ToolRunParams;
+
+		const files: Record<string, Buffer> = {};
+		const fields: Record<string, string> = {};
+		for await (const part of request.parts()) {
+			if (part.type === 'file') {
+				files[part.fieldname] = await part.toBuffer();
+			} else {
+				fields[part.fieldname] = part.value as string;
+			}
+		}
+
+		// definition: inline (staff) ou published por key.
+		let doc: ToolDefinitionDoc;
+		if (fields.definition) {
+			if (!isStaffRole(request.currentRole)) {
+				return reply
+					.status(403)
+					.send({ message: 'inline_definition_forbidden' });
+			}
+			try {
+				doc = parseInlineToolDefinition(fields.definition);
+			} catch {
+				return reply.status(400).send({ message: 'definition inválida' });
+			}
+		} else {
+			const row = await loadPublishedToolDefinition(
+				key,
+				customerId,
+				authHeader,
+			);
+			doc = row.definition;
+		}
+
+		// Reduz cada imagem enviada (preview é rápido; não precisa da resolução cheia).
+		const small: Record<string, Buffer> = {};
+		for (const [name, buf] of Object.entries(files)) {
+			small[name] = await sharp(buf)
+				.resize(PREVIEW_MAX_SIDE, PREVIEW_MAX_SIDE, {
+					fit: 'inside',
+					withoutEnlargement: true,
+				})
+				.png()
+				.toBuffer()
+				.catch(() => buf);
+		}
+
+		// Pipeline de preview: sem nós de saída/IA.
+		const previewDoc: ToolDefinitionDoc = {
+			...doc,
+			pipeline: (doc.pipeline ?? []).filter((n) => !skipInPreview(n.block)),
+		};
+		if ((previewDoc.pipeline ?? []).length === 0) {
+			return reply.status(200).send({ preview: null });
+		}
+
+		const bag = coerceInputs(doc.input ?? {}, fields, small);
+		const output = await executeTool(previewDoc, bag, {
+			customerId,
+			authHeader,
+		});
+		const preview =
+			(output.preview as string | undefined) ??
+			(output.primary as string | undefined) ??
+			null;
+		return reply.status(200).send({ preview });
+	} catch (err) {
+		if (err instanceof ToolDefinitionLoadError) {
+			return reply.status(err.status).send({ message: err.message });
+		}
+		if (err instanceof ToolEngineError) {
 			return reply.status(err.status).send({ message: err.message });
 		}
 		const message = err instanceof Error ? err.message : 'Unknown error';
