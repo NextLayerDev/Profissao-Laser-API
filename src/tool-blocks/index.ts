@@ -1,6 +1,7 @@
 import { adjustBlocks } from './blocks/adjust.js';
 import { aiGenerateImageBlock } from './blocks/ai.js';
 import { aiExtraBlocks } from './blocks/ai-extra.js';
+import { dispatchBlocks } from './blocks/dispatch.js';
 import { ditherBlocks } from './blocks/dither.js';
 import { edgeBlurBlocks } from './blocks/edge-blur.js';
 import { geoBlocks } from './blocks/geo.js';
@@ -58,6 +59,8 @@ export function registerCoreBlocks(): void {
 		...aiExtraBlocks,
 		...outputExtraBlocks,
 		...vectorExtraBlocks,
+		// Dispatchers das tools-mãe (efeito/dither/IA por dropdown).
+		...dispatchBlocks,
 	])
 		blockRegistry.register(b);
 }
