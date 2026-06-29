@@ -1,6 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { toolRunController } from '../controllers/tool-run.js';
+import {
+	toolPreviewController,
+	toolRunController,
+} from '../controllers/tool-run.js';
 import { authenticateVectorizacao } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
 import { toolRunResultSchema } from '../types/tool-run.js';
@@ -42,5 +45,30 @@ export async function toolRunRoute(server: FastifyInstance) {
 			},
 		},
 		toolRunController,
+	);
+
+	// Preview NÃO cobrado (feedback ao vivo dos sliders no estúdio): roda o
+	// pipeline sem nós de saída/IA, sem debitar nem gravar. Devolve só { preview }.
+	server.post(
+		'/api/tool-run/:key/preview',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description:
+					'Preview ao vivo NÃO COBRADO de uma tool (estúdio): imagem reduzida, sem storage, sem IA. Staff pode mandar `definition` inline. Resposta: `{ preview }` (data URL base64 ou null).',
+				consumes: ['multipart/form-data'],
+				params: z.object({ key: z.string().min(1).max(60) }),
+				response: {
+					200: z.object({ preview: z.string().nullable() }),
+					400: ErrorSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Tools'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		toolPreviewController,
 	);
 }
