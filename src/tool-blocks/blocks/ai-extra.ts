@@ -42,13 +42,23 @@ export const upscaleBlock = block(
 	'Amplia 2/4/8/16× com reamostragem Lanczos3 (não é IA).',
 	{ factor: z.enum(['2', '4', '8', '16']).default('2').transform(Number) },
 	async (p) => {
-		// Lê dimensões reais e multiplica pelo fator escolhido.
+		// Lê dimensões reais e multiplica pelo fator — mas CLAMPA o fator efetivo
+		// pra saída não estourar (~40MP / 10000px por lado). Sem isso, foto grande
+		// + 16× explode ("Input image exceeds pixel limit") e o cliente toma erro.
 		const meta = await sharp(p.image).metadata();
 		const w = meta.width ?? 0;
 		const h = meta.height ?? 0;
-		return fxSharp(p.image, (s) =>
-			s.resize(w * p.factor, h * p.factor, { kernel: 'lanczos3' }),
+		const MAX_SIDE = 10_000;
+		const MAX_MP = 40_000_000;
+		const capBySide = Math.min(
+			MAX_SIDE / Math.max(w, 1),
+			MAX_SIDE / Math.max(h, 1),
 		);
+		const capByMp = Math.sqrt(MAX_MP / Math.max(w * h, 1));
+		const eff = Math.max(1, Math.min(p.factor, capBySide, capByMp));
+		const tw = Math.max(1, Math.round(w * eff));
+		const th = Math.max(1, Math.round(h * eff));
+		return fxSharp(p.image, (s) => s.resize(tw, th, { kernel: 'lanczos3' }));
 	},
 );
 
