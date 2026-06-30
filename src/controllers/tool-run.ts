@@ -237,7 +237,9 @@ function skipInPreview(block: string): boolean {
 	return (
 		block.startsWith('output.') ||
 		block.startsWith('ai.') ||
-		block === 'image.upscale'
+		block === 'image.upscale' ||
+		// removedor híbrido pode cair na IA (Gemini) em fundo complexo — nunca no preview.
+		block === 'image.removeBackground'
 	);
 }
 
