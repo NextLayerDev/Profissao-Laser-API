@@ -100,12 +100,21 @@ export function coerceInputs(
 				case 'bool':
 					val = raw === 'true' || raw === '1';
 					break;
-				case 'enum':
-					if (Array.isArray(spec.options) && !spec.options.includes(raw)) {
-						throw new ToolEngineError(400, `input '${name}' inválido`);
+				case 'enum': {
+					// O multipart manda TUDO como string; casa o valor pela representação
+					// textual e devolve a OPÇÃO ORIGINAL (preserva number da definição,
+					// ex.: dpi [203,254,300,600]). Sem isso, "254" !== 254 e rejeitava.
+					if (Array.isArray(spec.options)) {
+						const match = spec.options.find((o) => String(o) === raw);
+						if (match === undefined) {
+							throw new ToolEngineError(400, `input '${name}' inválido`);
+						}
+						val = match;
+					} else {
+						val = raw;
 					}
-					val = raw;
 					break;
+				}
 				default:
 					val = raw;
 			}
