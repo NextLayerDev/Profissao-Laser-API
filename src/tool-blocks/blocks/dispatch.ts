@@ -128,7 +128,9 @@ export const imageDitherBlock: ToolBlock<z.infer<typeof ditherSchema>> = {
 /* ──────────────────────────── ai.studio ─────────────────────────────
  * Operação de IA escolhida por dropdown (Estúdio de IA). */
 const AI_MAP: Record<string, string> = {
-	remover_fundo: 'ai.backgroundRemoval',
+	// "remover fundo" usa o removedor DETERMINÍSTICO (chroma-key, sem IA/custo);
+	// colorir/restaurar seguem na IA (Gemini); ampliar é sharp (Lanczos).
+	remover_fundo: 'image.removeBackground',
 	colorir: 'ai.colorize',
 	restaurar: 'ai.restoration',
 	ampliar: 'image.upscale',
