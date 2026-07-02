@@ -2,9 +2,41 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
 	fetchEntitlements,
 	fetchExternalUser,
+	fetchMyPermissions,
+	isAdminRole,
 	isKnownAppRole,
 	isStaffRole,
 } from '../lib/external-auth.js';
+
+/**
+ * Gate fino do OmniResposta: staff/admin (authenticateAdmin) + permissão
+ * granular do upvox. Admin passa sempre; staff exige `omniresposta.<action>`
+ * nas permissões efetivas (GET /v1/me/permissions, cacheado 5min). Sem Bearer
+ * repassado (edge: chamada fora do gateway), mantém o comportamento atual do
+ * painel (staff libera) pra não travar operação.
+ */
+export function omniPermission(action: 'view' | 'edit') {
+	return async (request: FastifyRequest, reply: FastifyReply) => {
+		await authenticateAdmin(request, reply);
+		if (reply.sent || !request.currentUser) return;
+		if (isAdminRole(request.currentRole)) return;
+		const token = (request.headers.authorization ?? '').replace(
+			/^Bearer\s+/i,
+			'',
+		);
+		if (!token) return;
+		const perms = await fetchMyPermissions(token);
+		if (!perms) return; // upvox indisponível → fail-open (staff)
+		if (perms.isSuperAdmin) return;
+		if (!perms.permissions.includes(`omniresposta.${action}`)) {
+			return reply.status(403).send({
+				statusCode: 403,
+				error: 'Forbidden',
+				message: 'omniresposta_forbidden',
+			});
+		}
+	};
+}
 
 export const authenticate = async (
 	request: FastifyRequest,

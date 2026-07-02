@@ -9,7 +9,10 @@ import {
 	validatorCompiler,
 	type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
+import { initOmniSocket } from './lib/omni/socket.js';
 import { captureException, initSentry } from './lib/sentry.js';
+import { omniDebounce } from './services/omni/debounce.js';
+import './services/omni/pipeline.js'; // registra o runner do motor no debounce
 import { routes } from './router.js';
 
 initSentry();
@@ -65,4 +68,7 @@ app.register(routes);
 app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
 	console.log('HTTP server running on http://localhost:3333!');
 	console.log('Docs available at http://localhost:3333/docs');
+	// OmniResposta: socket realtime + varredura do motor de IA (debounce).
+	initOmniSocket(app.server);
+	omniDebounce.startSweep();
 });
