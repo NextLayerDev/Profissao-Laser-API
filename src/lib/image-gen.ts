@@ -13,6 +13,32 @@ const IMAGE_MODEL =
 const GEN_TIMEOUT_MS = 60_000;
 const MAX_OUTPUT_BYTES = 20 * 1_000_000; // 20 MB de teto na imagem gerada
 
+/**
+ * System prompt de ADERÊNCIA: força o modelo a seguir o prompt do admin
+ * palavra por palavra e a subordinar as referências ao texto. Genérico
+ * (sem regras de domínio) pra valer pra todo `generateToolImage` — inclusive
+ * filtros do Estúdio. As travas específicas (cores puras, enquadramento…) vêm
+ * no próprio `prompt_script` do admin; aqui só garantimos que elas sejam
+ * cumpridas e que as refs não as sobrescrevam.
+ */
+const IMAGE_SYSTEM_PROMPT = [
+	'Você é um gerador de imagens de alta fidelidade.',
+	'Siga EXATAMENTE as instruções de texto fornecidas pelo usuário — palavra por palavra.',
+	'Toda restrição explícita no texto é OBRIGATÓRIA: cores, enquadramento, estilo, fundo, densidade, composição, preenchimento do canvas.',
+	'NÃO adicione gradientes, sombreamento, tons de cinza, fotorrealismo, texturas extras ou elementos pedidos apenas como referência, A MENOS que o texto explicitamente os solicite.',
+	'As imagens de referência (quando presentes) servem APENAS como referência de assunto/estilo, e SÓ quando o texto permitir. O texto é AUTORITATIVO e prevalece sobre qualquer referência.',
+	'Preencha o canvas conforme instruído no texto. Não deixe margens vazias nem altere a composição salvo instrução expressa.',
+	"Gere apenas a imagem solicitada. Não inclua texto explicativo, marca d'água nem bordas.",
+].join(' ');
+
+/**
+ * Prefixo do user message: reposiciona o texto DEPOIS das refs e declara o
+ * texto autoritativo. Em multimodal, o último segmento (texto) domina a atenção
+ * — assim o prompt do admin não é sobreposto pelo estilo das referências.
+ */
+const TEXT_LEAD =
+	'Siga EXATAMENTE estas instruções. O texto abaixo é autoritativo; as imagens acima são apenas referência de assunto/estilo quando o texto permitir:\n\n';
+
 export interface GenImageResult {
 	png: Buffer;
 	/** data URL `image/png` pra preview inline (não cobra storage). */
@@ -56,19 +82,40 @@ export async function generateToolImage(
 	const timeout = AbortSignal.timeout(GEN_TIMEOUT_MS);
 	const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
+	// Refs PRIMEIRO, texto por último (com LEAD autoritativo) — o último
+	// segmento multimodal domina a atenção, então o prompt do admin prevalece
+	// sobre o estilo/composição das referências.
 	// biome-ignore lint/suspicious/noExplicitAny: conteúdo multimodal OpenRouter
-	const content: any[] = [{ type: 'text', text }];
+	const content: any[] = [];
 	for (const ref of refs) {
 		content.push({
 			type: 'image_url',
 			image_url: { url: `data:image/png;base64,${ref.toString('base64')}` },
 		});
 	}
+	content.push({ type: 'text', text: `${TEXT_LEAD}${text}` });
 	const body = {
 		model: IMAGE_MODEL,
-		messages: [{ role: 'user', content }],
+		// temperature omitido: Gemini image preview não documenta suporte a
+		// temperature; passar params desconhecidos pode 400. O system prompt
+		// + a reordenação (texto por último) são os levers de aderência.
+		messages: [
+			{ role: 'system', content: IMAGE_SYSTEM_PROMPT },
+			{ role: 'user', content },
+		],
 		modalities: ['image', 'text'],
 	};
+
+	if (process.env.DEBUG_IMAGE_GEN) {
+		// Não loga o prompt cheio (IP do admin); só metadados pra debugar
+		// "não seguiu o prompt" sem vazar curadoria.
+		console.debug('[image-gen] calling OpenRouter', {
+			model: IMAGE_MODEL,
+			promptLen: text.length,
+			refs: refs.length,
+			hasSystem: true,
+		});
+	}
 
 	let result: string | null = null;
 	try {

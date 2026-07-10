@@ -39,6 +39,7 @@ import { supportChatRoute } from './routes/support-chat.js';
 import { templateRoute } from './routes/template.js';
 import { toolAgentRoute } from './routes/tool-agent.js';
 import { toolBankRoute } from './routes/tool-bank.js';
+import { toolBankSmartTemaRoute } from './routes/tool-bank-smart-tema.js';
 import { toolRunRoute } from './routes/tool-run.js';
 import { userRoute } from './routes/user.js';
 import { vectorRoute } from './routes/vector.js';
@@ -80,6 +81,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(toolRunRoute);
 	app.register(toolAgentRoute);
 	app.register(toolBankRoute);
+	app.register(toolBankSmartTemaRoute);
 	app.register(vectorLibraryRoute);
 	app.register(vectorSupportRoute);
 	app.register(faqRoute);
