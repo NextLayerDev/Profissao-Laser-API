@@ -19,6 +19,17 @@ const aiGenerateImageSchema = z.object({
 	image: optionalImage,
 	image2: optionalImage,
 	image3: optionalImage,
+	/**
+	 * Override do modelo OpenRouter (injetado pelo motor a partir de
+	 * `definition.model` na Fábrica de Tools). Ausente = default do env.
+	 * `.max(200)` casa com o upvox (evita payload absurdo pro OpenRouter).
+	 */
+	model: z.string().min(1).max(200).optional(),
+	/**
+	 * Override do system prompt (injetado pelo motor a partir de
+	 * `definition.system_prompt`). Ausente/vazio = prompt laser padrão.
+	 */
+	system_prompt: z.string().min(1).optional(),
 });
 
 export const aiGenerateImageBlock: ToolBlock<
@@ -37,6 +48,7 @@ export const aiGenerateImageBlock: ToolBlock<
 			params.prompt,
 			refs,
 			ctx.signal,
+			{ model: params.model, systemPromptOverride: params.system_prompt },
 		);
 		return { png, pngBase64 };
 	},

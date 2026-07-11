@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import sharp from 'sharp';
 import { isStaffRole } from '../lib/external-auth.js';
+import { IMAGE_MODELS_CATALOG } from '../lib/image-models-catalog.js';
 import {
 	loadPublishedToolDefinition,
 	parseInlineToolDefinition,
@@ -55,6 +56,51 @@ function substituteVars(template: string, ctx: Record<string, string>): string {
 	return template.replace(/\{(\w+)\}/g, (_m, k: string) =>
 		ctx[k] !== undefined ? ctx[k] : `{${k}}`,
 	);
+}
+
+/**
+ * Injeta overrides per-tool (`definition.model`, `definition.system_prompt`)
+ * nos `params` dos nós `ai.generate_image` do pipeline. Fast-path: se nenhum
+ * override estiver setado, devolve o doc intacto (zero impacto retrocompat).
+ *
+ * Decisão de arquitetura 2026-07-10: per-tool override na definition, NÃO
+ * per-bank-entry. A tool vence sobre override de nó (ordem do spread: primeiro
+ * `n.params`, depois o override da tool). Se o admin setar `params.model` no
+ * nó, a tool sobrescreve — na prática admin não seta model por nó.
+ *
+ * `doc.model` é validado contra o catálogo curado (`IMAGE_MODELS_CATALOG`).
+ * Se o admin digitou um id fora do catálogo (ou um modelo foi removido do
+ * catálogo após o save), logamos warning e CAÍMOS NO DEFAULT DO SISTEMA — em
+ * vez de mandar um id inválido pro OpenRouter e quebrar a invocação.
+ */
+function injectAiGenerateImageOverrides(
+	doc: ToolDefinitionDoc,
+): ToolDefinitionDoc {
+	const catalogIds = new Set(IMAGE_MODELS_CATALOG.map((m) => m.id));
+	let toolModel = doc.model;
+	if (toolModel && !catalogIds.has(toolModel)) {
+		console.warn(
+			`[tool-run] doc.model '${toolModel}' não está no catálogo curado — caindo no default. Atualize o IMAGE_MODELS_CATALOG ou remova o override.`,
+		);
+		toolModel = undefined;
+	}
+	const toolSystemPrompt = doc.system_prompt;
+	if (!toolModel && !toolSystemPrompt) return doc;
+	return {
+		...doc,
+		pipeline: (doc.pipeline ?? []).map((n) =>
+			n.block !== 'ai.generate_image'
+				? n
+				: {
+						...n,
+						params: {
+							...(n.params ?? {}),
+							...(toolModel ? { model: toolModel } : {}),
+							...(toolSystemPrompt ? { system_prompt: toolSystemPrompt } : {}),
+						},
+					},
+		),
+	};
 }
 
 /**
@@ -132,6 +178,9 @@ export const toolRunController = async (
 				message: `engine_runtime '${runtime}' não suportado (MVP: blocks_v1)`,
 			});
 		}
+
+		// Override per-tool do modelo + system prompt para `ai.generate_image`.
+		doc = injectAiGenerateImageOverrides(doc);
 
 		// ── banco do admin (opcional): injeta o registro escolhido nos inputs ──
 		const bank = doc.bank;
@@ -294,6 +343,9 @@ export const toolPreviewController = async (
 			);
 			doc = row.definition;
 		}
+
+		// Override per-tool do modelo + system prompt para `ai.generate_image`.
+		doc = injectAiGenerateImageOverrides(doc);
 
 		// Reduz cada imagem enviada (preview é rápido; não precisa da resolução cheia).
 		const small: Record<string, Buffer> = {};

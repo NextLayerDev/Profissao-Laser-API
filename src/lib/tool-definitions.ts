@@ -102,6 +102,17 @@ export interface ToolDefinitionDoc {
 		vox_cost: number | 'metered';
 		free_quota?: Record<string, number | null>;
 	};
+	/**
+	 * Override do modelo OpenRouter usado por `ai.generate_image`. Ausente =
+	 * default do env (Gemini 3 Pro). Injetado pelo controller `tool-run.ts`
+	 * nos params dos nós `ai.generate_image`.
+	 */
+	model?: string;
+	/**
+	 * System prompt opcional enviado ao `ai.generate_image`. SUBSTITUI (não
+	 * concatena) o `DEFAULT_IMAGE_SYSTEM_PROMPT` laser. Ausente/vazio = default.
+	 */
+	system_prompt?: string;
 }
 
 export interface ToolDefinitionRow {

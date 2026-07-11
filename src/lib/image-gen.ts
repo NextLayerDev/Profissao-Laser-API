@@ -14,14 +14,17 @@ const GEN_TIMEOUT_MS = 60_000;
 const MAX_OUTPUT_BYTES = 20 * 1_000_000; // 20 MB de teto na imagem gerada
 
 /**
- * System prompt de ADERÊNCIA: força o modelo a seguir o prompt do admin
+ * System prompt padrão de ADERÊNCIA: força o modelo a seguir o prompt do admin
  * palavra por palavra e a subordinar as referências ao texto. Genérico
  * (sem regras de domínio) pra valer pra todo `generateToolImage` — inclusive
  * filtros do Estúdio. As travas específicas (cores puras, enquadramento…) vêm
  * no próprio `prompt_script` do admin; aqui só garantimos que elas sejam
  * cumpridas e que as refs não as sobrescrevam.
+ *
+ * Overrides per-tool (via `definition.system_prompt` na Fábrica de Tools)
+ * SUBSTITUEM este prompt — não concatenam. Decisão de arquitetura 2026-07-10.
  */
-const IMAGE_SYSTEM_PROMPT = [
+export const DEFAULT_IMAGE_SYSTEM_PROMPT = [
 	'Você é um gerador de imagens de alta fidelidade.',
 	'Siga EXATAMENTE as instruções de texto fornecidas pelo usuário — palavra por palavra.',
 	'Toda restrição explícita no texto é OBRIGATÓRIA: cores, enquadramento, estilo, fundo, densidade, composição, preenchimento do canvas.',
@@ -30,6 +33,16 @@ const IMAGE_SYSTEM_PROMPT = [
 	'Preencha o canvas conforme instruído no texto. Não deixe margens vazias nem altere a composição salvo instrução expressa.',
 	"Gere apenas a imagem solicitada. Não inclua texto explicativo, marca d'água nem bordas.",
 ].join(' ');
+
+/**
+ * Resolve o system prompt final. Se `override` for uma string não-vazia,
+ * SUBSTITUI o default (decisão: replace total, não concat). Caso contrário
+ * retorna o default laser.
+ */
+export function buildImageSystemPrompt(override?: string | null): string {
+	if (override && override.trim().length > 0) return override;
+	return DEFAULT_IMAGE_SYSTEM_PROMPT;
+}
 
 /**
  * Prefixo do user message: reposiciona o texto DEPOIS das refs e declara o
@@ -64,11 +77,18 @@ async function downloadAsDataUrl(
  * Gera uma imagem a partir de `prompt` (+ até N imagens de referência). Lança
  * `ToolEngineError` em qualquer falha — o controller do motor faz refund da
  * invocação automaticamente, então o cliente nunca paga por uma geração falha.
+ *
+ * `opts.model` — override do modelo OpenRouter (vindo de `definition.model`
+ * na Fábrica). Se ausente, usa `IMAGE_MODEL` (env ou default).
+ *
+ * `opts.systemPromptOverride` — substitui o system prompt laser padrão
+ * (decisão: replace total). Se ausente/vazio, usa `DEFAULT_IMAGE_SYSTEM_PROMPT`.
  */
 export async function generateToolImage(
 	prompt: string,
 	refs: Buffer[] = [],
 	signal?: AbortSignal,
+	opts?: { model?: string; systemPromptOverride?: string },
 ): Promise<GenImageResult> {
 	if (!process.env.OPENROUTER_API_KEY) {
 		throw new ToolEngineError(
@@ -78,6 +98,9 @@ export async function generateToolImage(
 	}
 	const text = prompt.trim();
 	if (!text) throw new ToolEngineError(400, 'Prompt vazio.');
+
+	const model = opts?.model?.trim() || IMAGE_MODEL;
+	const systemPrompt = buildImageSystemPrompt(opts?.systemPromptOverride);
 
 	const timeout = AbortSignal.timeout(GEN_TIMEOUT_MS);
 	const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -95,12 +118,12 @@ export async function generateToolImage(
 	}
 	content.push({ type: 'text', text: `${TEXT_LEAD}${text}` });
 	const body = {
-		model: IMAGE_MODEL,
+		model,
 		// temperature omitido: Gemini image preview não documenta suporte a
 		// temperature; passar params desconhecidos pode 400. O system prompt
 		// + a reordenação (texto por último) são os levers de aderência.
 		messages: [
-			{ role: 'system', content: IMAGE_SYSTEM_PROMPT },
+			{ role: 'system', content: systemPrompt },
 			{ role: 'user', content },
 		],
 		modalities: ['image', 'text'],
@@ -110,10 +133,14 @@ export async function generateToolImage(
 		// Não loga o prompt cheio (IP do admin); só metadados pra debugar
 		// "não seguiu o prompt" sem vazar curadoria.
 		console.debug('[image-gen] calling OpenRouter', {
-			model: IMAGE_MODEL,
+			model,
 			promptLen: text.length,
 			refs: refs.length,
 			hasSystem: true,
+			modelOverride: !!opts?.model,
+			systemOverride:
+				!!opts?.systemPromptOverride &&
+				opts.systemPromptOverride.trim().length > 0,
 		});
 	}
 
