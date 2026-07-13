@@ -8,6 +8,9 @@
  * - Cache in-process 1h (TTL_MS) — sem Redis, é estático.
  * - `default: true` marca o modelo padrão (usado quando a tool não seta
  *   `definition.model`).
+ * - `speed` / `quality`: a UI mostra com ícone pra o admin escolher consciente
+ *   (modelo lento = ruim pra tool de cliente). `speed` é tempo típico de
+ *   geração; `quality` é o acabamento geral esperado.
  *
  * IMPORTANTE: rótulos e notas em PT-BR. `bestFor` é uma tag livre
  * (`'laser' | 'poster' | 'text' | 'photoreal' | 'typography' | 'identity' |
@@ -23,6 +26,11 @@ export type ImageModelBestFor =
 	| 'identity'
 	| 'vector';
 
+/** Velocidade típica de geração. `slow` ≈ 1min+ (ruim pra cliente). */
+export type ImageModelSpeed = 'fast' | 'medium' | 'slow';
+/** Acabamento geral esperado. */
+export type ImageModelQuality = 'standard' | 'high' | 'top';
+
 export interface ImageModelEntry {
 	/** OpenRouter model id (ex.: `'google/gemini-3-pro-image-preview'`). */
 	id: string;
@@ -30,6 +38,10 @@ export interface ImageModelEntry {
 	label: string;
 	/** Tags do que o modelo é bom. UI filtra por aqui. */
 	bestFor: ImageModelBestFor[];
+	/** Velocidade típica (UI mostra com ícone + aviso se `slow`). */
+	speed: ImageModelSpeed;
+	/** Qualidade/acabamento (UI mostra com ícone). */
+	quality: ImageModelQuality;
 	/** 1-2 frases PT-BR exibidas como subtítulo quando o modelo está selecionado. */
 	notes: string;
 	/** Marca o modelo padrão do sistema (usado se a tool não setar `model`). */
@@ -39,53 +51,76 @@ export interface ImageModelEntry {
 export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 	{
 		id: 'google/gemini-3-pro-image-preview',
-		label: 'Gemini 3 Pro Image (padrão laser)',
+		label: 'Gemini 3 Pro Image · Nano Banana Pro (padrão laser)',
 		bestFor: ['laser', 'vector'],
+		speed: 'medium',
+		quality: 'top',
 		notes:
-			'Modelo padrão atual. Forte em ilustração 2D limpa, alto contraste, sem cinza — o "look laser". Pode engessar casos fotorrealistas ou com texto na imagem.',
+			'Modelo padrão atual. Forte em ilustração 2D limpa, alto contraste, sem cinza — o "look laser". Pode engessar casos fotorrealistas ou com muito texto na imagem.',
 		default: true,
 	},
 	{
-		id: 'openai/gpt-image-1',
-		label: 'OpenAI GPT Image 1',
+		id: 'google/gemini-3-pro-image',
+		label: 'Gemini 3 Pro Image · Nano Banana Pro (estável)',
+		bestFor: ['laser', 'vector', 'typography'],
+		speed: 'medium',
+		quality: 'top',
+		notes:
+			'Versão GA (estável) do Nano Banana Pro — mesmo "look laser" do padrão, sem o rótulo preview. Boa aderência ao prompt e renderização de texto acima da média. Prefira quando quiser estabilidade.',
+	},
+	{
+		id: 'openai/gpt-5.4-image-2',
+		label: 'OpenAI GPT-5.4 Image 2 (top qualidade · lento)',
+		bestFor: ['photoreal', 'poster', 'typography', 'text', 'identity'],
+		speed: 'slow',
+		quality: 'top',
+		notes:
+			'Modelo #1 de imagem (OpenAI GPT-5.4 + GPT Image 2) — a MELHOR qualidade/detalhe, nível do print gerado direto no ChatGPT. MUITO lento (~2,5-3 min por imagem) e mais caro. Use quando qualidade importa mais que velocidade.',
+	},
+	{
+		id: 'openai/gpt-5-image',
+		label: 'OpenAI GPT-5 Image',
 		bestFor: ['typography', 'text', 'poster'],
+		speed: 'slow',
+		quality: 'high',
 		notes:
-			'Tipografia forte e composição de cartaz. Boa renderização de texto na imagem (placas, slogans, números). Para posters e logos com texto.',
+			'Geração GPT-5 de imagem da OpenAI. Tipografia forte e composição de cartaz. LENTO (~1,5min por imagem). Um degrau abaixo do 5.4 Image 2 em qualidade, mas um pouco mais rápido. OBS: modelos GPT podem RECUSAR rostos de pessoas reais/famosos — nesses casos use um Gemini.',
 	},
 	{
-		id: 'black-forest-labs/flux-1.1-pro',
-		label: 'FLUX 1.1 Pro (Black Forest Labs)',
+		id: 'openai/gpt-5-image-mini',
+		label: 'OpenAI GPT-5 Image Mini (econômico)',
+		bestFor: ['typography', 'text'],
+		speed: 'medium',
+		quality: 'high',
+		notes:
+			'Variante leve do GPT-5 Image: mais rápida e barata que o GPT-5 Image cheio, mantendo boa renderização de texto. Boa para volume e rascunhos com tipografia.',
+	},
+	{
+		id: 'google/gemini-3.1-flash-image',
+		label: 'Gemini 3.1 Flash Image · Nano Banana 2 (rápido)',
+		bestFor: ['laser', 'photoreal', 'poster'],
+		speed: 'fast',
+		quality: 'high',
+		notes:
+			'Tier Flash do Nano Banana 2: bem mais rápido e barato que o Pro, com qualidade geral alta. Melhor equilíbrio velocidade/qualidade para tool de cliente.',
+	},
+	{
+		id: 'google/gemini-3.1-flash-lite-image',
+		label: 'Gemini 3.1 Flash Lite Image · Nano Banana 2 Lite (econômico)',
+		bestFor: ['laser', 'poster'],
+		speed: 'fast',
+		quality: 'standard',
+		notes:
+			'O mais barato e rápido da família Gemini image. Use para prévias, testes e altíssimo volume onde o custo importa mais que o acabamento.',
+	},
+	{
+		id: 'google/gemini-2.5-flash-image',
+		label: 'Gemini 2.5 Flash Image · Nano Banana (geração anterior)',
 		bestFor: ['photoreal', 'poster', 'identity'],
+		speed: 'fast',
+		quality: 'standard',
 		notes:
-			'Fotorrealismo de alto nível. Bom para posters com pessoas, preserva identidade visual em grau moderado. Não é laser.',
-	},
-	{
-		id: 'black-forest-labs/flux-pro',
-		label: 'FLUX Pro (Black Forest Labs)',
-		bestFor: ['photoreal', 'poster'],
-		notes:
-			'Variante anterior do FLUX 1.1. Alternativa estável quando o 1.1 não estiver disponível.',
-	},
-	{
-		id: 'stability-ai/stable-diffusion-3.5-large',
-		label: 'Stable Diffusion 3.5 Large',
-		bestFor: ['text', 'typography', 'photoreal'],
-		notes:
-			'Boa renderização de texto na imagem (3.5 deu salto grande). Alternativa intermediária entre FLUX e GPT Image.',
-	},
-	{
-		id: 'recraft-ai/recraft-v3',
-		label: 'Recraft v3',
-		bestFor: ['typography', 'poster', 'vector'],
-		notes:
-			'Especializado em cartazes e tipografia. Mantém vetorização limpa; ótimo para posters de eventos, slogans, layouts editoriais.',
-	},
-	{
-		id: 'ideogram-ai/ideogram-2.0',
-		label: 'Ideogram 2.0',
-		bestFor: ['text', 'typography'],
-		notes:
-			'O melhor desta lista para texto na imagem (legendas, números, fontes estilizadas). Use quando o prompt precisa de letreiros legíveis.',
+			'Geração anterior (Nano Banana original). Alternativa estável e conhecida, com bom fotorrealismo. Mantido como fallback.',
 	},
 ];
 

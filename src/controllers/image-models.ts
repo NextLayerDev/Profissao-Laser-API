@@ -4,13 +4,14 @@ import { getImageModelsCatalog } from '../lib/image-models-catalog.js';
 /**
  * GET /api/image-models
  * Catálogo curado de modelos OpenRouter para `ai.generate_image`. Auth
- * requerida (qualquer user logado — não é dado sensível). Cache-Control de 1h
- * além do cache in-process 1h do `getImageModelsCatalog`.
+ * requerida (qualquer user logado — não é dado sensível). `no-store`: o catálogo
+ * é editado por staff e o dropdown da Fábrica precisa refletir mudanças na hora
+ * (com cache de 1h, uma edição/deploy só aparecia até 1h depois).
  */
 export async function listImageModels(
 	_req: FastifyRequest,
 	reply: FastifyReply,
 ) {
 	const data = getImageModelsCatalog();
-	reply.header('Cache-Control', 'private, max-age=3600').send(data);
+	reply.header('Cache-Control', 'no-store').send(data);
 }

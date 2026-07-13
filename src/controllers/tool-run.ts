@@ -85,7 +85,11 @@ function injectAiGenerateImageOverrides(
 		toolModel = undefined;
 	}
 	const toolSystemPrompt = doc.system_prompt;
-	if (!toolModel && !toolSystemPrompt) return doc;
+	const w = doc.image_width;
+	const h = doc.image_height;
+	const hasSize =
+		typeof w === 'number' && typeof h === 'number' && w > 0 && h > 0;
+	if (!toolModel && !toolSystemPrompt && !hasSize) return doc;
 	return {
 		...doc,
 		pipeline: (doc.pipeline ?? []).map((n) =>
@@ -97,6 +101,7 @@ function injectAiGenerateImageOverrides(
 							...(n.params ?? {}),
 							...(toolModel ? { model: toolModel } : {}),
 							...(toolSystemPrompt ? { system_prompt: toolSystemPrompt } : {}),
+							...(hasSize ? { width: w, height: h } : {}),
 						},
 					},
 		),

@@ -30,6 +30,12 @@ const aiGenerateImageSchema = z.object({
 	 * `definition.system_prompt`). Ausente/vazio = prompt laser padrão.
 	 */
 	system_prompt: z.string().min(1).optional(),
+	/**
+	 * Dimensões EXATAS de saída em px (injetadas do `definition.image_width/height`).
+	 * O motor injeta a proporção no prompt e redimensiona a saída pra WxH exato.
+	 */
+	width: z.number().int().min(64).max(4096).optional(),
+	height: z.number().int().min(64).max(4096).optional(),
 });
 
 export const aiGenerateImageBlock: ToolBlock<
@@ -48,7 +54,12 @@ export const aiGenerateImageBlock: ToolBlock<
 			params.prompt,
 			refs,
 			ctx.signal,
-			{ model: params.model, systemPromptOverride: params.system_prompt },
+			{
+				model: params.model,
+				systemPromptOverride: params.system_prompt,
+				width: params.width,
+				height: params.height,
+			},
 		);
 		return { png, pngBase64 };
 	},

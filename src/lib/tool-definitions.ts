@@ -113,6 +113,15 @@ export interface ToolDefinitionDoc {
 	 * concatena) o `DEFAULT_IMAGE_SYSTEM_PROMPT` laser. Ausente/vazio = default.
 	 */
 	system_prompt?: string;
+	/**
+	 * Dimensões EXATAS de saída (px) para `ai.generate_image`. Usadas por arte
+	 * de gravação a laser (ex.: wrap 360°) onde a proporção precisa ser exata.
+	 * O motor injeta a proporção no prompt E redimensiona a imagem final pra
+	 * exatamente `image_width`×`image_height` (garantia via sharp). Ausente =
+	 * saída nativa do modelo (quadrada na maioria).
+	 */
+	image_width?: number;
+	image_height?: number;
 }
 
 export interface ToolDefinitionRow {
