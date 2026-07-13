@@ -37,14 +37,19 @@ function kmeans(samples: number[], k: number): Centroid[] {
 	if (n === 0) return [{ r: 0, g: 0, b: 0 }];
 	const realK = Math.min(k, n);
 
-	// init k-means++: 1º centroide = amostra média-distante do meio; demais = o
-	// pixel mais distante dos já escolhidos (determinístico).
+	// init k-means++: 1º centroide = COR MÉDIA da amostra (estável; antes usava o
+	// 1º pixel, sensível a um pixel ruidoso → paletas instáveis run-a-run); demais
+	// = o pixel mais distante dos já escolhidos (determinístico).
 	const centroids: Centroid[] = [];
-	centroids.push({
-		r: samples[0],
-		g: samples[1],
-		b: samples[2],
-	});
+	let mr = 0;
+	let mg = 0;
+	let mb = 0;
+	for (let i = 0; i < n; i++) {
+		mr += samples[i * 3];
+		mg += samples[i * 3 + 1];
+		mb += samples[i * 3 + 2];
+	}
+	centroids.push({ r: mr / n, g: mg / n, b: mb / n });
 	while (centroids.length < realK) {
 		let best = -1;
 		let bestD = -1;
@@ -104,6 +109,26 @@ function kmeans(samples: number[], k: number): Centroid[] {
 		}
 	}
 	return centroids;
+}
+
+/**
+ * Funde centróides quase-iguais (distância² < minD2). O k-means costuma gastar
+ * clusters em variações mínimas de anti-alias/JPEG → camadas sobrepostas quase
+ * da mesma cor. Fundir devolve regiões chapadas e menos "fatias" na borda.
+ */
+function mergeNearCentroids(centroids: Centroid[], minD2: number): Centroid[] {
+	const out: Centroid[] = [];
+	for (const c of centroids) {
+		const near = out.find((o) => dist2(c.r, c.g, c.b, o) < minD2);
+		if (near) {
+			near.r = (near.r + c.r) / 2;
+			near.g = (near.g + c.g) / 2;
+			near.b = (near.b + c.b) / 2;
+		} else {
+			out.push({ ...c });
+		}
+	}
+	return out;
 }
 
 function extractPathData(svg: string): string {
@@ -181,11 +206,15 @@ export async function vectorizeColorImage(
 		);
 	}
 	const k = Math.max(2, Math.min(params.maxColors ?? 8, 16));
-	const centroids = kmeans(opaque, k);
+	let centroids = kmeans(opaque, k);
+	// Funde só cores MUITO próximas (anti-alias/JPEG) — gentil p/ não borrar tons
+	// próximos legítimos nem apagar detalhe fino.
+	centroids = mergeNearCentroids(centroids, 12 * 12);
 
 	// Rótulo de cada pixel (−1 = transparente).
 	const labels = new Int16Array(npx).fill(-1);
 	const counts = new Uint32Array(centroids.length);
+	let opaqueTotal = 0;
 	for (let i = 0; i < npx; i++) {
 		const a = data[i * channels + 3];
 		if (a < 128) continue;
@@ -203,6 +232,37 @@ export async function vectorizeColorImage(
 		}
 		labels[i] = bi;
 		counts[bi]++;
+		opaqueTotal++;
+	}
+
+	// Poda de clusters de área ínfima (halos de anti-alias / ruído): em vez de
+	// virarem uma CAMADA de cor "fantasma" (fatia colorida na borda), seus pixels
+	// são reatribuídos ao centróide remanescente mais próximo em cor — sem buracos
+	// e sem slivers. Principal causa de o vetor colorido parecer "sujo".
+	const minArea = Math.max(1, Math.floor(opaqueTotal * 0.0015)); // < 0,15% (preserva texto/detalhe)
+	const keep = centroids.map((_, c) => counts[c] >= minArea);
+	if (!keep.some(Boolean)) keep.fill(true); // nunca zera tudo
+	if (keep.some((k) => !k)) {
+		for (let i = 0; i < npx; i++) {
+			const lab = labels[i];
+			if (lab < 0 || keep[lab]) continue;
+			const r = data[i * channels];
+			const g = data[i * channels + 1];
+			const b = data[i * channels + 2];
+			let bi = -1;
+			let bd = Number.POSITIVE_INFINITY;
+			for (let c = 0; c < centroids.length; c++) {
+				if (!keep[c]) continue;
+				const d = dist2(r, g, b, centroids[c]);
+				if (d < bd) {
+					bd = d;
+					bi = c;
+				}
+			}
+			labels[i] = bi;
+		}
+		counts.fill(0);
+		for (let i = 0; i < npx; i++) if (labels[i] >= 0) counts[labels[i]]++;
 	}
 
 	// Camadas: maior área primeiro (fundo), detalhes por cima.
@@ -217,6 +277,10 @@ export async function vectorizeColorImage(
 		const maskPng = await sharp(mask, {
 			raw: { width, height, channels: 1 },
 		})
+			// Limpeza morfológica: a mediana 3×3 mata "confete" de 1px e os halos de
+			// anti-alias entre camadas ANTES de traçar — principal motivo de o vetor
+			// colorido parecer sujo/ruidoso vs. um vetorizador comercial.
+			.median(3)
 			.png()
 			.toBuffer();
 		const d = await traceMask(maskPng, params);
