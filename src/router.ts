@@ -14,6 +14,7 @@ import { fornecedorRoute } from './routes/fornecedor.js';
 import { forumRoute } from './routes/forum.js';
 import { gamificationRoute } from './routes/gamification.js';
 import { globalPromoLinkRoute } from './routes/global-promo-link.js';
+import { imageModelsRoute } from './routes/image-models.js';
 import { mlSellerRoute } from './routes/internal/ml-seller.js';
 import { knowledgeBaseRoute } from './routes/knowledge-base.js';
 import { laserLineTypeRoute } from './routes/laser-line-type.js';
@@ -79,6 +80,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(savedLessonRoute);
 	app.register(vectorRoute);
 	app.register(toolRunRoute);
+	app.register(imageModelsRoute);
 	app.register(toolAgentRoute);
 	app.register(toolBankRoute);
 	app.register(toolBankSmartTemaRoute);
