@@ -102,6 +102,26 @@ export interface ToolDefinitionDoc {
 		vox_cost: number | 'metered';
 		free_quota?: Record<string, number | null>;
 	};
+	/**
+	 * Override do modelo OpenRouter usado por `ai.generate_image`. Ausente =
+	 * default do env (Gemini 3 Pro). Injetado pelo controller `tool-run.ts`
+	 * nos params dos nós `ai.generate_image`.
+	 */
+	model?: string;
+	/**
+	 * System prompt opcional enviado ao `ai.generate_image`. SUBSTITUI (não
+	 * concatena) o `DEFAULT_IMAGE_SYSTEM_PROMPT` laser. Ausente/vazio = default.
+	 */
+	system_prompt?: string;
+	/**
+	 * Dimensões EXATAS de saída (px) para `ai.generate_image`. Usadas por arte
+	 * de gravação a laser (ex.: wrap 360°) onde a proporção precisa ser exata.
+	 * O motor injeta a proporção no prompt E redimensiona a imagem final pra
+	 * exatamente `image_width`×`image_height` (garantia via sharp). Ausente =
+	 * saída nativa do modelo (quadrada na maioria).
+	 */
+	image_width?: number;
+	image_height?: number;
 }
 
 export interface ToolDefinitionRow {

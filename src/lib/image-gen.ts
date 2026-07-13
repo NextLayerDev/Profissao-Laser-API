@@ -10,18 +10,30 @@ import { ToolEngineError } from './tool-errors.js';
  */
 const IMAGE_MODEL =
 	process.env.OPENROUTER_IMAGE_MODEL ?? 'google/gemini-3-pro-image-preview';
-const GEN_TIMEOUT_MS = 60_000;
+// 240s: o topo de qualidade da OpenAI (gpt-5.4-image-2) faz reasoning + imagem
+// e leva ~150-180s por geração; o gpt-5-image ~100s. Ambos estouravam tetos
+// menores → 504. O gateway (undici + proxy timeout explícito) e o front (sem
+// timeout) acomodam. Gemini continua ~15s.
+const GEN_TIMEOUT_MS = 240_000;
 const MAX_OUTPUT_BYTES = 20 * 1_000_000; // 20 MB de teto na imagem gerada
 
+/** Maior divisor comum (pra reduzir W×H a uma proporção limpa no prompt). */
+function gcdOf(a: number, b: number): number {
+	return b === 0 ? a : gcdOf(b, a % b);
+}
+
 /**
- * System prompt de ADERÊNCIA: força o modelo a seguir o prompt do admin
+ * System prompt padrão de ADERÊNCIA: força o modelo a seguir o prompt do admin
  * palavra por palavra e a subordinar as referências ao texto. Genérico
  * (sem regras de domínio) pra valer pra todo `generateToolImage` — inclusive
  * filtros do Estúdio. As travas específicas (cores puras, enquadramento…) vêm
  * no próprio `prompt_script` do admin; aqui só garantimos que elas sejam
  * cumpridas e que as refs não as sobrescrevam.
+ *
+ * Overrides per-tool (via `definition.system_prompt` na Fábrica de Tools)
+ * SUBSTITUEM este prompt — não concatenam. Decisão de arquitetura 2026-07-10.
  */
-const IMAGE_SYSTEM_PROMPT = [
+export const DEFAULT_IMAGE_SYSTEM_PROMPT = [
 	'Você é um gerador de imagens de alta fidelidade.',
 	'Siga EXATAMENTE as instruções de texto fornecidas pelo usuário — palavra por palavra.',
 	'Toda restrição explícita no texto é OBRIGATÓRIA: cores, enquadramento, estilo, fundo, densidade, composição, preenchimento do canvas.',
@@ -30,6 +42,16 @@ const IMAGE_SYSTEM_PROMPT = [
 	'Preencha o canvas conforme instruído no texto. Não deixe margens vazias nem altere a composição salvo instrução expressa.',
 	"Gere apenas a imagem solicitada. Não inclua texto explicativo, marca d'água nem bordas.",
 ].join(' ');
+
+/**
+ * Resolve o system prompt final. Se `override` for uma string não-vazia,
+ * SUBSTITUI o default (decisão: replace total, não concat). Caso contrário
+ * retorna o default laser.
+ */
+export function buildImageSystemPrompt(override?: string | null): string {
+	if (override && override.trim().length > 0) return override;
+	return DEFAULT_IMAGE_SYSTEM_PROMPT;
+}
 
 /**
  * Prefixo do user message: reposiciona o texto DEPOIS das refs e declara o
@@ -64,11 +86,23 @@ async function downloadAsDataUrl(
  * Gera uma imagem a partir de `prompt` (+ até N imagens de referência). Lança
  * `ToolEngineError` em qualquer falha — o controller do motor faz refund da
  * invocação automaticamente, então o cliente nunca paga por uma geração falha.
+ *
+ * `opts.model` — override do modelo OpenRouter (vindo de `definition.model`
+ * na Fábrica). Se ausente, usa `IMAGE_MODEL` (env ou default).
+ *
+ * `opts.systemPromptOverride` — substitui o system prompt laser padrão
+ * (decisão: replace total). Se ausente/vazio, usa `DEFAULT_IMAGE_SYSTEM_PROMPT`.
  */
 export async function generateToolImage(
 	prompt: string,
 	refs: Buffer[] = [],
 	signal?: AbortSignal,
+	opts?: {
+		model?: string;
+		systemPromptOverride?: string;
+		width?: number;
+		height?: number;
+	},
 ): Promise<GenImageResult> {
 	if (!process.env.OPENROUTER_API_KEY) {
 		throw new ToolEngineError(
@@ -76,8 +110,27 @@ export async function generateToolImage(
 			'Geração de imagem indisponível (sem chave OpenRouter).',
 		);
 	}
-	const text = prompt.trim();
+	let text = prompt.trim();
 	if (!text) throw new ToolEngineError(400, 'Prompt vazio.');
+
+	// Dimensões EXATAS (arte de gravação a laser): reforça a proporção no prompt
+	// (o modelo tende a respeitar) e o tamanho é garantido no pós (sharp resize).
+	const outW = opts?.width;
+	const outH = opts?.height;
+	if (outW && outH) {
+		const g = gcdOf(outW, outH) || 1;
+		const ratio = `${outW / g}:${outH / g}`;
+		const orient =
+			outW > outH
+				? 'horizontal (paisagem)'
+				: outW < outH
+					? 'vertical (retrato)'
+					: 'quadrada';
+		text = `${text}\n\nFORMATO OBRIGATÓRIO DA IMAGEM: proporção ${ratio} — orientação ${orient} (${outW}×${outH} px). Componha preenchendo TODO esse formato, sem margens/bordas vazias e sem distorcer.`;
+	}
+
+	const model = opts?.model?.trim() || IMAGE_MODEL;
+	const systemPrompt = buildImageSystemPrompt(opts?.systemPromptOverride);
 
 	const timeout = AbortSignal.timeout(GEN_TIMEOUT_MS);
 	const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -93,14 +146,18 @@ export async function generateToolImage(
 			image_url: { url: `data:image/png;base64,${ref.toString('base64')}` },
 		});
 	}
-	content.push({ type: 'text', text: `${TEXT_LEAD}${text}` });
+	// O TEXT_LEAD fala "as imagens acima são referência" — só faz sentido quando
+	// HÁ imagens. Sem refs (geração só-texto, ex.: Prompts Mágicos), mandar isso
+	// é ruído confuso que pode empobrecer a composição → manda o prompt limpo.
+	const userText = refs.length > 0 ? `${TEXT_LEAD}${text}` : text;
+	content.push({ type: 'text', text: userText });
 	const body = {
-		model: IMAGE_MODEL,
+		model,
 		// temperature omitido: Gemini image preview não documenta suporte a
 		// temperature; passar params desconhecidos pode 400. O system prompt
 		// + a reordenação (texto por último) são os levers de aderência.
 		messages: [
-			{ role: 'system', content: IMAGE_SYSTEM_PROMPT },
+			{ role: 'system', content: systemPrompt },
 			{ role: 'user', content },
 		],
 		modalities: ['image', 'text'],
@@ -110,10 +167,14 @@ export async function generateToolImage(
 		// Não loga o prompt cheio (IP do admin); só metadados pra debugar
 		// "não seguiu o prompt" sem vazar curadoria.
 		console.debug('[image-gen] calling OpenRouter', {
-			model: IMAGE_MODEL,
+			model,
 			promptLen: text.length,
 			refs: refs.length,
 			hasSystem: true,
+			modelOverride: !!opts?.model,
+			systemOverride:
+				!!opts?.systemPromptOverride &&
+				opts.systemPromptOverride.trim().length > 0,
 		});
 	}
 
@@ -131,7 +192,19 @@ export async function generateToolImage(
 				},
 			},
 		);
-		const message = completion.choices[0]?.message as
+		// OpenRouter pode responder HTTP 200 com `{ error }` e SEM `choices`
+		// (ex.: "Provider returned an empty response", refusa de moderação,
+		// modelo indisponível). Tratar como erro LIMPO — sem isso, `choices[0]`
+		// quebra com "Cannot read properties of undefined (reading '0')".
+		const errBody = (completion as unknown as { error?: { message?: string } })
+			.error;
+		if (errBody) {
+			throw new ToolEngineError(
+				502,
+				`O modelo não gerou imagem: ${errBody.message ?? 'provedor retornou erro'}. Tente outro modelo ou ajuste o tema.`,
+			);
+		}
+		const message = completion.choices?.[0]?.message as
 			| GeminiImageMessage
 			| undefined;
 
@@ -206,7 +279,14 @@ export async function generateToolImage(
 		throw new ToolEngineError(502, 'Imagem gerada grande demais.');
 	}
 
-	const png = await sharp(decoded).png().toBuffer();
+	// Redimensiona pro tamanho EXATO pedido (gravação a laser precisa ser exata).
+	// `fit: 'fill'` dá W×H exato; como a proporção foi reforçada no prompt, não
+	// há distorção perceptível quando o modelo respeita o formato.
+	let sharpPipe = sharp(decoded);
+	if (outW && outH) {
+		sharpPipe = sharpPipe.resize(outW, outH, { fit: 'fill' });
+	}
+	const png = await sharpPipe.png().toBuffer();
 	const pngBase64 = `data:image/png;base64,${png.toString('base64')}`;
 	return { png, pngBase64 };
 }
