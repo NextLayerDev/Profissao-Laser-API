@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import type { VectorizeParams } from '../types/vector.js';
 import { applyDithering } from './dithering.js';
 import { applyLinePattern } from './line-patterns.js';
+import { lineArtRaster } from './lineart.js';
 import { vectorizeColorImage } from './vectorize-color.js';
 
 // ─── Tipos internos (Potrace usa `turnPolicy`; @types/potrace expõe nome
@@ -152,7 +153,7 @@ export function parseVectorizeParams(
 
 	const edgeDetection = pick(
 		fields.edgeDetection,
-		['none', 'sobel', 'canny'] as const,
+		['none', 'sobel', 'canny', 'lineart'] as const,
 		'none',
 	);
 
@@ -232,26 +233,51 @@ async function preprocessImage(
 
 	let pipeline = sharp(buffer).flatten(FLAT_BG).grayscale();
 
+	// Auto-níveis: estica o range tonal p/ preto/branco reais. Scans e fotos
+	// "lavadas" (baixo contraste) ganham separação antes do limiar — é o maior
+	// ganho barato de qualidade e faz o Otsu/threshold cair no lugar certo.
+	pipeline = pipeline.normalize();
+
 	if (params.brightness !== null) {
 		pipeline = pipeline.modulate({ brightness: params.brightness });
 	}
 
 	if (params.contrast !== null) {
-		pipeline = pipeline.normalize();
-		const gammaValue = 1 / params.contrast;
-		pipeline = pipeline.gamma(clamp(gammaValue, 1.0, 3.0));
+		// Contraste REAL em torno do cinza médio (128). Antes usava gamma=1/contrast
+		// clampado a >=1.0, o que tornava QUALQUER contraste > 1 um no-op (bug).
+		pipeline = pipeline.linear(params.contrast, 128 * (1 - params.contrast));
 	}
 
-	if (params.gamma !== null && params.contrast === null) {
+	if (params.gamma !== null) {
 		pipeline = pipeline.gamma(params.gamma);
 	}
 
 	if (params.blur !== null) {
-		pipeline = pipeline.blur(params.blur);
+		// Imagem ruidosa (o analyzer seta `blur` quando detecta ruído): a mediana
+		// remove speckle/ruído JPEG preservando bordas melhor que só o blur — senão
+		// o ruído vira centenas de <path> (turds). Depois o blur suaviza o resto.
+		pipeline = pipeline.median(3).blur(params.blur);
 	}
 
 	if (params.sharpen) {
 		pipeline = pipeline.sharpen();
+	}
+
+	if (params.edgeDetection === 'lineart') {
+		// Line-art (XDoG): foto/imagem complexa → TRAÇOS limpos pretos sobre branco,
+		// sem IA. Roda sobre o cinza já normalizado/denoised e devolve o raster de
+		// linhas (early-return: pula invert/dither/threshold; o Potrace vetoriza as
+		// linhas). É o fix do "P&B de foto sai ruim" (posterize → traço).
+		const { data, info } = await pipeline
+			.toColourspace('b-w')
+			.raw()
+			.toBuffer({ resolveWithObject: true });
+		// Default "contorno limpo": limiar médio + traços engrossados/conectados
+		// (melhor p/ gravação — linha fina e quebrada grava mal).
+		return lineArtRaster(Buffer.from(data), info.width, info.height, {
+			threshold: 8,
+			thicken: true,
+		});
 	}
 
 	if (params.edgeDetection === 'sobel' || params.edgeDetection === 'canny') {
@@ -439,10 +465,9 @@ function postProcessSvg(svg: string, params: VectorizeParams): string {
 		result = applySvgDimensions(result, params);
 	}
 
-	// 4. Otimização do SVG
-	if (params.svgOptimize) {
-		result = simplifySvgPaths(result);
-	}
+	// 4. Otimização do SVG — sempre corta casas decimais sub-pixel excedentes:
+	// SVG bem menor e ajuda o dedupe a casar paths quase-idênticos entre camadas.
+	result = simplifySvgPaths(result);
 
 	// 5. Remove paths idênticos sobrepostos (limpa duplicatas exatas).
 	result = dedupeSvgPaths(result);
@@ -496,8 +521,10 @@ export async function vectorizeImage(
 	// Cores: pipeline próprio (quantização + máscara por cor + trace em camadas).
 	// Preview (supersample=false) usa resolução menor p/ rapidez.
 	if (params.mode === 'color') {
+		// Run final em resolução maior (1200) = máscaras mais detalhadas e curvas
+		// mais suaves nas cores (equivale ao supersampling do trace). Preview em 500.
 		const svg = await vectorizeColorImage(buffer, params, {
-			maxDim: opts.supersample === false ? 500 : 900,
+			maxDim: opts.supersample === false ? 500 : 1400,
 		});
 		return postProcessSvg(svg, params);
 	}
@@ -512,9 +539,10 @@ export async function vectorizeImage(
 		params.outputHeight === null;
 	const { buffer: scaled, scale } = await upscaleForTrace(buffer, canUpscale);
 	// turdSize é área em px: ao ampliar ×s a área cresce ×s² → reescala p/ manter
-	// a mesma supressão de manchas em escala real.
+	// a mesma supressão de manchas em escala real. EXCEÇÃO: line-art são TRAÇOS
+	// finos (não áreas chapadas) — inflar por s² apagaria as linhas; mantém o turd.
 	const effParams =
-		scale > 1
+		scale > 1 && params.edgeDetection !== 'lineart'
 			? { ...params, turdSize: params.turdSize * scale * scale }
 			: params;
 

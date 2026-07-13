@@ -9,6 +9,8 @@ import {
 	updateVectorController,
 } from '../controllers/vector.js';
 import {
+	aiLineartController,
+	downloadVectorFormatController,
 	exportVectorController,
 	vectorizeAnalyzeController,
 	vectorizeBatchController,
@@ -189,6 +191,66 @@ export async function vectorRoute(server: FastifyInstance) {
 			},
 		},
 		vectorizeController,
+	);
+
+	server.post(
+		'/api/vectorize/:id/download/:format',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Cobra o download de UM formato (`svg`/`png`/`dxf`) de um vetor.',
+					'A geração é grátis; a cobrança de voxxys acontece aqui, **por formato**.',
+					'Formato já pago (inclusive re-download da biblioteca) **não cobra** de novo.',
+					'',
+					'Fluxo: o front invoca a tool no upvox (debita) e envia o `invocation_id`;',
+					'gravamos o formato como pago e liquidamos. Devolve `paidFormats` atualizado.',
+				].join('\n'),
+				params: z.object({
+					id: z.string().uuid(),
+					format: z.enum(['svg', 'png', 'dxf']),
+				}),
+				body: z.object({ invocation_id: z.string().optional() }),
+				response: {
+					200: z.object({ paidFormats: z.array(z.string()) }),
+					402: ErrorSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		downloadVectorFormatController,
+	);
+
+	server.post(
+		'/api/vectorize/ai-lineart',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Line-art com **IA** (foto → gravura "nanquim" via modelo de imagem →',
+					'vetor Potrace). Único caminho que atinge o nível de gravura pro em foto.',
+					'**Cobrada NA GERAÇÃO** (a IA custa): o front invoca (debita) e manda o',
+					'`invocation_id`; o resultado já sai com todos os formatos pagos.',
+					'Envio **multipart/form-data** (campo `image`).',
+				].join('\n'),
+				consumes: ['multipart/form-data'],
+				response: {
+					201: vectorizeResultSchema,
+					400: ErrorSchema,
+					402: ErrorSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+					502: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		aiLineartController,
 	);
 
 	server.post(

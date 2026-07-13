@@ -61,6 +61,8 @@ export const vectorizeService = {
 				svgUrl,
 				pngUrl,
 				dxfContent,
+				// camelCase p/ o front (linha nova = nada pago ainda → cobra no download).
+				paidFormats: (record as { paid_formats?: string[] }).paid_formats ?? [],
 			};
 		});
 	},
