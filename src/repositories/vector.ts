@@ -60,6 +60,26 @@ class VectorRepository {
 		return data;
 	}
 
+	/**
+	 * Marca um conjunto de formatos como pagos de uma vez (usado pela line-art com
+	 * IA, cobrada NA GERAÇÃO → todos os formatos já saem pagos, download não recobra).
+	 */
+	async setPaidFormats(
+		id: string,
+		customerId: string,
+		formats: string[],
+	): Promise<string[]> {
+		const { data, error } = await supabase
+			.from('customer_vectors')
+			.update({ paid_formats: formats, updated_at: new Date().toISOString() })
+			.eq('id', id)
+			.eq('customer_id', customerId)
+			.select('paid_formats')
+			.single();
+		if (error || !data) throw new Error(error?.message ?? 'Vector not found');
+		return data.paid_formats ?? formats;
+	}
+
 	async findByIdForExport(id: string, customerId: string | null) {
 		const { data, error } = await supabase
 			.from('customer_vectors')
@@ -71,6 +91,42 @@ class VectorRepository {
 		if (customerId && data.customer_id !== customerId)
 			throw new Error('Vector not found');
 		return data;
+	}
+
+	/**
+	 * Marca um formato (svg/png/dxf) como PAGO para este vetor (idempotente, união).
+	 * É a fonte de verdade da cobrança-por-formato: garante que re-download do mesmo
+	 * formato — inclusive da biblioteca, cross-session — não cobra de novo.
+	 * Escopado ao dono. Devolve a lista atualizada de formatos pagos.
+	 */
+	async markFormatPaid(
+		id: string,
+		customerId: string,
+		format: string,
+	): Promise<string[]> {
+		const { data: row, error: findErr } = await supabase
+			.from('customer_vectors')
+			.select('paid_formats')
+			.eq('id', id)
+			.eq('customer_id', customerId)
+			.single();
+
+		if (findErr || !row) throw new Error('Vector not found');
+
+		const paid_formats = Array.from(
+			new Set<string>([...(row.paid_formats ?? []), format]),
+		);
+
+		const { data, error } = await supabase
+			.from('customer_vectors')
+			.update({ paid_formats, updated_at: new Date().toISOString() })
+			.eq('id', id)
+			.eq('customer_id', customerId)
+			.select('paid_formats')
+			.single();
+
+		if (error || !data) throw new Error(error?.message ?? 'Vector not found');
+		return data.paid_formats ?? paid_formats;
 	}
 
 	async update(

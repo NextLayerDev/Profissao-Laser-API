@@ -7,6 +7,9 @@ export const vectorSchema = z.object({
 	original_url: z.string().nullable(),
 	svg_url: z.string(),
 	params: z.record(z.string(), z.unknown()).nullable().optional(),
+	// Formatos já pagos deste vetor (svg/png/dxf) — cobrança por formato no
+	// download. Persistido p/ re-download (inclusive da biblioteca) não recobrar.
+	paid_formats: z.array(z.string()).default([]),
 	created_at: z.string(),
 	updated_at: z.string(),
 });
@@ -98,8 +101,8 @@ export const vectorizeParamsSchema = z.object({
 	outputWidth: z.number().nullable().default(null),
 	outputHeight: z.number().nullable().default(null),
 	svgOptimize: z.boolean().default(false),
-	// Detecção de bordas
-	edgeDetection: z.enum(['none', 'sobel', 'canny']).default('none'),
+	// Detecção de bordas / line-art (xdog = foto → traço limpo, sem IA)
+	edgeDetection: z.enum(['none', 'sobel', 'canny', 'lineart']).default('none'),
 });
 
 export const vectorizeResultSchema = vectorSchema.extend({
@@ -110,6 +113,9 @@ export const vectorizeResultSchema = vectorSchema.extend({
 	svgUrl: z.string().optional(),
 	pngUrl: z.string().optional(),
 	dxfContent: z.string().optional(),
+	// Formatos já pagos (camelCase p/ o front). Vazio na geração normal (cobra no
+	// download); cheio na line-art com IA (cobrada na geração → tudo já pago).
+	paidFormats: z.array(z.string()).default([]),
 });
 
 export const batchVectorizeResultSchema = z.object({

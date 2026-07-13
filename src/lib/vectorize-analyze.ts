@@ -232,10 +232,13 @@ function classify(m: ImageMetrics): ImageProfile {
 			blur: maybeBlur,
 		};
 	} else if (m.grayEntropy > 5.8) {
-		// 4) Tons de cinza contínuos → posterize por níveis.
+		// 4) Tons de cinza contínuos → posterize por níveis (padrão grátis). Para foto
+		// casual, o caminho bom é o botão "Preto e branco" → line-art com IA.
 		cls = 'grayscale_tonal';
-		reason = 'Tons de cinza contínuos — vetorização por níveis.';
+		reason =
+			'Foto em tons de cinza — no P&B usamos IA (traço) p/ um resultado bom.';
 		confidence = 0.7;
+		recommendTool = 'engraving';
 		params = {
 			threshold: m.otsuThreshold,
 			invert: m.darkBackground,
