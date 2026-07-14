@@ -14,6 +14,7 @@ import { fornecedorRoute } from './routes/fornecedor.js';
 import { forumRoute } from './routes/forum.js';
 import { gamificationRoute } from './routes/gamification.js';
 import { globalPromoLinkRoute } from './routes/global-promo-link.js';
+import { healthRoute } from './routes/health.js';
 import { imageModelsRoute } from './routes/image-models.js';
 import { mlSellerRoute } from './routes/internal/ml-seller.js';
 import { knowledgeBaseRoute } from './routes/knowledge-base.js';
@@ -52,6 +53,7 @@ import { webhookRoute } from './routes/webhook.js';
 import { mercadoLivreWebhookRoute } from './routes/webhooks/mercado-livre.js';
 
 export const routes = async (app: FastifyInstance) => {
+	app.register(healthRoute);
 	app.register(webhookRoute);
 	app.register(appointmentRoute);
 	app.register(appointmentConfigRoute);
