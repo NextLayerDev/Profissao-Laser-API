@@ -101,6 +101,20 @@ export const vectorizeParamsSchema = z.object({
 	outputWidth: z.number().nullable().default(null),
 	outputHeight: z.number().nullable().default(null),
 	svgOptimize: z.boolean().default(false),
+	/**
+	 * Tapa buracos brancos FECHADOS dentro da arte. Default `false` e ligado
+	 * apenas na gravura de FOTO com IA, onde um vazio cercado de preto é sempre
+	 * defeito da geração. Em logo/texto seria destrutivo: contraforma de letra
+	 * ("o", "e", "8") também é buraco fechado, e as pequenas ficam abaixo do teto
+	 * — o "o" viraria uma bolha sólida.
+	 */
+	healHoles: z.boolean().default(false),
+	/**
+	 * Tipo detectado na geração (`image-classify`). Fica gravado no vetor porque
+	 * a INVERSÃO precisa dele: foto → negativo por silhueta, logo → complemento
+	 * geométrico. Redescobrir isso depois pelos pixels do SVG errava.
+	 */
+	subject: z.enum(['photo', 'logo', 'color']).nullable().default(null),
 	// Detecção de bordas / line-art (xdog = foto → traço limpo, sem IA)
 	edgeDetection: z.enum(['none', 'sobel', 'canny', 'lineart']).default('none'),
 });
@@ -116,6 +130,26 @@ export const vectorizeResultSchema = vectorSchema.extend({
 	// Formatos já pagos (camelCase p/ o front). Vazio na geração normal (cobra no
 	// download); cheio na line-art com IA (cobrada na geração → tudo já pago).
 	paidFormats: z.array(z.string()).default([]),
+	// A IA não passou na verificação estrutural nas 2 tentativas → estornamos e
+	// devolvemos a vetorização normal. O front avisa o cliente. (O serializer
+	// zod REMOVE campo não declarado — sem isto o front nunca veria a flag.)
+	aiFallback: z.boolean().optional(),
+	aiFallbackReason: z.string().optional(),
+});
+
+// ─── Vetor invertido (fundo preto) ──────────────────────────────────
+export const invertModeSchema = z.enum(['auto', 'geometric', 'silhouette']);
+
+export const invertVectorResultSchema = z.object({
+	/** Qual caminho rodou de fato (`auto` resolve p/ um dos dois). */
+	mode: z.enum(['geometric', 'silhouette']),
+	svgContent: z.string(),
+	pngUrl: z.string(),
+	dxfContent: z.string(),
+	/** Ecoado sem alteração — inverter não cobra nem libera formato. */
+	paidFormats: z.array(z.string()).default([]),
+	/** Id do vetor invertido guardado em "Meus vetores" (quando `persist`). */
+	savedId: z.string().optional(),
 });
 
 export const batchVectorizeResultSchema = z.object({

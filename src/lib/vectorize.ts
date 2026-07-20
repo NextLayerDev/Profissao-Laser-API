@@ -32,6 +32,23 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * Campo numérico OPCIONAL de multipart. Devolve null quando ausente OU quando
+ * não é um número — sem isto, qualquer string malformada (`"null"`, `"abc"`,
+ * `""` já é tratado pelo falsy) escapa como NaN: `parseFloat("null")` é NaN e o
+ * `clamp` o preserva (NaN falha as duas comparações), e o sharp acaba recebendo
+ * `.blur(NaN)`.
+ */
+function optNum(
+	raw: string | undefined,
+	min: number,
+	max: number,
+): number | null {
+	if (!raw) return null;
+	const v = Number.parseFloat(raw);
+	return Number.isFinite(v) ? clamp(v, min, max) : null;
+}
+
 function pick<T extends string>(
 	value: string | undefined,
 	allowed: readonly T[],
@@ -72,15 +89,11 @@ export function parseVectorizeParams(
 
 	const threshold = clamp(parseInt(fields.threshold || '128', 10), 0, 255);
 	const invert = fields.invert === 'true';
-	const blur = fields.blur ? clamp(parseFloat(fields.blur), 0.3, 20) : null;
+	const blur = optNum(fields.blur, 0.3, 20);
 	const sharpen = fields.sharpen === 'true';
-	const brightness = fields.brightness
-		? clamp(parseFloat(fields.brightness), 0.1, 3.0)
-		: null;
-	const contrast = fields.contrast
-		? clamp(parseFloat(fields.contrast), 0.1, 3.0)
-		: null;
-	const gamma = fields.gamma ? clamp(parseFloat(fields.gamma), 1.0, 3.0) : null;
+	const brightness = optNum(fields.brightness, 0.1, 3.0);
+	const contrast = optNum(fields.contrast, 0.1, 3.0);
+	const gamma = optNum(fields.gamma, 1.0, 3.0);
 
 	const turnPolicy = pickOrNull(fields.turnPolicy, [
 		'black',
@@ -138,18 +151,25 @@ export function parseVectorizeParams(
 		'none',
 	);
 	const lineSpacing = clamp(parseFloat(fields.lineSpacing || '3'), 0.5, 10);
-	const lineAngle = fields.lineAngle
-		? clamp(parseFloat(fields.lineAngle), 0, 360)
-		: null;
+	const lineAngle = optNum(fields.lineAngle, 0, 360);
 
-	const dpi = fields.dpi ? clamp(parseInt(fields.dpi, 10), 72, 360) : null;
-	const outputWidth = fields.outputWidth
-		? parseFloat(fields.outputWidth)
-		: null;
-	const outputHeight = fields.outputHeight
-		? parseFloat(fields.outputHeight)
-		: null;
+	const dpiRaw = optNum(fields.dpi, 72, 360);
+	const dpi = dpiRaw === null ? null : Math.round(dpiRaw);
+	// Dimensão de saída em mm: sem teto rígido, mas precisa ser finita e > 0 —
+	// um NaN aqui vira `width="NaNmm"` no SVG e o arquivo não abre no laser.
+	const outputWidth = optNum(fields.outputWidth, 0.01, Number.MAX_SAFE_INTEGER);
+	const outputHeight = optNum(
+		fields.outputHeight,
+		0.01,
+		Number.MAX_SAFE_INTEGER,
+	);
 	const svgOptimize = fields.svgOptimize === 'true';
+	const healHoles = fields.healHoles === 'true';
+	const subject = pickOrNull(fields.subject, [
+		'photo',
+		'logo',
+		'color',
+	] as const);
 
 	const edgeDetection = pick(
 		fields.edgeDetection,
@@ -192,6 +212,8 @@ export function parseVectorizeParams(
 		outputWidth,
 		outputHeight,
 		svgOptimize,
+		healHoles,
+		subject,
 		edgeDetection,
 	};
 }
@@ -504,6 +526,120 @@ async function upscaleForTrace(
 	return { buffer: out, scale };
 }
 
+/**
+ * Margem branca antes de traçar. Quando a arte ENCOSTA na borda da imagem (a IA
+ * quase sempre compõe o busto saindo do quadro), o Potrace fecha o traçado rente
+ * ao limite em vez de contornar a figura: o contorno externo sai partido em
+ * vários subpaths, com vértices grudados na borda. Uma faixa branca em volta faz
+ * o contorno fechar sozinho.
+ *
+ * Medido: blob encostando em 3 bordas → sem margem, 2 subpaths e 11 vértices na
+ * borda; com margem, 1 subpath e nenhum.
+ */
+async function padForTrace(buffer: Buffer, allow: boolean): Promise<Buffer> {
+	if (!allow) return buffer;
+	const meta = await sharp(buffer).metadata();
+	const maxDim = Math.max(meta.width ?? 0, meta.height ?? 0);
+	if (!maxDim) return buffer;
+	const pad = Math.max(6, Math.round(maxDim * 0.01));
+	return sharp(buffer)
+		.extend({
+			top: pad,
+			bottom: pad,
+			left: pad,
+			right: pad,
+			background: { r: 255, g: 255, b: 255, alpha: 1 },
+		})
+		.png()
+		.toBuffer();
+}
+
+/**
+ * Teto do buraco preenchível, como fração da área da imagem. Acima disso a
+ * região branca é tratada como intencional (contraforma de letra, vazado de
+ * logo, realce) e fica intacta.
+ */
+const HOLE_MAX_AREA = 0.001;
+
+/**
+ * Preenche BURACOS BRANCOS FECHADOS dentro da arte já binarizada.
+ *
+ * A IA às vezes deixa manchas brancas vazias no meio da figura — pedaços de
+ * gravura que faltaram. Um `close` morfológico resolveria, mas fundiria as
+ * linhas de hachura e destruiria o sombreado. Aqui a operação é local e
+ * provavelmente invisível: um buraco FECHADO é, por definição, cercado de
+ * preto, então preenchê-lo de preto se funde com o entorno.
+ *
+ * Não toca as frestas entre hachuras: essas se conectam ao fundo e portanto
+ * não são "fechadas". Não toca o contorno externo. Não toca área branca grande.
+ */
+function fillEnclosedHoles(data: Uint8Array, W: number, H: number): number {
+	const N = W * H;
+	const maxArea = Math.max(16, Math.round(N * HOLE_MAX_AREA));
+	const label = new Int32Array(N).fill(-1);
+	const stack = new Int32Array(N);
+	const members = new Int32Array(N);
+	let filled = 0;
+
+	for (let seed = 0; seed < N; seed++) {
+		if (data[seed] < 128 || label[seed] >= 0) continue;
+		let sp = 0;
+		let count = 0;
+		let touchesEdge = false;
+		stack[sp++] = seed;
+		label[seed] = seed;
+		while (sp > 0) {
+			const i = stack[--sp];
+			members[count++] = i;
+			const x = i % W;
+			const y = (i / W) | 0;
+			if (x === 0 || y === 0 || x === W - 1 || y === H - 1) touchesEdge = true;
+			// A inundação NUNCA é interrompida cedo: parar deixaria pixels sem
+			// rótulo, que seriam re-semeados como componentes falsos e parte do
+			// fundo viraria "buraco". O custo total continua O(N) — cada pixel é
+			// rotulado uma vez só, somando todos os componentes.
+			const nb = [
+				x > 0 ? i - 1 : -1,
+				x < W - 1 ? i + 1 : -1,
+				y > 0 ? i - W : -1,
+				y < H - 1 ? i + W : -1,
+			];
+			for (const j of nb) {
+				if (j >= 0 && data[j] >= 128 && label[j] < 0) {
+					label[j] = seed;
+					stack[sp++] = j;
+				}
+			}
+		}
+		if (!touchesEdge && count <= maxArea) {
+			for (let k = 0; k < count; k++) data[members[k]] = 0;
+			filled++;
+		}
+	}
+	return filled;
+}
+
+/** Aplica `fillEnclosedHoles` num PNG já binarizado. */
+async function healHolesInPng(buffer: Buffer): Promise<Buffer> {
+	const { data, info } = await sharp(buffer)
+		.grayscale()
+		.toColourspace('b-w')
+		.raw()
+		.toBuffer({ resolveWithObject: true });
+	const px = new Uint8Array(
+		data.buffer,
+		data.byteOffset,
+		info.width * info.height,
+	);
+	const filled = fillEnclosedHoles(px, info.width, info.height);
+	if (filled === 0) return buffer;
+	return sharp(px, {
+		raw: { width: info.width, height: info.height, channels: 1 },
+	})
+		.png()
+		.toBuffer();
+}
+
 export interface VectorizeOptions {
 	/** Liga o supersampling de qualidade (run final). Desligue p/ preview rápido. */
 	supersample?: boolean;
@@ -546,11 +682,29 @@ export async function vectorizeImage(
 			? { ...params, turdSize: params.turdSize * scale * scale }
 			: params;
 
+	// Margem: vale p/ trace E posterize (ambos passam pelo Potrace), inclusive no
+	// preview — assim a prévia mostra o mesmo contorno do resultado final. Só a
+	// guarda de dimensão exata (dpi/mm) permanece: com ela, mexer na geometria
+	// encolheria a arte dentro do envelope pedido.
+	const canPad =
+		params.dpi === null &&
+		params.outputWidth === null &&
+		params.outputHeight === null;
+
 	const processed = await preprocessImage(scaled, effParams);
+	// Tapa buracos brancos fechados que a IA deixa no meio da figura. Opt-in
+	// (`healHoles`) e ligado só na gravura de FOTO: em logo/texto a contraforma
+	// de letra também é buraco fechado e seria destruída.
+	const healed =
+		effParams.healHoles && effParams.mode === 'trace'
+			? await healHolesInPng(processed)
+			: processed;
+	// DEPOIS de binarizar: a faixa entra como branco puro e nada mais a reprocessa.
+	const padded = await padForTrace(healed, canPad);
 	const svg =
 		effParams.mode === 'posterize'
-			? await posterizeImage(processed, effParams)
-			: await traceImage(processed, effParams);
+			? await posterizeImage(padded, effParams)
+			: await traceImage(padded, effParams);
 	return postProcessSvg(svg, params);
 }
 

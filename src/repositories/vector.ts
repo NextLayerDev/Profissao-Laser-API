@@ -1,3 +1,4 @@
+import { uploadSvgFile } from '../lib/storage.js';
 import { supabaseUpvox as supabase } from '../lib/supabase-upvox.js';
 
 interface ListOptions {
@@ -78,6 +79,76 @@ class VectorRepository {
 			.single();
 		if (error || !data) throw new Error(error?.message ?? 'Vector not found');
 		return data.paid_formats ?? formats;
+	}
+
+	/**
+	 * Guarda (ou atualiza) o vetor INVERTIDO de `parentId` como um registro
+	 * próprio em "Meus vetores".
+	 *
+	 * Idempotente por (pai, modo) via marcador em `params`: alternar a polaridade
+	 * várias vezes atualiza o mesmo registro em vez de encher a biblioteca de
+	 * duplicatas. `paid_formats` vem do pai — é o mesmo vetor, não pode recobrar.
+	 */
+	async upsertInverted(
+		customerId: string,
+		input: {
+			parentId: string;
+			mode: string;
+			originalName: string;
+			svgContent: string;
+			pngUrl: string;
+			paidFormats: string[];
+			params: Record<string, unknown>;
+		},
+	): Promise<string> {
+		const marker = {
+			...input.params,
+			invertedFrom: input.parentId,
+			invertMode: input.mode,
+		};
+
+		const { data: existing } = await supabase
+			.from('customer_vectors')
+			.select('id')
+			.eq('customer_id', customerId)
+			.eq('params->>invertedFrom', input.parentId)
+			.eq('params->>invertMode', input.mode)
+			.maybeSingle();
+
+		const svgUrl = await uploadSvgFile(
+			input.svgContent,
+			`${customerId}/${input.parentId}_inverted_${input.mode}.svg`,
+		);
+
+		if (existing?.id) {
+			const { error } = await supabase
+				.from('customer_vectors')
+				.update({
+					svg_url: svgUrl,
+					png_url: input.pngUrl,
+					paid_formats: input.paidFormats,
+					updated_at: new Date().toISOString(),
+				})
+				.eq('id', existing.id)
+				.eq('customer_id', customerId);
+			if (error) throw new Error(error.message);
+			return existing.id;
+		}
+
+		const { data, error } = await supabase
+			.from('customer_vectors')
+			.insert({
+				customer_id: customerId,
+				original_name: input.originalName,
+				svg_url: svgUrl,
+				png_url: input.pngUrl,
+				params: marker,
+				paid_formats: input.paidFormats,
+			})
+			.select('id')
+			.single();
+		if (error || !data) throw new Error(error?.message ?? 'Insert failed');
+		return data.id;
 	}
 
 	async findByIdForExport(id: string, customerId: string | null) {
