@@ -12,6 +12,7 @@ import {
 	aiLineartController,
 	downloadVectorFormatController,
 	exportVectorController,
+	invertVectorController,
 	vectorizeAnalyzeController,
 	vectorizeBatchController,
 	vectorizeController,
@@ -24,6 +25,8 @@ import {
 	batchVectorizeResultSchema,
 	createVectorSchema,
 	imageProfileSchema,
+	invertModeSchema,
+	invertVectorResultSchema,
 	listVectorsQuery,
 	updateVectorSchema,
 	vectorizeResultSchema,
@@ -226,16 +229,71 @@ export async function vectorRoute(server: FastifyInstance) {
 	);
 
 	server.post(
+		'/api/vectorize/:id/invert',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'**Vetor invertido** (fundo preto): devolve o negativo REAL do vetor —',
+					'o Corel/LightBurn e o laser enxergam a polaridade trocada, não é só a',
+					'cor da prévia. **Não cobra** e não altera `paidFormats`: quem já pagou',
+					'um formato baixa a versão invertida sem custo novo.',
+					'',
+					'`mode`: `geometric` = complemento exato (moldura do viewBox com a arte',
+					'como furos, `fill-rule="evenodd"`), lossless — para logo/texto/traço.',
+					'`silhouette` = negativo morfológico (silhueta sólida + borda, linhas',
+					'como furos) — para gravura hachurada, onde o complemento viraria uma',
+					'chapa preta. `auto` (default) escolhe pela densidade e espessura do traço.',
+					'',
+					'**DXF**: o formato não tem preenchimento, então a inversão só acrescenta',
+					'o retângulo da moldura — a troca de polaridade é invisível no DXF.',
+					'',
+					'422 quando a arte não tem negativo geométrico confiável (multi-cor, ou',
+					'`transform` na árvore).',
+				].join('\n'),
+				params: z.object({ id: z.string().uuid() }),
+				body: z.object({
+					mode: invertModeSchema.optional(),
+					/**
+					 * Guarda o invertido em "Meus vetores" (idempotente por pai+modo).
+					 * O registro HERDA `paid_formats` do pai — mesmo vetor, não recobra.
+					 */
+					persist: z.boolean().optional(),
+				}),
+				response: {
+					200: invertVectorResultSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+					422: ErrorSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		invertVectorController,
+	);
+
+	server.post(
 		'/api/vectorize/ai-lineart',
 		{
 			preHandler: [authenticateVectorizacao],
 			schema: {
 				description: [
-					'Line-art com **IA** (foto → gravura "nanquim" via modelo de imagem →',
-					'vetor Potrace). Único caminho que atinge o nível de gravura pro em foto.',
+					'Line-art com **IA** (foto → gravura "nanquim"; logo → redesenho vetorial',
+					'fiel → vetor Potrace). Único caminho que atinge o nível de gravura pro.',
 					'**Cobrada NA GERAÇÃO** (a IA custa): o front invoca (debita) e manda o',
 					'`invocation_id`; o resultado já sai com todos os formatos pagos.',
 					'Envio **multipart/form-data** (campo `image`).',
+					'',
+					'O **prompt é escolhido no servidor** (foto vs logo, detecção heurística',
+					'com desempate por visão) — o front não decide e nada disso aparece na UI.',
+					'`variant` só distingue `color` (Laser + UV) do P&B.',
+					'',
+					'Toda saída passa por verificação estrutural contra a imagem de entrada.',
+					'Se a IA não reproduzir a arte, refazemos 1× com prompt mais rígido; se',
+					'falhar de novo, **estornamos** e devolvemos a vetorização normal com',
+					'`aiFallback: true` e `paidFormats: []` (volta ao fluxo grátis).',
 				].join('\n'),
 				consumes: ['multipart/form-data'],
 				response: {
