@@ -1,11 +1,23 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { isStaffRole } from '../lib/external-auth.js';
 import { supportChatService } from '../services/support-chat.js';
+import type { AuthContext } from '../services/support-chat-ai.js';
 import {
 	adminListQuerySchema,
 	createSupportChatSchema,
 	sendSupportMessageSchema,
 } from '../types/support-chat.js';
+
+/**
+ * Extrai o contexto de auth do request pra repassar à busca do RAG (que roda na
+ * upvox). O Bearer do próprio aluno vale na upvox, então nada de secret novo.
+ */
+function authFrom(request: FastifyRequest): AuthContext {
+	return {
+		authHeader: request.headers.authorization ?? null,
+		userId: request.currentCustomer?.id ?? null,
+	};
+}
 
 // ── Customer ─────────────────────────────────────────────────────────────
 
@@ -14,15 +26,25 @@ export const createSupportChatController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const customerId = request.currentCustomer?.id ?? '';
+		// Sem id não dá pra saber de quem é o atendimento. Degradar para '' faria
+		// todos os chamadores não identificados compartilharem o mesmo chat —
+		// um lendo a conversa do outro. Melhor recusar.
+		const customerId = request.currentCustomer?.id;
+		if (!customerId?.trim()) {
+			return reply.status(400).send({ message: 'Cliente não identificado' });
+		}
 		const customerName = request.currentCustomer?.name ?? 'Cliente';
 		const { message } = createSupportChatSchema.parse(request.body ?? {});
-		const chat = await supportChatService.createChat(
+		const { chat, reused } = await supportChatService.createChat(
 			customerId,
 			customerName,
 			message,
+			authFrom(request),
 		);
-		return reply.status(201).send(chat);
+		// 200 quando devolvemos um atendimento que já existia, 201 quando de fato
+		// criamos. O front usa `reused` pra avisar "você já tem um atendimento
+		// aberto" em vez de abrir uma conversa nova em branco.
+		return reply.status(reused ? 200 : 201).send({ ...chat, reused });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(400).send({ message });
@@ -77,6 +99,7 @@ export const sendSupportMessageController = async (
 			customerId,
 			customerName,
 			content,
+			authFrom(request),
 		);
 		return reply.send(chat);
 	} catch (err) {

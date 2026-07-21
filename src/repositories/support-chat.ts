@@ -23,6 +23,20 @@ const CHAT_COLS =
 const MSG_COLS =
 	'id, chatId, role, authorId, authorName, content, fileUrl, createdAt';
 
+/**
+ * O cliente já tem um atendimento aberto e o índice único barrou a segunda
+ * criação. Não é erro de verdade — é o caminho feliz da corrida de duas abas.
+ */
+export class OpenChatConflictError extends Error {
+	constructor() {
+		super('Cliente já possui um atendimento aberto');
+		this.name = 'OpenChatConflictError';
+	}
+}
+
+/** Postgres: violação de unique. */
+const UNIQUE_VIOLATION = '23505';
+
 class SupportChatRepository {
 	async createChat(customerId: string, customerName: string) {
 		const id = crypto.randomUUID();
@@ -35,8 +49,32 @@ class SupportChatRepository {
 			createdAt: now,
 			updatedAt: now,
 		});
+		// Índice pl_support_chat_one_open_per_customer: duas abas tentaram abrir
+		// ao mesmo tempo e esta perdeu. Quem chama reusa o chat vencedor.
+		if (error?.code === UNIQUE_VIOLATION) throw new OpenChatConflictError();
 		if (error) throw new Error(error.message);
 		return id;
+	}
+
+	/**
+	 * O atendimento ainda aberto do cliente, se houver. É o que sustenta o
+	 * invariante "1 chat aberto por cliente" no caminho normal; o índice único
+	 * parcial no banco cobre a corrida de duas abas clicando ao mesmo tempo.
+	 *
+	 * Ordena por criação decrescente e pega o primeiro: se dados legados
+	 * deixaram mais de um aberto, o cliente cai no mais recente em vez de
+	 * receber erro.
+	 */
+	async findOpenByCustomer(customerId: string) {
+		const { data, error } = await supabase
+			.from('pl_support_chat')
+			.select(CHAT_COLS)
+			.eq('customerId', customerId)
+			.neq('status', 'closed')
+			.order('createdAt', { ascending: false })
+			.limit(1);
+		if (error) throw new Error(error.message);
+		return data?.[0] ?? null;
 	}
 
 	async getRawHistory(chatId: string) {

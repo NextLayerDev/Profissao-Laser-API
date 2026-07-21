@@ -1,12 +1,23 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { redrawAsColorVector, redrawAsNanquim } from '../lib/ai-lineart.js';
+import {
+	type NanquimSubject,
+	redrawAsColorVector,
+	redrawAsNanquim,
+} from '../lib/ai-lineart.js';
+import { classifyImage } from '../lib/image-classify.js';
 import {
 	refundInvocation,
 	resolveToolBilling,
 	settleInvocation,
 } from '../lib/upvox-tools.js';
 import { parseVectorizeParams } from '../lib/vectorize.js';
+import { analyzeImage } from '../lib/vectorize-analyze.js';
 import { vectorRepository } from '../repositories/vector.js';
+import {
+	INVERT_UNSUPPORTED,
+	type InvertMode,
+	vectorInvertService,
+} from '../services/vector-invert.js';
 import { vectorizeService } from '../services/vectorize.js';
 
 export const vectorizeController = async (
@@ -183,23 +194,89 @@ export const aiLineartController = async (
 
 		// 1) IA redesenha: gravura P&B ("nanquim") OU vetor de cores chapadas (UV).
 		// Pode lançar ToolEngineError → o catch estorna a cobrança.
-		const variant = fields.variant === 'color' ? 'color' : 'lineart';
-		const cleanImg =
-			variant === 'color'
-				? await redrawAsColorVector(fileBuffer)
-				: await redrawAsNanquim(fileBuffer);
+		//
+		// A escolha do PROMPT (foto vs logo) é SERVER-SIDE e autoritativa: o front
+		// não manda essa decisão e nada disso aparece na UI. Mandar logo no prompt
+		// de foto era o bug que fazia um logo virar 4 retratos em grade.
+		const wantsColor = fields.variant === 'color';
+		let subject: NanquimSubject = 'photo';
+		if (!wantsColor) {
+			const detected = await classifyImage(fileBuffer);
+			subject = detected.kind;
+			if (process.env.DEBUG_IMAGE_GEN) {
+				console.debug('[ai-lineart] tipo detectado', {
+					kind: detected.kind,
+					confidence: detected.confidence,
+					source: detected.source,
+				});
+			}
+		}
+		const outcome = wantsColor
+			? await redrawAsColorVector(fileBuffer)
+			: await redrawAsNanquim(fileBuffer, subject);
+
+		// 1b) A IA não passou na verificação nas 2 tentativas. Estorna (o cliente
+		// pagou por um redesenho de IA e não recebeu um) e entrega a vetorização
+		// NORMAL, que nunca alucina. Devolver `paidFormats: []` o deixa no estado
+		// idêntico ao de quem clicou "Vetorizar" — sem caso especial no download.
+		if (!outcome.png) {
+			if (invocationId) {
+				await refundInvocation(customerId, invocationId, authHeader);
+				invocationId = null;
+			}
+			const profile = await analyzeImage(fileBuffer);
+			// Descarta null/undefined ANTES de virar string (mesma convenção do
+			// front ao montar o FormData). `String(null)` daria "null", que é
+			// truthy no parser: `parseFloat("null")` = NaN e o clamp devolve NaN
+			// (NaN falha as duas comparações) → sharp receberia blur(NaN).
+			const recommended = Object.fromEntries(
+				Object.entries(profile.recommendedParams)
+					.filter(([, v]) => v !== null && v !== undefined)
+					.map(([k, v]) => [k, String(v)]),
+			);
+			const fallbackParams = parseVectorizeParams({
+				...fields,
+				...recommended,
+				...(wantsColor ? { mode: 'color' } : {}),
+			});
+			const { data: fbResult, error: fbError } =
+				await vectorizeService.vectorize(customerId, {
+					buffer: fileBuffer,
+					filename,
+					mimetype: 'image/png',
+					params: fallbackParams,
+				});
+			if (fbError) {
+				const message =
+					fbError instanceof Error ? fbError.message : 'Unknown error';
+				return reply.status(500).send({ message });
+			}
+			return reply.status(201).send({
+				...fbResult,
+				paidFormats: [],
+				aiFallback: true,
+				aiFallbackReason: outcome.failures.join(','),
+			});
+		}
 
 		// 2) Vetoriza o resultado limpo (trace p/ P&B; cor em alta def p/ UV).
 		const params = parseVectorizeParams({
 			...fields,
-			mode: variant === 'color' ? 'color' : 'trace',
+			mode: wantsColor ? 'color' : 'trace',
 			edgeDetection: 'none',
 			maxColors: fields.maxColors ?? '14',
 			turdSize: fields.turdSize ?? '3',
+			// Só na gravura de FOTO: ali um vazio cercado de preto é sempre defeito
+			// da geração. Em logo/texto seria destrutivo (contraforma de letra).
+			healHoles: String(!wantsColor && subject === 'photo'),
+			// Gravado no vetor: a INVERSÃO precisa saber se é foto (silhueta) ou
+			// logo (complemento geométrico). Adivinhar isso depois, a partir dos
+			// pixels do SVG, errava e entregava retângulo preto em retrato.
+			subject: wantsColor ? 'color' : subject,
 		});
 		const { data: result, error } = await vectorizeService.vectorize(
 			customerId,
-			{ buffer: cleanImg, filename, mimetype: 'image/png', params },
+			{ buffer: outcome.png, filename, mimetype: 'image/png', params },
 		);
 		if (error) {
 			if (invocationId)
@@ -231,6 +308,49 @@ export const aiLineartController = async (
 		return reply
 			.status(status && status >= 400 && status < 600 ? status : 500)
 			.send({ message });
+	}
+};
+
+/**
+ * VETOR INVERTIDO (fundo preto). Transformação pura de um vetor já gerado:
+ * **não cobra**, não pede `invocation_id` e não mexe em `paid_formats` — quem
+ * já pagou um formato baixa a versão invertida sem custo novo.
+ */
+export const invertVectorController = async (
+	request: FastifyRequest<{
+		Params: { id: string };
+		Body: { mode?: InvertMode; persist?: boolean };
+	}>,
+	reply: FastifyReply,
+) => {
+	try {
+		const customerId = request.currentCustomer?.id;
+		if (!customerId) {
+			return reply.status(403).send({ message: 'Customer not found' });
+		}
+
+		const { data, error } = await vectorInvertService.invert(
+			customerId,
+			request.params.id,
+			request.body?.mode ?? 'auto',
+			request.body?.persist ?? false,
+		);
+		if (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			// Recusa da inversão geométrica (multi-cor, transform…) → 422: o vetor
+			// existe, mas essa arte não tem negativo geométrico confiável.
+			const unsupported = Object.values(INVERT_UNSUPPORTED) as string[];
+			if (unsupported.includes(message)) {
+				return reply.status(422).send({ message });
+			}
+			const status = message === 'Vector not found' ? 404 : 500;
+			return reply.status(status).send({ message });
+		}
+		return reply.status(200).send(data);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		const status = message === 'Vector not found' ? 404 : 500;
+		return reply.status(status).send({ message });
 	}
 };
 
