@@ -89,7 +89,7 @@ export interface LaserPrepResult {
 const MAX_OUTPUT_PIXELS = 100 * 1_000_000;
 
 /** mm → polegada → px no DPI alvo (mesmo arredondamento do `imagr_pipeline.py`). */
-function mmToPx(mm: number, dpi: number): number {
+export function mmToPx(mm: number, dpi: number): number {
 	return Math.max(1, Math.round((mm / 25.4) * dpi));
 }
 

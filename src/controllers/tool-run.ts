@@ -51,6 +51,23 @@ function resolveBankPath(entry: ToolBankEntry, path: string): unknown {
 	return (entry as unknown as Record<string, unknown>)[path];
 }
 
+/** Lê `data.image_size_px` (gravado pelo admin via `bankImageSizeSchema`) do item do banco. */
+function bankImageSize(
+	entry: ToolBankEntry | undefined,
+): { width: number; height: number } | undefined {
+	const size = (entry?.data as Record<string, unknown> | undefined)
+		?.image_size_px as { width?: unknown; height?: unknown } | undefined;
+	if (
+		typeof size?.width === 'number' &&
+		typeof size?.height === 'number' &&
+		size.width > 0 &&
+		size.height > 0
+	) {
+		return { width: size.width, height: size.height };
+	}
+	return undefined;
+}
+
 /** Troca `{var}` pelos campos do cliente; deixa o placeholder se faltar a var. */
 function substituteVars(template: string, ctx: Record<string, string>): string {
 	return template.replace(/\{(\w+)\}/g, (_m, k: string) =>
@@ -72,9 +89,14 @@ function substituteVars(template: string, ctx: Record<string, string>): string {
  * Se o admin digitou um id fora do catálogo (ou um modelo foi removido do
  * catálogo após o save), logamos warning e CAÍMOS NO DEFAULT DO SISTEMA — em
  * vez de mandar um id inválido pro OpenRouter e quebrar a invocação.
+ *
+ * `sizeOverride` (tamanho definido no item do banco escolhido, `data.image_size_px`)
+ * vence o tamanho da tool (`doc.image_width/height`) quando presente — cada
+ * "Prompt Mágico" pode ter seu próprio formato de saída.
  */
 function injectAiGenerateImageOverrides(
 	doc: ToolDefinitionDoc,
+	sizeOverride?: { width: number; height: number },
 ): ToolDefinitionDoc {
 	const catalogIds = new Set(IMAGE_MODELS_CATALOG.map((m) => m.id));
 	let toolModel = doc.model;
@@ -85,8 +107,8 @@ function injectAiGenerateImageOverrides(
 		toolModel = undefined;
 	}
 	const toolSystemPrompt = doc.system_prompt;
-	const w = doc.image_width;
-	const h = doc.image_height;
+	const w = sizeOverride?.width ?? doc.image_width;
+	const h = sizeOverride?.height ?? doc.image_height;
 	const hasSize =
 		typeof w === 'number' && typeof h === 'number' && w > 0 && h > 0;
 	if (!toolModel && !toolSystemPrompt && !hasSize) return doc;
@@ -184,11 +206,9 @@ export const toolRunController = async (
 			});
 		}
 
-		// Override per-tool do modelo + system prompt para `ai.generate_image`.
-		doc = injectAiGenerateImageOverrides(doc);
-
 		// ── banco do admin (opcional): injeta o registro escolhido nos inputs ──
 		const bank = doc.bank;
+		let selectedBankEntry: ToolBankEntry | undefined;
 		if (bank?.enabled) {
 			const bankEntryId = fields.bank_entry_id;
 			if (!bankEntryId) {
@@ -205,6 +225,7 @@ export const toolRunController = async (
 				if (!entry) {
 					return reply.status(400).send({ message: 'Item do banco inválido.' });
 				}
+				selectedBankEntry = entry;
 				const injectMap: Record<
 					string,
 					{ from: string; substitute?: boolean }
@@ -221,6 +242,10 @@ export const toolRunController = async (
 				}
 			}
 		}
+
+		// Override per-tool do modelo + system prompt, e tamanho (item do banco
+		// vence a tool) para `ai.generate_image`.
+		doc = injectAiGenerateImageOverrides(doc, bankImageSize(selectedBankEntry));
 
 		// ── billing (autoritativo no upvox) ──
 		if (billed) {
