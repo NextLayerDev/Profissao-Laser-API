@@ -2,10 +2,13 @@ import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { isStaffRole } from '../lib/external-auth.js';
 import { uploadToolOutput } from '../lib/storage.js';
+import { imageSizePresetRepository } from '../repositories/image-size-preset.js';
 import { toolBankRepository } from '../repositories/tool-bank.js';
 import {
+	bankImageSizeSchema,
 	createToolBankEntrySchema,
 	reorderToolBankSchema,
+	resolveImageSizePx,
 	updateToolBankEntrySchema,
 } from '../types/tool-bank.js';
 
@@ -81,6 +84,23 @@ function parseJsonObject(
 	}
 }
 
+/**
+ * Se `data.image_size` veio no payload (px/mm/preset — ver `bankImageSizeSchema`),
+ * resolve pra px e grava em `data.image_size_px`, que é o que `tool-run` lê pra
+ * sobrepor o tamanho de saída do `ai.generate_image` deste item do banco.
+ */
+async function normalizeImageSize(
+	dataObj: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+	if (dataObj.image_size === undefined) return dataObj;
+	const parsed = bankImageSizeSchema.parse(dataObj.image_size);
+	const { image_size, ...rest } = dataObj;
+	const image_size_px = await resolveImageSizePx(parsed, (id) =>
+		imageSizePresetRepository.findById(id),
+	);
+	return { ...rest, image_size_px };
+}
+
 /** Lê multipart: campos string + uploads de exemplo (example_before/after). */
 async function collectMultipart(request: FastifyRequest): Promise<{
 	fields: Record<string, string>;
@@ -143,7 +163,8 @@ export const createToolBankController = async (
 	try {
 		const { key } = request.params;
 		const { fields, images } = await collectMultipart(request);
-		const dataObj = parseJsonObject(fields.data);
+		const dataObj0 = parseJsonObject(fields.data);
+		const dataObj = dataObj0 ? await normalizeImageSize(dataObj0) : dataObj0;
 		const data = createToolBankEntrySchema.parse({
 			title: fields.title,
 			...(fields.description !== undefined && {
@@ -182,7 +203,8 @@ export const updateToolBankController = async (
 	try {
 		const { key, id } = request.params;
 		const { fields, images } = await collectMultipart(request);
-		const dataObj = parseJsonObject(fields.data);
+		const dataObj0 = parseJsonObject(fields.data);
+		const dataObj = dataObj0 ? await normalizeImageSize(dataObj0) : dataObj0;
 		const beforeUrl =
 			fields.removeExampleBefore === 'true' ? null : images.example_before;
 		const afterUrl =
