@@ -98,12 +98,14 @@ function substituteVars(template: string, ctx: Record<string, string>): string {
  *
  * `clientSizeOverride` (campo `image_size` enviado pelo cliente na chamada)
  * vence TUDO — o cliente escolhendo a resolução na hora da geração tem
- * prioridade sobre o banco e sobre a tool.
+ * prioridade sobre o banco e sobre a tool. `'native'` é um pedido EXPLÍCITO
+ * do cliente pra manter o tamanho nativo gerado pela IA (sem redimensionar) —
+ * remove `width`/`height` do node mesmo que a tool/banco tenham definido um.
  */
 function injectAiGenerateImageOverrides(
 	doc: ToolDefinitionDoc,
 	sizeOverride?: { width: number; height: number },
-	clientSizeOverride?: { width: number; height: number },
+	clientSizeOverride?: { width: number; height: number } | 'native',
 ): ToolDefinitionDoc {
 	const catalogIds = new Set(IMAGE_MODELS_CATALOG.map((m) => m.id));
 	let toolModel = doc.model;
@@ -114,27 +116,33 @@ function injectAiGenerateImageOverrides(
 		toolModel = undefined;
 	}
 	const toolSystemPrompt = doc.system_prompt;
-	const w = clientSizeOverride?.width ?? sizeOverride?.width ?? doc.image_width;
-	const h =
-		clientSizeOverride?.height ?? sizeOverride?.height ?? doc.image_height;
+	const clientNative = clientSizeOverride === 'native';
+	const clientPx = clientNative ? undefined : clientSizeOverride;
+	const w = clientNative
+		? undefined
+		: (clientPx?.width ?? sizeOverride?.width ?? doc.image_width);
+	const h = clientNative
+		? undefined
+		: (clientPx?.height ?? sizeOverride?.height ?? doc.image_height);
 	const hasSize =
 		typeof w === 'number' && typeof h === 'number' && w > 0 && h > 0;
-	if (!toolModel && !toolSystemPrompt && !hasSize) return doc;
+	if (!toolModel && !toolSystemPrompt && !hasSize && !clientNative) return doc;
 	return {
 		...doc,
-		pipeline: (doc.pipeline ?? []).map((n) =>
-			n.block !== 'ai.generate_image'
-				? n
-				: {
-						...n,
-						params: {
-							...(n.params ?? {}),
-							...(toolModel ? { model: toolModel } : {}),
-							...(toolSystemPrompt ? { system_prompt: toolSystemPrompt } : {}),
-							...(hasSize ? { width: w, height: h } : {}),
-						},
-					},
-		),
+		pipeline: (doc.pipeline ?? []).map((n) => {
+			if (n.block !== 'ai.generate_image') return n;
+			const params: Record<string, unknown> = { ...(n.params ?? {}) };
+			if (toolModel) params.model = toolModel;
+			if (toolSystemPrompt) params.system_prompt = toolSystemPrompt;
+			if (hasSize) {
+				params.width = w;
+				params.height = h;
+			} else if (clientNative) {
+				delete params.width;
+				delete params.height;
+			}
+			return { ...n, params };
+		}),
 	};
 }
 
@@ -251,10 +259,13 @@ export const toolRunController = async (
 			}
 		}
 
-		// Tamanho escolhido pelo CLIENTE na hora da geração (`image_size`, JSON no
-		// mesmo formato do banco: px | mm | preset) — vence banco e tool.
-		let clientSize: { width: number; height: number } | undefined;
-		if (fields.image_size) {
+		// Tamanho escolhido pelo CLIENTE na hora da geração (`image_size`) — vence
+		// banco e tool. `"native"` mantém o tamanho nativo gerado pela IA (sem
+		// redimensionar); qualquer outro valor é JSON no formato do banco (px | mm | preset).
+		let clientSize: { width: number; height: number } | 'native' | undefined;
+		if (fields.image_size === 'native') {
+			clientSize = 'native';
+		} else if (fields.image_size) {
 			let parsedSize: unknown;
 			try {
 				parsedSize = JSON.parse(fields.image_size);
