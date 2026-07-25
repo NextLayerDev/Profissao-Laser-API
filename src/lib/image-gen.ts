@@ -280,11 +280,15 @@ export async function generateToolImage(
 	}
 
 	// Redimensiona pro tamanho EXATO pedido (gravação a laser precisa ser exata).
-	// `fit: 'fill'` dá W×H exato; como a proporção foi reforçada no prompt, não
-	// há distorção perceptível quando o modelo respeita o formato.
+	// `fit: 'cover'` dá W×H exato cortando o excedente (centralizado) em vez de
+	// esticar — o modelo nem sempre respeita a proporção pedida no prompt, e
+	// `fill` distorcia a imagem inteira nesse caso.
 	let sharpPipe = sharp(decoded);
 	if (outW && outH) {
-		sharpPipe = sharpPipe.resize(outW, outH, { fit: 'fill' });
+		sharpPipe = sharpPipe.resize(outW, outH, {
+			fit: 'cover',
+			position: 'centre',
+		});
 	}
 	const png = await sharpPipe.png().toBuffer();
 	const pngBase64 = `data:image/png;base64,${png.toString('base64')}`;
