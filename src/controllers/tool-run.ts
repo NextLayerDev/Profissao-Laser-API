@@ -19,9 +19,11 @@ import {
 	resolveToolBilling,
 	settleInvocation,
 } from '../lib/upvox-tools.js';
+import { imageSizePresetRepository } from '../repositories/image-size-preset.js';
 import { toolBankRepository } from '../repositories/tool-bank.js';
 import { registerCoreBlocks } from '../tool-blocks/index.js';
 import type { ToolBankEntry } from '../types/tool-bank.js';
+import { bankImageSizeSchema, resolveImageSizePx } from '../types/tool-bank.js';
 
 // Garante que os blocos curados estejam no registry (idempotente).
 registerCoreBlocks();
@@ -93,10 +95,15 @@ function substituteVars(template: string, ctx: Record<string, string>): string {
  * `sizeOverride` (tamanho definido no item do banco escolhido, `data.image_size_px`)
  * vence o tamanho da tool (`doc.image_width/height`) quando presente — cada
  * "Prompt Mágico" pode ter seu próprio formato de saída.
+ *
+ * `clientSizeOverride` (campo `image_size` enviado pelo cliente na chamada)
+ * vence TUDO — o cliente escolhendo a resolução na hora da geração tem
+ * prioridade sobre o banco e sobre a tool.
  */
 function injectAiGenerateImageOverrides(
 	doc: ToolDefinitionDoc,
 	sizeOverride?: { width: number; height: number },
+	clientSizeOverride?: { width: number; height: number },
 ): ToolDefinitionDoc {
 	const catalogIds = new Set(IMAGE_MODELS_CATALOG.map((m) => m.id));
 	let toolModel = doc.model;
@@ -107,8 +114,9 @@ function injectAiGenerateImageOverrides(
 		toolModel = undefined;
 	}
 	const toolSystemPrompt = doc.system_prompt;
-	const w = sizeOverride?.width ?? doc.image_width;
-	const h = sizeOverride?.height ?? doc.image_height;
+	const w = clientSizeOverride?.width ?? sizeOverride?.width ?? doc.image_width;
+	const h =
+		clientSizeOverride?.height ?? sizeOverride?.height ?? doc.image_height;
 	const hasSize =
 		typeof w === 'number' && typeof h === 'number' && w > 0 && h > 0;
 	if (!toolModel && !toolSystemPrompt && !hasSize) return doc;
@@ -243,9 +251,40 @@ export const toolRunController = async (
 			}
 		}
 
-		// Override per-tool do modelo + system prompt, e tamanho (item do banco
-		// vence a tool) para `ai.generate_image`.
-		doc = injectAiGenerateImageOverrides(doc, bankImageSize(selectedBankEntry));
+		// Tamanho escolhido pelo CLIENTE na hora da geração (`image_size`, JSON no
+		// mesmo formato do banco: px | mm | preset) — vence banco e tool.
+		let clientSize: { width: number; height: number } | undefined;
+		if (fields.image_size) {
+			let parsedSize: unknown;
+			try {
+				parsedSize = JSON.parse(fields.image_size);
+			} catch {
+				return reply
+					.status(400)
+					.send({ message: 'image_size inválido (JSON).' });
+			}
+			const parsed = bankImageSizeSchema.safeParse(parsedSize);
+			if (!parsed.success) {
+				return reply.status(400).send({ message: 'image_size inválido.' });
+			}
+			try {
+				clientSize = await resolveImageSizePx(parsed.data, async (id) =>
+					imageSizePresetRepository.findById(id),
+				);
+			} catch (err) {
+				const message =
+					err instanceof Error ? err.message : 'image_size inválido.';
+				return reply.status(400).send({ message });
+			}
+		}
+
+		// Override per-tool do modelo + system prompt, e tamanho (cliente > banco > tool)
+		// para `ai.generate_image`.
+		doc = injectAiGenerateImageOverrides(
+			doc,
+			bankImageSize(selectedBankEntry),
+			clientSize,
+		);
 
 		// ── billing (autoritativo no upvox) ──
 		if (billed) {
