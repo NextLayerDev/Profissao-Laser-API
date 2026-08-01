@@ -16,8 +16,12 @@ import type { ToolBlock } from '../types.js';
  * upvox; o motor settle/refund a invocation única cujo `voxes_spent` já vem N×.
  *
  * `raw_prompt` — quando true, o motor manda SÓ a user message ao modelo (sem
- * system prompt, sem `TEXT_LEAD`, sem sufixo `FORMATO`); a dimensão é garantida
- * pelo sharp (`fit:'cover'`). Vem de `definition.raw_prompt` (Prompts Mágicos).
+ * system prompt, sem `TEXT_LEAD`; o sufixo `FORMATO` continua indo — é spec de
+ * formato, não intermediação de estilo). Se o modelo suportar (catálogo
+ * `unifiedImagesApi:true`), a geração roteia pro endpoint dedicado
+ * `POST /v1/images` da OpenRouter, com `aspect_ratio`/`resolution`/`quality`
+ * REAIS em vez de só o texto; o sharp (`fit:'cover'`) garante a dimensão exata
+ * por cima disso. Vem de `definition.raw_prompt` (Prompts Mágicos).
  */
 
 // O motor injeta `null` num input de imagem não preenchido (coerceInputs). A

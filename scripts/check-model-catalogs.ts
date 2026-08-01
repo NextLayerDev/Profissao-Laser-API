@@ -39,6 +39,80 @@ async function fetchModelIds(): Promise<Map<string, OpenRouterModel>> {
 	return new Map(body.data.map((m) => [m.id, m]));
 }
 
+interface UnifiedImagesModel {
+	id: string;
+	supported_parameters?: Record<string, { values?: string[] }>;
+}
+
+async function fetchUnifiedImagesModels(): Promise<
+	Map<string, UnifiedImagesModel>
+> {
+	const key = process.env.OPENROUTER_API_KEY;
+	const res = await fetch('https://openrouter.ai/api/v1/images/models', {
+		headers: { Authorization: `Bearer ${key}` },
+		signal: AbortSignal.timeout(30_000),
+	});
+	if (!res.ok) {
+		console.error(`OpenRouter /images/models respondeu ${res.status}`);
+		process.exit(1);
+	}
+	const body = (await res.json()) as { data: UnifiedImagesModel[] };
+	return new Map(body.data.map((m) => [m.id, m]));
+}
+
+/**
+ * Confere os capability flags de `IMAGE_MODELS_CATALOG` (`unifiedImagesApi`,
+ * `apiAspectRatios`, `apiResolutions`, `apiQuality`) contra o que a OpenRouter
+ * REALMENTE aceita hoje em `GET /v1/images/models`. Esses flags foram
+ * populados com dados reais em 2026-08-01 (não suposição) — mas a API pode
+ * mudar; esse check evita que o catálogo fique desatualizado em silêncio.
+ */
+function checkUnifiedImagesCapabilities(
+	live: Map<string, UnifiedImagesModel>,
+): number {
+	console.log(
+		'\n== Capabilities /v1/images (aspect_ratio/resolution/quality) ==',
+	);
+	let bad = 0;
+	for (const m of IMAGE_MODELS_CATALOG) {
+		if (!m.unifiedImagesApi) continue;
+		const liveModel = live.get(m.id);
+		if (!liveModel) {
+			console.log(
+				`  SEM /v1/images  ${m.id} (catálogo diz unifiedImagesApi:true)`,
+			);
+			bad++;
+			continue;
+		}
+		const params = liveModel.supported_parameters ?? {};
+		const checks: Array<[string, string[] | undefined, boolean]> = [
+			[
+				'apiAspectRatios',
+				m.apiAspectRatios as string[] | undefined,
+				!!params.aspect_ratio,
+			],
+			[
+				'apiResolutions',
+				m.apiResolutions as string[] | undefined,
+				!!params.resolution,
+			],
+			['apiQuality', m.apiQuality as string[] | undefined, !!params.quality],
+		];
+		let modelBad = false;
+		for (const [field, catalogValues, liveHasParam] of checks) {
+			if (catalogValues?.length && !liveHasParam) {
+				console.log(
+					`  DIVERGE  ${m.id}: catálogo tem ${field} mas a API não suporta o parâmetro`,
+				);
+				modelBad = true;
+			}
+		}
+		if (modelBad) bad++;
+		else console.log(`  ok     ${m.id}`);
+	}
+	return bad;
+}
+
 function check(
 	label: string,
 	ids: string[],
@@ -71,7 +145,7 @@ async function main() {
 	const live = await fetchModelIds();
 	console.log(`OpenRouter respondeu com ${live.size} modelos.`);
 
-	const bad =
+	let bad =
 		check(
 			'Catálogo de IMAGEM',
 			IMAGE_MODELS_CATALOG.map((m) => m.id),
@@ -85,11 +159,14 @@ async function main() {
 			false,
 		);
 
+	const liveUnifiedImages = await fetchUnifiedImagesModels();
+	bad += checkUnifiedImagesCapabilities(liveUnifiedImages);
+
 	if (bad > 0) {
-		console.error(`\n${bad} id(s) inválido(s). NÃO mergear.`);
+		console.error(`\n${bad} problema(s) encontrado(s). NÃO mergear.`);
 		process.exit(1);
 	}
-	console.log('\nTodos os ids conferidos e vivos.');
+	console.log('\nTodos os ids e capabilities conferidos.');
 }
 
 main().catch((err) => {

@@ -170,10 +170,14 @@ export interface ToolDefinitionDoc {
 	return_variations?: number[];
 	/**
 	 * TRUE = `generateToolImage` manda SÓ a user message ao modelo, SEM
-	 * intermediação (sem `DEFAULT_IMAGE_SYSTEM_PROMPT`, sem `TEXT_LEAD`, sem
-	 * sufixo `FORMATO OBRIGATÓRIO`). A dimensão é garantida pelo sharp resize
-	 * (`fit:'cover'`). Escopado por tool — blocos IA extras (remover fundo,
-	 * colorizar, restaurar) não recebem a flag e mantêm o comportamento atual.
+	 * intermediação (sem `DEFAULT_IMAGE_SYSTEM_PROMPT`, sem `TEXT_LEAD`). O
+	 * sufixo `FORMATO OBRIGATÓRIO` continua indo (spec de formato, não de
+	 * estilo). Quando o modelo suporta (catálogo `unifiedImagesApi:true`), a
+	 * geração roteia pro endpoint dedicado da OpenRouter com
+	 * `aspect_ratio`/`resolution`/`quality` reais; o sharp resize
+	 * (`fit:'cover'`) garante a dimensão exata por cima disso. Escopado por
+	 * tool — blocos IA extras (remover fundo, colorizar, restaurar) não
+	 * recebem a flag e mantêm o comportamento atual.
 	 */
 	raw_prompt?: boolean;
 	/**

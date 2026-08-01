@@ -1,4 +1,12 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from 'vitest';
 
 // O bloco importa o cliente OpenRouter no topo; mockamos o módulo inteiro para
 // não tocar a rede nem exigir OPENROUTER_API_KEY real no CI.
@@ -80,67 +88,95 @@ describe('ai.generate_image', () => {
 		).toThrow();
 	});
 
-	describe('raw_prompt (sem intermediação)', () => {
-		it('não envia mensagem de system e manda o prompt cru (sem W×H, sem refs)', async () => {
-			create.mockResolvedValue(imageReply());
-			await run({ prompt: 'copo azul', raw_prompt: true });
-			const [body] = create.mock.calls[0] as [
-				{ messages: { role: string }[]; model: string },
-			];
-			expect(body.messages.map((m) => m.role)).toEqual(['user']);
-			// O texto do user é o último segmento do content multimodal.
-			const userMsg = body.messages[0] as unknown as {
-				content: { type: string; text?: string }[];
-			};
-			const textSeg = userMsg.content[userMsg.content.length - 1];
-			expect(textSeg.text).toBe('copo azul');
+	describe('raw_prompt (sem intermediação) — modelo com unifiedImagesApi (default)', () => {
+		// O modelo padrão (`google/gemini-3-pro-image-preview`) tem
+		// `unifiedImagesApi:true` no catálogo, então `raw_prompt` roteia pro
+		// `POST /v1/images` via `fetch` global (não mais `create`/chat.completions).
+		let fetchMock: ReturnType<typeof vi.fn>;
+
+		const unifiedImagesReply = () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({
+				data: [{ b64_json: TINY_PNG_B64, media_type: 'image/png' }],
+			}),
 		});
 
-		it('não adiciona TEXT_LEAD quando há refs (prompt definido vai cru)', async () => {
-			create.mockResolvedValue(imageReply());
+		beforeEach(() => {
+			fetchMock = vi.fn().mockResolvedValue(unifiedImagesReply());
+			vi.stubGlobal('fetch', fetchMock);
+		});
+
+		afterEach(() => {
+			vi.unstubAllGlobals();
+		});
+
+		it('chama POST /v1/images (não chat.completions) sem W×H, sem refs', async () => {
+			await run({ prompt: 'copo azul', raw_prompt: true });
+			expect(create).not.toHaveBeenCalled();
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe('https://openrouter.ai/api/v1/images');
+			const body = JSON.parse(init.body as string);
+			expect(body.model).toBe('google/gemini-3-pro-image-preview');
+			expect(body.prompt).toBe('copo azul');
+			expect(body.input_references).toBeUndefined();
+			expect(body.aspect_ratio).toBeUndefined();
+		});
+
+		it('não adiciona TEXT_LEAD quando há refs (prompt definido vai cru) — refs viram input_references', async () => {
 			const ref = Buffer.from('png-bytes');
 			await run({ prompt: 'copo azul', raw_prompt: true, image: ref });
-			const [body] = create.mock.calls[0] as [
-				{
-					messages: {
-						role: string;
-						content: { type: string; text?: string }[];
-					}[];
-				},
-			];
-			expect(body.messages.map((m) => m.role)).toEqual(['user']);
-			const userMsg = body.messages[0];
-			const textSeg = userMsg.content[userMsg.content.length - 1];
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			const body = JSON.parse(init.body as string);
 			// Sem o prefixo "Siga EXATAMENTE estas instruções..." do TEXT_LEAD.
-			expect(textSeg.text).toBe('copo azul');
-			expect(textSeg.text).not.toContain('autoritativo');
+			expect(body.prompt).toBe('copo azul');
+			expect(body.prompt).not.toContain('autoritativo');
+			expect(body.input_references).toHaveLength(1);
+			expect(body.input_references[0]).toEqual({
+				type: 'image_url',
+				image_url: { url: `data:image/png;base64,${ref.toString('base64')}` },
+			});
 		});
 
-		it('passa a dimensão (sufixo FORMATO) no raw_prompt com W×H — sem system, sem LEAD', async () => {
-			// A dimensão é spec de formato (não intermediação de estilo): o modelo
-			// precisa compor pra proporção certa pra o sharp NÃO cortar conteúdo.
-			create.mockResolvedValue(imageReply());
+		it('passa aspect_ratio/resolution REAIS + sufixo FORMATO no raw_prompt com W×H', async () => {
+			// A dimensão vira parâmetro real (não só texto): o modelo compõe na
+			// proporção certa pra o sharp NÃO precisar cortar conteúdo depois.
 			await run({
 				prompt: 'copo azul',
 				raw_prompt: true,
 				width: 2000,
 				height: 1000,
 			});
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			const body = JSON.parse(init.body as string);
+			expect(body.prompt).toContain('copo azul');
+			expect(body.prompt).toContain('FORMATO OBRIGATÓRIO');
+			expect(body.prompt).toContain('2:1');
+			expect(body.prompt).not.toContain('autoritativo');
+			expect(body.aspect_ratio).toBe('16:9');
+			expect(body.resolution).toBe('4K');
+		});
+	});
+
+	describe('raw_prompt com modelo SEM unifiedImagesApi (fallback pro legado)', () => {
+		it('cai em /chat/completions quando o model override não está no catálogo', async () => {
+			create.mockResolvedValue(imageReply());
+			const fetchMock = vi.fn();
+			vi.stubGlobal('fetch', fetchMock);
+			await run({
+				prompt: 'copo azul',
+				raw_prompt: true,
+				model: 'algum/modelo-desconhecido',
+			});
+			expect(create).toHaveBeenCalledTimes(1);
+			expect(fetchMock).not.toHaveBeenCalled();
 			const [body] = create.mock.calls[0] as [
-				{
-					messages: {
-						role: string;
-						content: { type: string; text?: string }[];
-					}[];
-				},
+				{ messages: { role: string }[]; model: string },
 			];
+			expect(body.model).toBe('algum/modelo-desconhecido');
 			expect(body.messages.map((m) => m.role)).toEqual(['user']);
-			const userMsg = body.messages[0];
-			const textSeg = userMsg.content[userMsg.content.length - 1];
-			expect(textSeg.text).toContain('copo azul');
-			expect(textSeg.text).toContain('FORMATO OBRIGATÓRIO');
-			expect(textSeg.text).toContain('2:1');
-			expect(textSeg.text).not.toContain('autoritativo');
+			vi.unstubAllGlobals();
 		});
 	});
 
