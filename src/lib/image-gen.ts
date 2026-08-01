@@ -10,6 +10,16 @@ import { ToolEngineError } from './tool-errors.js';
  */
 const IMAGE_MODEL =
 	process.env.OPENROUTER_IMAGE_MODEL ?? 'google/gemini-3-pro-image-preview';
+
+/**
+ * Qual modelo uma geração VAI de fato usar, dado (ou não) o override da tool.
+ * Exportado para quem precisa REGISTRAR a escolha — a galeria do Estúdio grava
+ * o modelo de cada imagem, e gravar `null` quando o admin não escolheu nada
+ * seria arquivar uma informação falsa: alguma coisa gerou aquela imagem.
+ */
+export function resolveImageModel(override?: string): string {
+	return override?.trim() || IMAGE_MODEL;
+}
 // 240s: o topo de qualidade da OpenAI (gpt-5.4-image-2) faz reasoning + imagem
 // e leva ~150-180s por geração; o gpt-5-image ~100s. Ambos estouravam tetos
 // menores → 504. O gateway (undici + proxy timeout explícito) e o front (sem
@@ -92,6 +102,16 @@ async function downloadAsDataUrl(
  *
  * `opts.systemPromptOverride` — substitui o system prompt laser padrão
  * (decisão: replace total). Se ausente/vazio, usa `DEFAULT_IMAGE_SYSTEM_PROMPT`.
+ *
+ * `opts.rawPrompt` — quando true, manda SÓ a user message ao modelo: SEM system
+ * prompt, SEM `TEXT_LEAD` (prefixo de refs) e SEM o sufixo `FORMATO OBRIGATÓRIO`
+ * de dimensão. A dimensão exata é garantida pelo sharp resize. Escopado por
+ * tool (Prompts Mágicos curados) — ai-extra não passa a flag e mantém o default.
+ *
+ * `opts.fit` — estratégia do sharp resize: `'fill'` (default, legado — distorce
+ * pro W×H exato, mas o sufixo no prompt faz o modelo respeitar a proporção) ou
+ * `'cover'` (crop sem distorção — usado com `rawPrompt`, onde o modelo não
+ * recebe hint de proporção e tenderia a quadrado; `fill` distorceria).
  */
 export async function generateToolImage(
 	prompt: string,
@@ -102,6 +122,8 @@ export async function generateToolImage(
 		systemPromptOverride?: string;
 		width?: number;
 		height?: number;
+		rawPrompt?: boolean;
+		fit?: 'fill' | 'cover' | 'contain';
 	},
 ): Promise<GenImageResult> {
 	if (!process.env.OPENROUTER_API_KEY) {
@@ -113,8 +135,13 @@ export async function generateToolImage(
 	let text = prompt.trim();
 	if (!text) throw new ToolEngineError(400, 'Prompt vazio.');
 
-	// Dimensões EXATAS (arte de gravação a laser): reforça a proporção no prompt
-	// (o modelo tende a respeitar) e o tamanho é garantido no pós (sharp resize).
+	// Dimensões EXATAS (arte de gravação a laser): passa a proporção pro modelo
+	// no prompt (ele compõe PRAQUELE formato) e o tamanho exato é garantido no
+	// pós (sharp resize). Sem este sufixo, o modelo gera ~quadrado e o sharp
+	// `fit:'cover'` CORTA conteúdo pra encaixar — por isso o sufixo vale até no
+	// `rawPrompt` (a dimensão é spec de formato, não intermediação de estilo).
+	// `rawPrompt` continua sem system prompt e sem TEXT_LEAD; só este sufixo de
+	// dimensão é adicionado ao prompt do admin.
 	const outW = opts?.width;
 	const outH = opts?.height;
 	if (outW && outH) {
@@ -129,8 +156,13 @@ export async function generateToolImage(
 		text = `${text}\n\nFORMATO OBRIGATÓRIO DA IMAGEM: proporção ${ratio} — orientação ${orient} (${outW}×${outH} px). Componha preenchendo TODO esse formato, sem margens/bordas vazias e sem distorcer.`;
 	}
 
-	const model = opts?.model?.trim() || IMAGE_MODEL;
-	const systemPrompt = buildImageSystemPrompt(opts?.systemPromptOverride);
+	const model = resolveImageModel(opts?.model);
+	// `rawPrompt`: sem intermediação — só a user message. ai-extra não passa a
+	// flag e continua com o system prompt laser padrão.
+	const useSystem = !opts?.rawPrompt;
+	const systemPrompt = useSystem
+		? buildImageSystemPrompt(opts?.systemPromptOverride)
+		: null;
 
 	const timeout = AbortSignal.timeout(GEN_TIMEOUT_MS);
 	const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -149,7 +181,9 @@ export async function generateToolImage(
 	// O TEXT_LEAD fala "as imagens acima são referência" — só faz sentido quando
 	// HÁ imagens. Sem refs (geração só-texto, ex.: Prompts Mágicos), mandar isso
 	// é ruído confuso que pode empobrecer a composição → manda o prompt limpo.
-	const userText = refs.length > 0 ? `${TEXT_LEAD}${text}` : text;
+	// `rawPrompt` pula o LEAD mesmo com refs — o prompt definido vai cru ao modelo.
+	const userText =
+		!opts?.rawPrompt && refs.length > 0 ? `${TEXT_LEAD}${text}` : text;
 	content.push({ type: 'text', text: userText });
 	const body = {
 		model,
@@ -157,8 +191,10 @@ export async function generateToolImage(
 		// temperature; passar params desconhecidos pode 400. O system prompt
 		// + a reordenação (texto por último) são os levers de aderência.
 		messages: [
-			{ role: 'system', content: systemPrompt },
-			{ role: 'user', content },
+			...(useSystem
+				? [{ role: 'system' as const, content: systemPrompt }]
+				: []),
+			{ role: 'user' as const, content },
 		],
 		modalities: ['image', 'text'],
 	};
@@ -170,7 +206,8 @@ export async function generateToolImage(
 			model,
 			promptLen: text.length,
 			refs: refs.length,
-			hasSystem: true,
+			hasSystem: useSystem,
+			rawPrompt: !!opts?.rawPrompt,
 			modelOverride: !!opts?.model,
 			systemOverride:
 				!!opts?.systemPromptOverride &&
@@ -281,12 +318,14 @@ export async function generateToolImage(
 
 	// Redimensiona pro tamanho EXATO pedido (gravação a laser precisa ser exata).
 	// `fit: 'cover'` dá W×H exato cortando o excedente (centralizado) em vez de
-	// esticar — o modelo nem sempre respeita a proporção pedida no prompt, e
-	// `fill` distorcia a imagem inteira nesse caso.
+	// esticar — o modelo nem sempre respeita a proporção pedida no prompt (fix
+	// já em dev, `45fc330`), e `fill` distorcia a imagem inteira nesse caso.
+	// `opts?.fit` continua como escape hatch caso algum caller precise de outro
+	// modo (ex.: `fill` explícito), mas o default seguro agora é `cover`.
 	let sharpPipe = sharp(decoded);
 	if (outW && outH) {
 		sharpPipe = sharpPipe.resize(outW, outH, {
-			fit: 'cover',
+			fit: opts?.fit ?? 'cover',
 			position: 'centre',
 		});
 	}

@@ -33,37 +33,57 @@ const MAX_PIPELINE_NODES = 32;
  * Compat com tools de 1 imagem: se existe EXATAMENTE 1 input de imagem e nenhum
  * arquivo casa pelo nome, o único arquivo enviado (qualquer fieldname) é atribuído
  * a esse input — cobre o caso de o front mandar o arquivo sob um fieldname genérico.
+ *
+ * `type:'file'` (DXF/SVG/…) é tratado como imagem no transporte — também vira
+ * Buffer na bag — mas com DUAS diferenças deliberadas:
+ *   1. NÃO participa do fallback de 1 imagem. Adivinhar qual input recebe um
+ *      arquivo genérico é barato para foto e caro para CAD: um DXF caindo no
+ *      input errado gera um orçamento silenciosamente errado.
+ *   2. Publica `input.<nome>__filename` e `input.<nome>__mime` na bag, para o
+ *      bloco distinguir DXF de SVG sem farejar bytes.
  */
 export function coerceInputs(
 	inputSpec: Record<string, InputSpec>,
 	fields: Record<string, string>,
-	files: Record<string, Buffer>,
+	files?: Record<string, Buffer> | null,
+	fileMeta?: Record<string, { filename?: string; mime?: string }> | null,
 ): Bag {
 	const bag: Bag = Object.create(null);
+	// Tolera ausência: `coerceInputs` é exportado e chamado por tools sem arquivo
+	// nenhum. `Object.entries(null)` lançaria um TypeError opaco no meio do run.
+	const fileMap = files ?? {};
+	const metaMap = fileMeta ?? {};
 
 	const imageInputNames = Object.entries(inputSpec)
 		.filter(([, spec]) => spec.type === 'image')
 		.map(([name]) => name);
-	const fileEntries = Object.entries(files);
+	const fileEntries = Object.entries(fileMap);
 	// Fallback de 1 imagem: só quando há um único input de imagem, um único arquivo
 	// enviado, e esse arquivo NÃO casa por nome com o input (fieldname genérico).
 	const singleImageFallback =
 		imageInputNames.length === 1 &&
 		fileEntries.length === 1 &&
-		!(imageInputNames[0] in files)
+		!(imageInputNames[0] in fileMap)
 			? fileEntries[0][1]
 			: null;
 
 	for (const [name, spec] of Object.entries(inputSpec)) {
-		if (spec.type === 'image') {
-			const buf = files[name] ?? singleImageFallback ?? null;
+		if (spec.type === 'image' || spec.type === 'file') {
+			const isFile = spec.type === 'file';
+			const buf =
+				fileMap[name] ?? (isFile ? null : (singleImageFallback ?? null));
 			if (spec.required && !buf) {
 				throw new ToolEngineError(
 					400,
-					`input '${name}' (imagem) é obrigatório`,
+					`input '${name}' (${isFile ? 'arquivo' : 'imagem'}) é obrigatório`,
 				);
 			}
 			bag[`input.${name}`] = buf;
+			if (isFile) {
+				const meta = metaMap[name] ?? {};
+				bag[`input.${name}__filename`] = meta.filename ?? null;
+				bag[`input.${name}__mime`] = meta.mime ?? null;
+			}
 			continue;
 		}
 
