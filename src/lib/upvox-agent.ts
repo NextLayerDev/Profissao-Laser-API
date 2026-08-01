@@ -58,3 +58,56 @@ export async function spendAgent(
 		return null;
 	}
 }
+
+/* ───────────────────────── OmniResposta (0,2 voxxys/mensagem) ─────────────────────────
+ * Débito/estorno por MENSAGEM respondida pela IA do OmniResposta. Mesmo fluxo do
+ * spendAgent, mas com ref_type='omni_message' (o upvox tem partial unique por
+ * ref_id → retry do mesmo webhook nunca cobra duas vezes; refund idem). Nasce de
+ * webhook, então NÃO há Bearer — o upvox confia no x-user-id sem authorization
+ * (requireAuth só revalida quando há header). ref_id = id da mensagem de saída. */
+
+export async function spendOmni(
+	customerId: string,
+	args: { ref_id: string; vox_cost: number },
+): Promise<AgentSpendResult | { insufficient: true } | null> {
+	try {
+		const res = await fetch(`${externalApiUrl}/v1/me/agent/spend`, {
+			method: 'POST',
+			headers: asCustomer(customerId),
+			body: JSON.stringify({ ...args, ref_type: 'omni_message' }),
+		});
+		if (res.status === 402) return { insufficient: true };
+		if (!res.ok) {
+			console.error(
+				`[upvox-agent] omni spend → HTTP ${res.status} (EXTERNAL_API_URL=${externalApiUrl})`,
+			);
+			return null;
+		}
+		return (await res.json()) as AgentSpendResult;
+	} catch (err) {
+		console.error('[upvox-agent] omni spend falhou:', err);
+		return null;
+	}
+}
+
+/** Estorno best-effort (envio falhou DEPOIS do débito). Idempotente por ref_id. */
+export async function refundOmni(
+	customerId: string,
+	args: { ref_id: string; vox_cost: number },
+): Promise<boolean> {
+	try {
+		const res = await fetch(`${externalApiUrl}/v1/me/agent/refund`, {
+			method: 'POST',
+			headers: asCustomer(customerId),
+			body: JSON.stringify({ ...args, ref_type: 'omni_message' }),
+		});
+		if (!res.ok) {
+			console.error(`[upvox-agent] omni refund → HTTP ${res.status}`);
+			return false;
+		}
+		return true;
+	} catch (err) {
+		console.error('[upvox-agent] omni refund falhou:', err);
+		return false;
+	}
+}

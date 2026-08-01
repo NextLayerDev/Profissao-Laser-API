@@ -165,6 +165,43 @@ export async function fetchEntitlements(
 }
 
 /**
+ * Permissões efetivas do usuário no upvox (GET /v1/me/permissions), shape
+ * `{ isSuperAdmin|is_super_admin, permissions: string[] }`. Usado pelo gate
+ * fino do OmniResposta (staff precisa de `omniresposta.view`). `null` em
+ * falha (o chamador decide fail-open/closed).
+ */
+export interface ExternalPermissions {
+	isSuperAdmin: boolean;
+	permissions: string[];
+}
+
+const permissionsCache = tokenCache<ExternalPermissions | null>(AUTH_CACHE_TTL);
+
+export async function fetchMyPermissions(
+	token: string,
+): Promise<ExternalPermissions | null> {
+	return permissionsCache(token, async () => {
+		try {
+			const res = await fetch(`${externalApiUrl}/v1/me/permissions`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			if (!res.ok) return null;
+			const raw = (await res.json()) as {
+				isSuperAdmin?: boolean;
+				is_super_admin?: boolean;
+				permissions?: string[];
+			};
+			return {
+				isSuperAdmin: !!(raw.isSuperAdmin || raw.is_super_admin),
+				permissions: Array.isArray(raw.permissions) ? raw.permissions : [],
+			};
+		} catch {
+			return null;
+		}
+	});
+}
+
+/**
  * Atualiza o usuário no upvox (PATCH /v1/me) repassando o Bearer do cliente.
  * O nome é a fonte de verdade no upvox pós-migração. Lança em falha.
  */

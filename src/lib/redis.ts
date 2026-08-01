@@ -92,3 +92,16 @@ export async function incrWithTtl(
 		return -1; // fail-open
 	}
 }
+
+/**
+ * DEL best-effort — usado pra soltar locks (ex.: debounce do OmniResposta)
+ * antes do TTL. Fail-open: sem Redis/erro é no-op (o TTL expira sozinho).
+ */
+export async function delKey(key: string): Promise<void> {
+	if (!sharedClient) return;
+	try {
+		await sharedClient.del(key);
+	} catch {
+		// TTL cobre
+	}
+}

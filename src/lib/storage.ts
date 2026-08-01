@@ -39,6 +39,24 @@ async function deleteByUrl(url: string): Promise<void> {
 	}
 }
 
+/** Mídia do OmniResposta (inbound re-hospedada + anexos enviados + KB). */
+export async function uploadOmniMedia(
+	instanceId: string,
+	buffer: Buffer,
+	fileName: string,
+	mimetype: string,
+): Promise<string> {
+	const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
+	const path = `${instanceId}/${Date.now()}-${crypto
+		.randomBytes(4)
+		.toString('hex')}-${safe}`;
+	return upload('omni-media', buffer, path, mimetype);
+}
+
+export async function deleteOmniMediaByUrl(url: string): Promise<void> {
+	return deleteByUrl(url);
+}
+
 export async function uploadMaterialFile(
 	buffer: Buffer,
 	path: string,

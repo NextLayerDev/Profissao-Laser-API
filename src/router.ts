@@ -26,6 +26,7 @@ import { machineRoute } from './routes/machine.js';
 import { mentorshipRoute } from './routes/mentorship.js';
 import { mercadoLivreOAuthRoute } from './routes/mercado-livre-oauth.js';
 import { moduleRoute } from './routes/module.js';
+import { omniRoute } from './routes/omni.js';
 import { parameterRoute } from './routes/parameter.js';
 import { paymentLinkRoute } from './routes/payment-link.js';
 import { previaRoute } from './routes/previa.js';
@@ -107,4 +108,5 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(mercadoLivreOAuthRoute);
 	app.register(mercadoLivreWebhookRoute);
 	app.register(mlSellerRoute);
+	app.register(omniRoute);
 };
