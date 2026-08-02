@@ -53,7 +53,25 @@ export const vectorizeController = async (
 			return reply.status(400).send({ message: 'File is required' });
 		}
 
-		const params = parseVectorizeParams(fields);
+		// Grava `subject` também no caminho SEM IA — sem isso, todo vetor criado
+		// aqui (a maioria: "Vetorizar" direto, sem custo de IA) fica com
+		// `subject: null`, e a inversão ("Invertido") cai na heurística de pixel
+		// `chooseInvertMode()`, que erra em conteúdo hachurado de baixa cobertura
+		// de tinta (ver comentário em `svg-negative.ts`). `analyzeImage` já roda
+		// local (sharp, sem custo de IA) — mesma classe usada pro router
+		// Automático, aqui só decide foto (tom contínuo) vs logo (arte chapada).
+		// Vetor colorido segue marcado como 'color' (mesma convenção do caminho de
+		// IA) — não teria por que dizer foto/logo, e a inversão geométrica já
+		// recusa multicor de qualquer forma.
+		let subject: 'photo' | 'logo' | 'color' = 'color';
+		if (fields.mode !== 'color') {
+			const profile = await analyzeImage(fileBuffer);
+			subject =
+				profile.class === 'photo' || profile.class === 'grayscale_tonal'
+					? 'photo'
+					: 'logo';
+		}
+		const params = parseVectorizeParams({ ...fields, subject });
 		const { data: result, error } = await vectorizeService.vectorize(
 			customerId,
 			{ buffer: fileBuffer, filename, mimetype, params },
@@ -238,6 +256,11 @@ export const aiLineartController = async (
 				...fields,
 				...recommended,
 				...(wantsColor ? { mode: 'color' } : {}),
+				// Mesma gravação do caminho de sucesso (linha ~275): sem isso o vetor
+				// fica com `subject: null` e a inversão cai na heurística de pixel
+				// (chooseInvertMode), que erra em foto hachurada de baixa cobertura de
+				// tinta e entrega o retângulo geométrico em vez da silhueta.
+				subject: wantsColor ? 'color' : subject,
 			});
 			const { data: fbResult, error: fbError } =
 				await vectorizeService.vectorize(customerId, {
