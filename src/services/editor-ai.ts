@@ -12,8 +12,10 @@ import type {
 	RemoveBackgroundRequest,
 } from '../types/editor-ai.js';
 
-// Modelo do editor (porteira:325)
-const EDITOR_MODEL = 'google/gemini-3-pro-image-preview';
+// Modelo do editor (porteira:325). Exportado porque é FIXO: a escolha de modelo
+// que o admin faz na Fábrica não vale para a edição com máscara, e quem registra
+// a imagem (galeria do Estúdio) precisa gravar o modelo que de fato rodou.
+export const EDITOR_MODEL = 'google/gemini-3-pro-image-preview';
 
 class EditorAiService {
 	// ── /editor/ai (porteira:231-437) ────────────────────────────────────────

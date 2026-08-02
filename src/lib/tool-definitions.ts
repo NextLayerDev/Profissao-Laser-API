@@ -16,12 +16,24 @@ if (!externalApiUrl) {
 
 /** Tipo de um input declarado na definition (estrutural; o bloco revalida). */
 export interface InputSpec {
-	type: 'image' | 'enum' | 'number' | 'int' | 'bool' | 'string';
+	/**
+	 * `'file'` = arquivo NÃO-imagem (DXF, SVG, …). Chega como Buffer na bag,
+	 * igual a `'image'`, mas é validado por EXTENSÃO (ver `accept`) em vez de
+	 * mimetype, e não entra no fallback de "1 imagem única".
+	 */
+	type: 'image' | 'enum' | 'number' | 'int' | 'bool' | 'string' | 'file';
 	required?: boolean;
 	default?: unknown;
 	options?: unknown[];
 	min?: number;
 	max?: number;
+	/**
+	 * Whitelist de extensões aceitas por um input `type:'file'` (sem o ponto:
+	 * `['dxf','svg']`). Mimetype de CAD é caótico — o mesmo `.dxf` chega como
+	 * `application/dxf`, `image/vnd.dxf`, `application/octet-stream` ou
+	 * `text/plain` dependendo do sistema do aluno — então a extensão é o sinal
+	 * confiável e o mimetype fica como sinal secundário.
+	 */
 	accept?: string[];
 }
 
@@ -88,6 +100,26 @@ export interface BankConfig {
 	inject?: Record<string, { from: string; substitute?: boolean }>;
 }
 
+/**
+ * Um "Tipo de Criação" do Passo 1 (Prompts Mágicos). O cliente vê `label` + `icon`;
+ * a resolução (`width`×`height`) é injetada no run por baixo dos panos via
+ * `creation_id`. `active=false` oculta o card sem perder a definição.
+ */
+export interface Creation {
+	/** Slug estável (ex.: `copos-360`); não muda após criado. */
+	id: string;
+	/** Nome amigável exibido no card (ex.: "Copos 360º"). */
+	label: string;
+	/** Nome do ícone (lucide) exibido acima do texto no card. Opcional. */
+	icon?: string;
+	/** Largura exata em px (injetada no `ai.generate_image`). */
+	width: number;
+	/** Altura exato em px (injetada no `ai.generate_image`). */
+	height: number;
+	/** Default true; false omite o card do cliente mas preserva o cadastro. */
+	active?: boolean;
+}
+
 export interface ToolDefinitionDoc {
 	schemaVersion?: number;
 	input?: Record<string, InputSpec>;
@@ -122,6 +154,52 @@ export interface ToolDefinitionDoc {
 	 */
 	image_width?: number;
 	image_height?: number;
+	/**
+	 * "Tipos de Criação" oferecidos ao cliente no Passo 1 (Prompts Mágicos).
+	 * Cada item vira um card visual (ícone + nome amigável); a resolução
+	 * (`width`×`height`) é HIDDEN do usuário e injetada no run via `creation_id`.
+	 * Ausente/vazio → cai em `image_width/height` legado (ou saída nativa).
+	 * `active=false` oculta o card mas preserva a definição.
+	 */
+	creations?: Creation[];
+	/**
+	 * Quantidades de variações oferecidas no Passo 3 (ex.: [1, 2, 4]).
+	 * O PRIMEIRO elemento é o default selecionado. Ausente = [1] (sem escolha).
+	 * 1 run = 1 billing independente de N — o admin oferece 2x/4x como benefício.
+	 */
+	return_variations?: number[];
+	/**
+	 * TRUE = `generateToolImage` manda SÓ a user message ao modelo, SEM
+	 * intermediação (sem `DEFAULT_IMAGE_SYSTEM_PROMPT`, sem `TEXT_LEAD`). O
+	 * sufixo `FORMATO OBRIGATÓRIO` continua indo (spec de formato, não de
+	 * estilo). Quando o modelo suporta (catálogo `unifiedImagesApi:true`), a
+	 * geração roteia pro endpoint dedicado da OpenRouter com
+	 * `aspect_ratio`/`resolution`/`quality` reais; o sharp resize
+	 * (`fit:'cover'`) garante a dimensão exata por cima disso. Escopado por
+	 * tool — blocos IA extras (remover fundo, colorizar, restaurar) não
+	 * recebem a flag e mantêm o comportamento atual.
+	 */
+	raw_prompt?: boolean;
+	/**
+	 * Override do modelo de TEXTO usado pelos nós `ai.text`. Espelha `model`
+	 * (que é só de imagem). Validado contra `TEXT_MODELS_CATALOG` no
+	 * `tool-run.ts`; id fora do catálogo cai no padrão com warning.
+	 */
+	text_model?: string;
+	/**
+	 * System prompt opcional dos nós `ai.text`. SUBSTITUI (não concatena) o
+	 * `system` autorado no nó do pipeline — mesma semântica de `system_prompt`
+	 * para imagem, para o admin conseguir ajustar o comportamento da tool sem
+	 * reeditar o pipeline.
+	 */
+	text_system_prompt?: string;
+	/**
+	 * Datasets declarados por esta tool (ver `lib/tool-collections.ts`). É o
+	 * ponto de extensão de DADO da Fábrica: uma ferramenta de catálogo inteira
+	 * (Metallic, materiais, velocidades de corte) sai daqui sem código e sem
+	 * DDL. `collections.default` é o `bank` legado.
+	 */
+	collections?: import('./tool-collections.js').CollectionsConfig;
 }
 
 export interface ToolDefinitionRow {
@@ -145,21 +223,35 @@ export class ToolDefinitionLoadError extends Error {
 	}
 }
 
-/** Carrega a definition PUBLICADA por key (cacheada 60s). */
+/**
+ * Carrega a definition por key (cacheada 60s).
+ *
+ * `includeDraft` só funciona para quem é admin do outro lado (a upvox valida o
+ * papel; aqui só repassamos o pedido). Serve para a equipe exercitar uma tool
+ * nova antes de publicá-la — o publish é ato de produção, porque o banco de
+ * definitions é compartilhado dev/prod.
+ *
+ * A chave de cache MUDA quando se pede rascunho: sem isso, uma leitura de
+ * staff gravaria o rascunho no cache que os alunos leem.
+ */
 export async function loadPublishedToolDefinition(
 	key: string,
 	customerId: string,
 	authHeader?: string,
+	includeDraft = false,
 ): Promise<ToolDefinitionRow> {
-	return cache.cacheAside(`tooldef:${key}:v1`, 60, async () => {
+	const cacheKey = includeDraft
+		? `tooldef:${key}:draft:v1`
+		: `tooldef:${key}:v1`;
+	return cache.cacheAside(cacheKey, 60, async () => {
 		const headers: Record<string, string> = {
 			'x-user-id': customerId,
-			'x-user-role': 'customer',
+			'x-user-role': includeDraft ? 'admin' : 'customer',
 		};
 		if (authHeader) headers.authorization = authHeader;
 
 		const res = await fetch(
-			`${externalApiUrl}/v1/tool-definition/${encodeURIComponent(key)}`,
+			`${externalApiUrl}/v1/tool-definition/${encodeURIComponent(key)}${includeDraft ? '?draft=1' : ''}`,
 			{ headers },
 		);
 		if (res.status === 404) {

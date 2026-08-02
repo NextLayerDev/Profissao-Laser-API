@@ -6,7 +6,10 @@ import {
 } from '../controllers/tool-run.js';
 import { authenticateVectorizacao } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
-import { toolRunResultSchema } from '../types/tool-run.js';
+import {
+	toolPreviewResultSchema,
+	toolRunResultSchema,
+} from '../types/tool-run.js';
 
 export async function toolRunRoute(server: FastifyInstance) {
 	server.post(
@@ -55,18 +58,19 @@ export async function toolRunRoute(server: FastifyInstance) {
 	);
 
 	// Preview NÃO cobrado (feedback ao vivo dos sliders no estúdio): roda o
-	// pipeline sem nós de saída/IA, sem debitar nem gravar. Devolve só { preview }.
+	// pipeline sem nós de saída/IA, sem debitar nem gravar. Devolve `{ preview }`
+	// e, nas tools de CAD, `{ assembly }` — a montagem 3D não é imagem.
 	server.post(
 		'/api/tool-run/:key/preview',
 		{
 			preHandler: [authenticateVectorizacao],
 			schema: {
 				description:
-					'Preview ao vivo NÃO COBRADO de uma tool (estúdio): imagem reduzida, sem storage, sem IA. Staff pode mandar `definition` inline. Resposta: `{ preview }` (data URL base64 ou null).',
+					'Preview ao vivo NÃO COBRADO de uma tool (estúdio): imagem reduzida, sem storage, sem IA. Staff pode mandar `definition` inline. Resposta: `{ preview }` (data URL base64 ou null) e, em tools de CAD, `{ assembly }` (montagem 3D do bloco `cad.assembly`, para o viewport).',
 				consumes: ['multipart/form-data'],
 				params: z.object({ key: z.string().min(1).max(60) }),
 				response: {
-					200: z.object({ preview: z.string().nullable() }),
+					200: toolPreviewResultSchema,
 					400: ErrorSchema,
 					403: ErrorSchema,
 					404: ErrorSchema,

@@ -155,8 +155,49 @@ export const aiStudioBlock: ToolBlock<z.infer<typeof aiStudioSchema>> = {
 	},
 };
 
+/* ─────────────────────────── cad.generate ───────────────────────────
+ * Modelo de CAD paramétrico escolhido por dropdown (uma tool-mãe cobre todos os
+ * geradores). Cada gerador tem params PRÓPRIOS — e é por isso que este schema é
+ * `passthrough`: o que a tela mandou passa inteiro, e o `safeParse` do bloco
+ * filho é quem aplica default, converte string e descarta o que não é dele.
+ * Com `strip` (o default do zod) todo param específico do gerador morreria aqui
+ * e a churrasqueira sairia sempre no tamanho padrão. */
+const CAD_MAP: Record<string, string> = {
+	churrasqueira: 'cad.bbq',
+	caixa: 'cad.box',
+	trofeu: 'cad.trophy',
+	medalha: 'cad.medal',
+};
+
+const cadGenerateSchema = z
+	.object({ modelo: z.string().default('caixa') })
+	.passthrough();
+
+export const cadGenerateBlock: ToolBlock<z.infer<typeof cadGenerateSchema>> = {
+	id: 'cad.generate',
+	category: 'cad',
+	description:
+		'Gera o desenho paramétrico do modelo escolhido (caixa, churrasqueira…) — dispatcher dos geradores cad.*.',
+	paramsSchema: cadGenerateSchema,
+	async run(ctx, params) {
+		const { modelo, ...resto } = params;
+		const target = CAD_MAP[modelo];
+		// Modelo desconhecido é ERRO, não identidade: um dispatcher de CAD não tem
+		// "passa direto" (não existe desenho de entrada), e devolver vazio faria a
+		// tool falhar lá na frente, no nesting, com uma mensagem que não ajuda.
+		if (!target) {
+			throw new ToolEngineError(
+				400,
+				`Modelo de CAD desconhecido: "${modelo}". Use um destes: ${Object.keys(CAD_MAP).join(', ')}.`,
+			);
+		}
+		return delegate(ctx, target, resto);
+	},
+};
+
 export const dispatchBlocks: ToolBlock[] = [
 	imageEffectBlock,
 	imageDitherBlock,
 	aiStudioBlock,
+	cadGenerateBlock,
 ];

@@ -32,6 +32,39 @@ export async function sendPasswordResetEmail(email: string, resetLink: string) {
 	});
 }
 
+/**
+ * Avisa o PROFISSIONAL que o link público dele parou de orçar por falta de
+ * saldo. O cliente final recebeu uma mensagem neutra e foi embora sem preço —
+ * quem precisa saber o motivo é o dono, e por e-mail, porque ele não está na
+ * requisição.
+ *
+ * Disparado com `setImmediate` pelo controller: SMTP não pode segurar a
+ * resposta do visitante, e uma falha de e-mail não pode virar erro dele.
+ */
+export async function sendOrcamentoIndisponivelEmail(params: {
+	to: string;
+	slug: string;
+	titulo: string;
+}) {
+	const { to, slug, titulo } = params;
+	await transporter.sendMail({
+		from: FROM,
+		// Sem BCC interno: o assunto é a conta do cliente, não da casa.
+		to,
+		subject: 'Seu link de orçamento parou de responder',
+		html: `
+      <p>Olá,</p>
+      <p>Um cliente tentou pedir um orçamento pelo seu link
+        <strong>${titulo}</strong> (<code>${slug}</code>) e o cálculo não pôde
+        ser feito: <strong>sua conta está sem voxxys ou sem assinatura ativa</strong>.</p>
+      <p>Ele recebeu apenas um aviso genérico — não mostramos a ele nada sobre a
+        sua conta.</p>
+      <p>Assim que você recarregar, o link volta a orçar sozinho.</p>
+      <p>Equipe Profissão Laser</p>
+    `,
+	});
+}
+
 export async function sendProvisioningCompleteEmail(params: {
 	to: string;
 	companyName: string;
