@@ -336,7 +336,14 @@ export async function chooseInvertMode(
 			? ((maxX - minX + 1) * (maxY - minY + 1)) / N
 			: 0;
 
-	return survivalErode2 < 0.25 && occ > 0.08 && bboxCoverage > 0.5
+	// `occ` só precisa descartar imagem quase em branco (o `occ === 0` acima já
+	// pega o caso zero) — quem realmente distingue hachura fina (silhueta) de
+	// forma sólida de logo (geométrico) é `survivalErode2`: um traço de 1px
+	// desaparece por completo numa erosão de 2px (sobra 0%), uma forma chapada
+	// sobrevive. Testado: um retrato hachurado com 5,6% de tinta tinha
+	// survivalErode2=0 e bboxCoverage>0.5 — só o limiar de 8% (alto demais)
+	// barrava. Medido com hachura sintética de 1px em várias densidades.
+	return survivalErode2 < 0.25 && occ > 0.02 && bboxCoverage > 0.5
 		? 'silhouette'
 		: 'geometric';
 }
