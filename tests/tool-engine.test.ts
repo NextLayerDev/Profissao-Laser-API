@@ -124,6 +124,29 @@ describe('projectOutput', () => {
 			savable: true,
 		});
 	});
+
+	it('projeta array retornado por ref (variações de imagem)', () => {
+		// Saída `images: "gen.images"` → resolveValue devolve o array da bag
+		// intacto (não é array de STRINGS, é um array de objetos vindo do bloco).
+		const bag: Record<string, unknown> = Object.create(null);
+		bag['gen.images'] = [{ pngBase64: 'data:1' }, { pngBase64: 'data:2' }];
+		bag['gen.pngBase64'] = 'data:1';
+		const heads = new Set(['input', 'gen']);
+		const out = projectOutput(
+			{
+				primary: 'gen.pngBase64',
+				preview: 'gen.pngBase64',
+				images: 'gen.images',
+			},
+			bag,
+			heads,
+		);
+		expect(out.images).toEqual([
+			{ pngBase64: 'data:1' },
+			{ pngBase64: 'data:2' },
+		]);
+		expect(out.primary).toBe('data:1');
+	});
 });
 
 describe('executeTool', () => {

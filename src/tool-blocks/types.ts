@@ -16,6 +16,17 @@ export interface BlockRunContext {
 	authHeader?: string;
 	/** Aborta o run (timeout/cancelamento). Reservado p/ marcos seguintes. */
 	signal?: AbortSignal;
+	/**
+	 * Definition JÁ carregada, para o bloco não ir buscá-la de novo.
+	 *
+	 * Existe por causa do LINK PÚBLICO de orçamento: lá não há Bearer do dono
+	 * (o visitante não tem conta), e `loadPublishedToolDefinition` fala com o
+	 * upvox por HTTP — que, com `EXTERNAL_API_URL` apontando para o gateway,
+	 * exige o Bearer e devolveria 401. A rota pública lê a definition direto do
+	 * banco do upvox (cliente de serviço) e a injeta aqui. Ausente = o bloco
+	 * carrega sozinho, como sempre fez.
+	 */
+	toolDoc?: unknown;
 }
 
 /**

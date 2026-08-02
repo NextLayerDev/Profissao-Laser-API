@@ -14,7 +14,36 @@ import { routes } from './router.js';
 
 initSentry();
 
-const app = fastify().withTypeProvider<ZodTypeProvider>();
+/**
+ * `TRUST_PROXY` decide se `request.ip` pode vir de `x-forwarded-for`.
+ *
+ * PRECISA SER DECIDIDO NO DEPLOY, e é o link público de orçamento
+ * (`routes/public-quote.ts`) que introduz a consequência:
+ *
+ *   • DESLIGADO atrás de um reverse proxy → `request.ip` é o IP DO PROXY para
+ *     todo mundo. O teto por IP (6/h) deixa de ser "por visitante" e vira um
+ *     teto GLOBAL do endpoint: o sétimo orçamento da hora, de qualquer pessoa
+ *     em qualquer link, leva 429. A feature não funciona.
+ *
+ *   • LIGADO sem proxy na frente → qualquer cliente escreve o próprio
+ *     `x-forwarded-for` e o teto por IP vira enfeite.
+ *
+ * Por isso o default é DESLIGADO (o comportamento de hoje, sem mudança) e o
+ * valor é explícito: `true`/`1` confia no primeiro salto, um número confia em N
+ * saltos, e um IP/CIDR confia só naquele proxy — que é a forma correta.
+ * Nenhuma outra rota deste app lê `request.ip`.
+ */
+function trustProxy(): boolean | number | string {
+	const v = process.env.TRUST_PROXY?.trim();
+	if (!v || v === 'false' || v === '0') return false;
+	if (v === 'true') return true;
+	const n = Number(v);
+	return Number.isInteger(n) && n > 0 ? n : v;
+}
+
+const app = fastify({
+	trustProxy: trustProxy(),
+}).withTypeProvider<ZodTypeProvider>();
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
 

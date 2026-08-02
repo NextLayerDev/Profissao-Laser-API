@@ -46,6 +46,34 @@ export interface ImageModelEntry {
 	notes: string;
 	/** Marca o modelo padrão do sistema (usado se a tool não setar `model`). */
 	default?: boolean;
+	/**
+	 * Capabilities REAIS do endpoint unificado `POST /v1/images` da OpenRouter
+	 * pra este modelo — confirmado com chamadas reais em 2026-08-01 (não é
+	 * suposição): `GET /v1/images/models` devolve `supported_parameters` por
+	 * modelo, e uma chamada de teste (16:9 pedido → 1344×768 devolvido; 4K
+	 * pedido → 5504×3072 devolvido) provou que os parâmetros realmente mudam
+	 * o resultado, não são ignorados. `image-gen.ts` usa esses campos (nunca
+	 * o nome do modelo em si) pra decidir o que mandar — adicionar um 9º
+	 * modelo aqui não exige tocar em `image-gen.ts`.
+	 *
+	 * Família Gemini: aceita `aspect_ratio`/`resolution` (corrige o corte de
+	 * formato) mas NÃO `quality`. Família GPT: aceita `quality` (corrige parte
+	 * da diferença de nitidez vs. ChatGPT) mas NÃO `aspect_ratio`/`resolution`
+	 * — a OpenAI não expõe controle de proporção/tamanho nessa superfície,
+	 * nem no endpoint dedicado; só o texto do prompt influencia a composição.
+	 */
+	/** Presets de `aspect_ratio` aceitos. Ausente = modelo não controla proporção. */
+	apiAspectRatios?: readonly string[];
+	/** Valores de `resolution` aceitos. Ausente = sem controle de resolução. */
+	apiResolutions?: readonly string[];
+	/** Valores de `quality` aceitos. Ausente = sem controle de qualidade. */
+	apiQuality?: readonly string[];
+	/**
+	 * true = confirmado disponível em `POST /v1/images` (todos os 8 modelos
+	 * atuais estão). Gate pra `image-gen.ts` rotear `raw_prompt` pra essa API;
+	 * ausente/false = mantém o `/chat/completions` legado (texto-só de formato).
+	 */
+	unifiedImagesApi?: boolean;
 }
 
 export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
@@ -58,6 +86,20 @@ export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 		notes:
 			'Modelo padrão atual. Forte em ilustração 2D limpa, alto contraste, sem cinza — o "look laser". Pode engessar casos fotorrealistas ou com muito texto na imagem.',
 		default: true,
+		apiAspectRatios: [
+			'1:1',
+			'2:3',
+			'3:2',
+			'3:4',
+			'4:3',
+			'4:5',
+			'5:4',
+			'9:16',
+			'16:9',
+			'21:9',
+		],
+		apiResolutions: ['1K', '2K', '4K'],
+		unifiedImagesApi: true,
 	},
 	{
 		id: 'google/gemini-3-pro-image',
@@ -67,6 +109,20 @@ export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 		quality: 'top',
 		notes:
 			'Versão GA (estável) do Nano Banana Pro — mesmo "look laser" do padrão, sem o rótulo preview. Boa aderência ao prompt e renderização de texto acima da média. Prefira quando quiser estabilidade.',
+		apiAspectRatios: [
+			'1:1',
+			'2:3',
+			'3:2',
+			'3:4',
+			'4:3',
+			'4:5',
+			'5:4',
+			'9:16',
+			'16:9',
+			'21:9',
+		],
+		apiResolutions: ['1K', '2K', '4K'],
+		unifiedImagesApi: true,
 	},
 	{
 		id: 'openai/gpt-5.4-image-2',
@@ -75,7 +131,9 @@ export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 		speed: 'slow',
 		quality: 'top',
 		notes:
-			'Modelo #1 de imagem (OpenAI GPT-5.4 + GPT Image 2) — a MELHOR qualidade/detalhe, nível do print gerado direto no ChatGPT. MUITO lento (~2,5-3 min por imagem) e mais caro. Use quando qualidade importa mais que velocidade.',
+			'Modelo #1 de imagem (OpenAI GPT-5.4 + GPT Image 2) — a MELHOR qualidade/detalhe, nível do print gerado direto no ChatGPT. MUITO lento (~2,5-3 min por imagem) e mais caro. Use quando qualidade importa mais que velocidade. Sem controle de proporção/resolução (a OpenAI não expõe isso nessa API) — depende só do texto do prompt pra compor no formato certo.',
+		apiQuality: ['auto', 'low', 'medium', 'high'],
+		unifiedImagesApi: true,
 	},
 	{
 		id: 'openai/gpt-5-image',
@@ -84,7 +142,9 @@ export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 		speed: 'slow',
 		quality: 'high',
 		notes:
-			'Geração GPT-5 de imagem da OpenAI. Tipografia forte e composição de cartaz. LENTO (~1,5min por imagem). Um degrau abaixo do 5.4 Image 2 em qualidade, mas um pouco mais rápido. OBS: modelos GPT podem RECUSAR rostos de pessoas reais/famosos — nesses casos use um Gemini.',
+			'Geração GPT-5 de imagem da OpenAI. Tipografia forte e composição de cartaz. LENTO (~1,5min por imagem). Um degrau abaixo do 5.4 Image 2 em qualidade, mas um pouco mais rápido. OBS: modelos GPT podem RECUSAR rostos de pessoas reais/famosos — nesses casos use um Gemini. Sem controle de proporção/resolução nessa API.',
+		apiQuality: ['auto', 'low', 'medium', 'high'],
+		unifiedImagesApi: true,
 	},
 	{
 		id: 'openai/gpt-5-image-mini',
@@ -93,7 +153,9 @@ export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 		speed: 'medium',
 		quality: 'high',
 		notes:
-			'Variante leve do GPT-5 Image: mais rápida e barata que o GPT-5 Image cheio, mantendo boa renderização de texto. Boa para volume e rascunhos com tipografia.',
+			'Variante leve do GPT-5 Image: mais rápida e barata que o GPT-5 Image cheio, mantendo boa renderização de texto. Boa para volume e rascunhos com tipografia. Sem controle de proporção/resolução nessa API.',
+		apiQuality: ['auto', 'low', 'medium', 'high'],
+		unifiedImagesApi: true,
 	},
 	{
 		id: 'google/gemini-3.1-flash-image',
@@ -102,7 +164,25 @@ export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 		speed: 'fast',
 		quality: 'high',
 		notes:
-			'Tier Flash do Nano Banana 2: bem mais rápido e barato que o Pro, com qualidade geral alta. Melhor equilíbrio velocidade/qualidade para tool de cliente.',
+			'Tier Flash do Nano Banana 2: bem mais rápido e barato que o Pro, com qualidade geral alta. Melhor equilíbrio velocidade/qualidade para tool de cliente. Único da família com presets de proporção extrema (até 8:1/1:8) — bom pra formatos wrap bem largos.',
+		apiAspectRatios: [
+			'1:1',
+			'1:4',
+			'1:8',
+			'2:3',
+			'3:2',
+			'3:4',
+			'4:1',
+			'4:3',
+			'4:5',
+			'5:4',
+			'8:1',
+			'9:16',
+			'16:9',
+			'21:9',
+		],
+		apiResolutions: ['512', '1K', '2K', '4K'],
+		unifiedImagesApi: true,
 	},
 	{
 		id: 'google/gemini-3.1-flash-lite-image',
@@ -112,6 +192,24 @@ export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 		quality: 'standard',
 		notes:
 			'O mais barato e rápido da família Gemini image. Use para prévias, testes e altíssimo volume onde o custo importa mais que o acabamento.',
+		apiAspectRatios: [
+			'1:1',
+			'1:4',
+			'1:8',
+			'2:3',
+			'3:2',
+			'3:4',
+			'4:1',
+			'4:3',
+			'4:5',
+			'5:4',
+			'8:1',
+			'9:16',
+			'16:9',
+			'21:9',
+		],
+		apiResolutions: ['1K'],
+		unifiedImagesApi: true,
 	},
 	{
 		id: 'google/gemini-2.5-flash-image',
@@ -121,6 +219,19 @@ export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 		quality: 'standard',
 		notes:
 			'Geração anterior (Nano Banana original). Alternativa estável e conhecida, com bom fotorrealismo. Mantido como fallback.',
+		apiAspectRatios: [
+			'1:1',
+			'2:3',
+			'3:2',
+			'3:4',
+			'4:3',
+			'4:5',
+			'5:4',
+			'9:16',
+			'16:9',
+			'21:9',
+		],
+		unifiedImagesApi: true,
 	},
 ];
 
@@ -138,11 +249,28 @@ export function getImageModelsCatalog(force = false): ImageModelEntry[] {
 	return cache.data;
 }
 
+/** Busca uma entrada do catálogo pelo id do modelo. */
+export function findImageModel(id: string): ImageModelEntry | undefined {
+	return IMAGE_MODELS_CATALOG.find((m) => m.id === id);
+}
+
 /**
- * Devolve o id do modelo marcado como `default: true` no catálogo, ou
- * `undefined` se nenhum estiver marcado. Usado como fallback quando uma tool
- * não tem `definition.model` setado e o env `OPENROUTER_IMAGE_MODEL` está vazio.
+ * Devolve a entrada marcada `default: true`, ou a primeira do catálogo se
+ * nenhuma estiver marcada (nunca `undefined` — o catálogo sempre tem pelo
+ * menos 1 entrada, garantido por teste).
  */
-export function getDefaultImageModelId(): string | undefined {
-	return IMAGE_MODELS_CATALOG.find((m) => m.default)?.id;
+export function getDefaultImageModel(): ImageModelEntry {
+	return (
+		IMAGE_MODELS_CATALOG.find((m) => m.default) ??
+		(IMAGE_MODELS_CATALOG[0] as ImageModelEntry)
+	);
+}
+
+/**
+ * Devolve o id do modelo padrão do catálogo. Usado como fallback quando uma
+ * tool não tem `definition.model` setado e o env `OPENROUTER_IMAGE_MODEL`
+ * está vazio (`resolveImageModel` em `image-gen.ts`).
+ */
+export function getDefaultImageModelId(): string {
+	return getDefaultImageModel().id;
 }
