@@ -643,6 +643,15 @@ async function healHolesInPng(buffer: Buffer): Promise<Buffer> {
 export interface VectorizeOptions {
 	/** Liga o supersampling de qualidade (run final). Desligue p/ preview rápido. */
 	supersample?: boolean;
+	/**
+	 * Liga a margem branca antes de traçar (evita contorno partido na borda).
+	 * Desligue quando o CHAMADOR precisa saber exatamente o fator de escala/
+	 * deslocamento entre o raster de entrada e o `d` do SVG resultante (ex.:
+	 * `silhouettePath` em `vector-invert.ts`, que remonta o outline traçado de
+	 * volta pro espaço de coordenadas do vetor original) — com upscale/margem
+	 * internos, esse remonte fica sem como saber o fator certo e desalinha.
+	 */
+	pad?: boolean;
 }
 
 /**
@@ -687,6 +696,7 @@ export async function vectorizeImage(
 	// guarda de dimensão exata (dpi/mm) permanece: com ela, mexer na geometria
 	// encolheria a arte dentro do envelope pedido.
 	const canPad =
+		opts.pad !== false &&
 		params.dpi === null &&
 		params.outputWidth === null &&
 		params.outputHeight === null;
