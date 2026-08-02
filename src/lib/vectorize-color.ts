@@ -1,5 +1,6 @@
 import * as Potrace from 'potrace';
 import sharp from 'sharp';
+import { borderStats, chromaKeyAlpha } from '../tool-blocks/lib/pixels.js';
 import type { VectorizeParams } from '../types/vector.js';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -170,6 +171,59 @@ export interface ColorVectorizeOptions {
 }
 
 /**
+ * Remove o fundo em cima do raster (in place) rodando o chroma-key das
+ * bordas em VÁRIAS passadas — cada rodada recalcula a cor de referência só a
+ * partir do que ainda restou de borda opaca. Fundo de foto/estúdio quase
+ * sempre tem uma vinheta/degradê leve (mais escuro num canto); uma única
+ * passada com referência fixa só pega a região perto da mediana da borda e
+ * deixa um resto da mesma "família" de cor sem remover (ex.: canto mais
+ * escuro). A cada rodada a mediana persegue esse resto, sem precisar de uma
+ * tolerância larga o bastante pra também comer o sujeito.
+ *
+ * TRAVA (crítica): se a 1ª passada já remover o fundo de verdade, o que
+ * sobra encostado na borda pode ser o PRÓPRIO desenho (ex.: um elemento
+ * full-bleed que toca a borda) — sem essa trava, a passada seguinte trataria
+ * a cor dele como "o novo fundo" e comeria o elemento inteiro. Por isso só
+ * deixa avançar pra próxima passada se a nova referência for parecida com a
+ * anterior (mesma família de cor = perseguindo degradê); se a cor mudou
+ * demais, provavelmente não é mais fundo — para ali.
+ */
+function removeBackgroundIterative(
+	raster: Parameters<typeof borderStats>[0],
+	tolerance: number,
+	feather: number,
+	maxPasses = 4,
+): void {
+	// Cap mais largo que a tolerância pixel-a-pixel: uma vinheta de foto real
+	// pode variar bem mais que isso ponta-a-ponta (bordas: claro → escuro) sem
+	// deixar de ser "o mesmo fundo"; já uma cor de primeiro plano de verdade
+	// (ex.: uma barra colorida do próprio design) costuma saltar bem mais que
+	// isso a partir do fundo.
+	const driftCap = 0.35 * Math.sqrt(3) * 255;
+	let prevRef: { br: number; bgC: number; bb: number } | null = null;
+	for (let i = 0; i < maxPasses; i++) {
+		const stats = borderStats(raster);
+		if (stats.samples < 8) break;
+		if (prevRef) {
+			const dr = stats.br - prevRef.br;
+			const dg = stats.bgC - prevRef.bgC;
+			const db = stats.bb - prevRef.bb;
+			if (Math.sqrt(dr * dr + dg * dg + db * db) > driftCap) break;
+		}
+		const marked = chromaKeyAlpha(
+			raster,
+			stats.br,
+			stats.bgC,
+			stats.bb,
+			tolerance,
+			feather,
+		);
+		if (marked === 0) break;
+		prevRef = { br: stats.br, bgC: stats.bgC, bb: stats.bb };
+	}
+}
+
+/**
  * Vetoriza preservando as cores. `params.maxColors` controla quantas cores a
  * paleta terá (clampado pelo schema). Devolve o SVG colorido completo.
  */
@@ -192,6 +246,21 @@ export async function vectorizeColorImage(
 	const { width, height } = info;
 	const channels = info.channels; // 4 (ensureAlpha)
 	const npx = width * height;
+
+	// `.ensureAlpha()` marca 100% opaco quando a entrada não tem alpha real (ex.:
+	// foto/JPEG, ou PNG "achatado" que saiu de uma geração de IA) — sem isso, o
+	// fundo vira só mais um cluster de cor e acaba desenhado como camada cheia
+	// (o "fundo branco" que aparecia no vetor). Chroma-key das bordas ANTES do
+	// k-means resolve — em várias passadas (ver `removeBackgroundIterative`)
+	// pra perseguir vinheta/degradê leve sem precisar de tolerância larga o
+	// bastante pra também comer o sujeito.
+	const raster = {
+		data: new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength),
+		width,
+		height,
+		channels: 4 as const,
+	};
+	removeBackgroundIterative(raster, 0.16, 0.6, 3);
 
 	// Amostra de pixels opacos p/ o k-means (cap ~20k).
 	const opaque: number[] = [];
