@@ -1,5 +1,10 @@
 import * as Potrace from 'potrace';
 import sharp from 'sharp';
+import { classifyImage } from './image-classify.js';
+import {
+	segmentForeground,
+	SegmentationUnavailableError,
+} from './segment-foreground.js';
 import { borderStats, chromaKeyAlpha } from '../tool-blocks/lib/pixels.js';
 import type { VectorizeParams } from '../types/vector.js';
 
@@ -9,6 +14,17 @@ import type { VectorizeParams } from '../types/vector.js';
 // viram um borrão. Aqui quantizamos a imagem em K cores (k-means), geramos uma
 // máscara por cor, traçamos cada uma com o Potrace e montamos um SVG colorido
 // em camadas (maior área primeiro → detalhes por cima). Resultado fiel à arte.
+//
+// REMOÇÃO DE FUNDO: duas ferramentas, escolhidas pelo mesmo classificador
+// foto/logo já usado pro prompt P&B (`image-classify.ts`) — testado nos dois
+// sentidos, cada uma é ruim no caso da outra:
+//   FOTO → segmentação real (`segment-foreground.ts`, RMBG-1.4/BRIA). Ótima em
+//          objeto/produto fotografado; mas em arte flat confunde letras
+//          brancas com "fundo" e devolve texto fantasma.
+//   LOGO → chroma-key das bordas (`removeBackgroundIterative`). Ótimo em fundo
+//          sólido/degradê de estúdio; a segmentação erra feio nesse caso.
+// O chroma-key sempre roda por cima como limpeza final (barato, idempotente
+// quando não há mais nada de fundo pra remover).
 // ─────────────────────────────────────────────────────────────────────
 
 interface Centroid {
@@ -234,7 +250,22 @@ export async function vectorizeColorImage(
 ): Promise<string> {
 	const maxDim = opts.maxDim ?? 900;
 
-	let pipeline = sharp(buffer)
+	// Só tenta segmentação real em FOTO (ver classificador no topo do arquivo).
+	// Heurística apenas (sem IA de visão): mantém o botão "Laser + UV" grátis e
+	// rápido — a heurística já bastou nos casos testados. Falha de carregar o
+	// motor nativo (onnxruntime ausente) não pode derrubar a vetorização: cai
+	// pro chroma-key, que já roda por cima de qualquer forma.
+	let workingBuffer = buffer;
+	const { kind } = await classifyImage(buffer, { allowAI: false });
+	if (kind === 'photo') {
+		try {
+			workingBuffer = await segmentForeground(buffer);
+		} catch (err) {
+			if (!(err instanceof SegmentationUnavailableError)) throw err;
+		}
+	}
+
+	let pipeline = sharp(workingBuffer)
 		.resize({ width: maxDim, height: maxDim, fit: 'inside' })
 		.ensureAlpha();
 	// Desfoque leve só se pedido (reduz ruído de JPEG antes de quantizar).
