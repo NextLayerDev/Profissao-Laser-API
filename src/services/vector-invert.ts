@@ -65,7 +65,10 @@ async function rasterNegative(svg: string): Promise<string> {
 	// Rasteriza a arte ATUAL (ainda não invertida), achatada em branco — teto
 	// de resolução do próprio `rasterizeSvgToPng` (2000px), suficiente pra
 	// gravação a laser.
-	const png = await rasterizeSvgToPng(svg, { maxDim: 2000, flattenWhite: true });
+	const png = await rasterizeSvgToPng(svg, {
+		maxDim: 2000,
+		flattenWhite: true,
+	});
 	// Inversão de pixel exata. `alpha:false` porque já achatamos em branco
 	// (sem transparência de verdade pra inverter).
 	const negated = await sharp(png).negate({ alpha: false }).png().toBuffer();
