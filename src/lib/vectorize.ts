@@ -562,6 +562,20 @@ async function padForTrace(buffer: Buffer, allow: boolean): Promise<Buffer> {
 const HOLE_MAX_AREA = 0.001;
 
 /**
+ * Teto de QUANTOS buracos fechados a imagem pode ter pra ainda contar como
+ * "defeito isolado de geração". Medido numa gravura densa/estipulada real:
+ * 14.668 buracos fechados, 99,8% deles com 1-20px² — são as frestas entre
+ * hachuras cruzadas, que numa malha bem fina ficam TOTALMENTE cercadas de
+ * tinta (não tocam a borda), então passam no teste de "buraco fechado" que
+ * `fillEnclosedHoles` usa pra decidir defeito. Preencher milhares deles apaga
+ * a hachura inteira e vira bolha sólida — exatamente o "perde muito a
+ * qualidade" relatado. Defeito de geração de verdade é raro e isolado (a
+ * IA "às vezes" deixa uma mancha, não uma malha inteira de furinhos) — acima
+ * deste teto, a imagem inteira fica intocada.
+ */
+const MAX_HOLE_CANDIDATES = 40;
+
+/**
  * Preenche BURACOS BRANCOS FECHADOS dentro da arte já binarizada.
  *
  * A IA às vezes deixa manchas brancas vazias no meio da figura — pedaços de
@@ -570,16 +584,19 @@ const HOLE_MAX_AREA = 0.001;
  * provavelmente invisível: um buraco FECHADO é, por definição, cercado de
  * preto, então preenchê-lo de preto se funde com o entorno.
  *
- * Não toca as frestas entre hachuras: essas se conectam ao fundo e portanto
- * não são "fechadas". Não toca o contorno externo. Não toca área branca grande.
+ * Não toca as frestas entre hachuras NORMAIS: essas se conectam ao fundo e
+ * portanto não são "fechadas". Não toca o contorno externo. Não toca área
+ * branca grande. Numa malha de hachura MUITO fina/cruzada, porém, as frestas
+ * viram milhares de células isoladas (fechadas de verdade) — `MAX_HOLE_CANDIDATES`
+ * é a proteção pra esse caso: acima do teto de quantidade, não mexe em nada.
  */
 function fillEnclosedHoles(data: Uint8Array, W: number, H: number): number {
 	const N = W * H;
 	const maxArea = Math.max(16, Math.round(N * HOLE_MAX_AREA));
 	const label = new Int32Array(N).fill(-1);
 	const stack = new Int32Array(N);
-	const members = new Int32Array(N);
-	let filled = 0;
+	const sizeBySeed = new Map<number, number>();
+	const edgeSeeds = new Set<number>();
 
 	for (let seed = 0; seed < N; seed++) {
 		if (data[seed] < 128 || label[seed] >= 0) continue;
@@ -590,7 +607,7 @@ function fillEnclosedHoles(data: Uint8Array, W: number, H: number): number {
 		label[seed] = seed;
 		while (sp > 0) {
 			const i = stack[--sp];
-			members[count++] = i;
+			count++;
 			const x = i % W;
 			const y = (i / W) | 0;
 			if (x === 0 || y === 0 || x === W - 1 || y === H - 1) touchesEdge = true;
@@ -611,12 +628,25 @@ function fillEnclosedHoles(data: Uint8Array, W: number, H: number): number {
 				}
 			}
 		}
-		if (!touchesEdge && count <= maxArea) {
-			for (let k = 0; k < count; k++) data[members[k]] = 0;
-			filled++;
-		}
+		sizeBySeed.set(seed, count);
+		if (touchesEdge) edgeSeeds.add(seed);
 	}
-	return filled;
+
+	// Decide ANTES de preencher: quantos buracos fechados (dentro do teto de
+	// área) existem no total? Só preenche se essa contagem for compatível com
+	// "defeito isolado" — não com uma malha de hachura inteira.
+	let candidateCount = 0;
+	for (const [seed, count] of sizeBySeed) {
+		if (!edgeSeeds.has(seed) && count <= maxArea) candidateCount++;
+	}
+	if (candidateCount === 0 || candidateCount > MAX_HOLE_CANDIDATES) return 0;
+
+	for (let i = 0; i < N; i++) {
+		const seed = label[i];
+		if (seed < 0 || edgeSeeds.has(seed)) continue;
+		if ((sizeBySeed.get(seed) ?? 0) <= maxArea) data[i] = 0;
+	}
+	return candidateCount;
 }
 
 /** Aplica `fillEnclosedHoles` num PNG já binarizado. */
