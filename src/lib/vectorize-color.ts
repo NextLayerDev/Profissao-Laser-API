@@ -1,12 +1,12 @@
 import * as Potrace from 'potrace';
 import sharp from 'sharp';
-import { classifyImage } from './image-classify.js';
-import {
-	segmentForeground,
-	SegmentationUnavailableError,
-} from './segment-foreground.js';
 import { borderStats, chromaKeyAlpha } from '../tool-blocks/lib/pixels.js';
 import type { VectorizeParams } from '../types/vector.js';
+import { classifyImage } from './image-classify.js';
+import {
+	SegmentationUnavailableError,
+	segmentForeground,
+} from './segment-foreground.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Vetorização EM CORES: imagens coloridas (logos, ilustrações) não podem ser
