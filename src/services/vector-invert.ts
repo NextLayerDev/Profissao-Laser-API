@@ -1,17 +1,10 @@
+import sharp from 'sharp';
 import { withCapture } from '@/lib/sentry.js';
 import { uploadVectorPng } from '../lib/storage.js';
 import { invertSvgPolarity, readSvgGeometry } from '../lib/svg-invert.js';
-import {
-	chooseInvertMode,
-	invertModeForSubject,
-	silhouetteMaskPng,
-} from '../lib/svg-negative.js';
+import { chooseInvertMode, invertModeForSubject } from '../lib/svg-negative.js';
 import { rasterizeSvgToPng } from '../lib/svg-raster.js';
-import {
-	parseVectorizeParams,
-	svgToDxf,
-	vectorizeImage,
-} from '../lib/vectorize.js';
+import { svgToDxf } from '../lib/vectorize.js';
 import { vectorRepository } from '../repositories/vector.js';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -21,8 +14,25 @@ import { vectorRepository } from '../repositories/vector.js';
 //
 // Dois caminhos:
 //   geométrico  — complemento exato (lossless). Default: logo, texto, traço.
-//   silhueta    — negativo morfológico. Só pra gravura hachurada, onde o
+//   silhueta    — negativo RASTER. Só pra gravura hachurada, onde o
 //                 complemento viraria uma chapa preta.
+//
+// A silhueta já foi um negativo MORFOLÓGICO (reconstruía um contorno
+// vetorial da silhueta via raster→morfologia→re-trace, mantendo a arte
+// original em vetor como furos). Trocado por raster puro: a reconstrução do
+// contorno não fechava direito formas finas/diagonais (ex.: a pá de um remo
+// cruzado ficava parcialmente fora do contorno calculado — visível com
+// zoom, reportado pelo usuário) — limitação de fundo da morfologia de
+// fechamento, não um bug de escala/deslocamento (esse foi achado e
+// corrigido no caminho, mas não resolveu sozinho).
+//
+// A referência do setor (LightBurn) confirma: pra imagem/foto eles NÃO
+// tentam reconstruir contorno nenhum — só invertem os valores de pixel do
+// raster ("Negative Image"). Perfeito por construção, sem etapa de
+// aproximação. Custo: o resultado deixa de ser 100% vetor (paths) — vira uma
+// imagem embutida no SVG. Isso já era esperado pro DXF de uma foto invertida
+// (só a moldura, sem preenchimento — DXF não tem conceito de preenchimento
+// mesmo com paths) e passa a valer pro SVG/PNG também.
 // ─────────────────────────────────────────────────────────────────────
 
 export type InvertMode = 'auto' | 'geometric' | 'silhouette';
@@ -35,53 +45,36 @@ export const INVERT_UNSUPPORTED = {
 	no_viewbox: 'invert_unsupported_no_viewbox',
 } as const;
 
-/** Escala todos os números de um `d` — o Potrace só emite M/L/C/Z absolutos. */
-function scalePathNumbers(d: string, s: number): string {
-	if (s === 1) return d;
-	return d.replace(/-?\d*\.?\d+(?:[eE][-+]?\d+)?/g, (n) =>
-		(Number.parseFloat(n) * s).toFixed(2),
-	);
-}
-
 /**
- * Negativo por silhueta, SEM perder a arte.
+ * Negativo RASTER puro — inverte os pixels do PNG rasterizado direto, sem
+ * nenhuma etapa de reconstrução de contorno. Mesma prática do LightBurn (e do
+ * setor em geral) pra imagem/foto: "Negative Image" só inverte os valores de
+ * pixel — sem aproximação, então não tem como sair errado de forma.
  *
- * A versão anterior rasterizava o SVG a 1200px, fazia a morfologia e
- * RE-TRAÇAVA tudo — a hachura fina passava por um round-trip de raster e
- * chegava borrada ("perdendo muito detalhe").
- *
- * Aqui o raster é usado só para o CONTORNO da silhueta, que é uma forma lisa e
- * não precisa de resolução. A arte continua sendo os `d` originais, em vetor,
- * entrando como furos no mesmo compound path (even-odd). Resultado: campo preto
- * no formato da figura, hachura em fidelidade total.
+ * O resultado deixa de ser 100% vetor (paths) pra essa variant — vira uma
+ * imagem embutida no SVG (mesmo contrato de arquivo). Isso já era esperado
+ * no DXF de uma foto invertida (só a moldura, sem preenchimento) e passa a
+ * valer também pro SVG/PNG — troca aceita: sem isso a silhueta reconstruída
+ * deixava pedaços de formas finas/diagonais (ex.: a pá de um remo cruzado)
+ * "vazando" pra fora do contorno calculado.
  */
-async function silhouettePath(svg: string): Promise<string> {
+async function rasterNegative(svg: string): Promise<string> {
 	const geo = readSvgGeometry(svg);
 	if (!geo) throw new Error(INVERT_UNSUPPORTED.no_geometry);
 
-	// Rasteriza na própria escala do viewBox (teto de 2000) → o contorno traçado
-	// já sai no sistema de coordenadas da arte; o resto é um fator de escala.
-	const target = Math.min(2000, Math.max(512, Math.round(geo.w)));
-	const { png, width } = await silhouetteMaskPng(svg, target);
+	// Rasteriza a arte ATUAL (ainda não invertida), achatada em branco — teto
+	// de resolução do próprio `rasterizeSvgToPng` (2000px), suficiente pra
+	// gravação a laser.
+	const png = await rasterizeSvgToPng(svg, {
+		maxDim: 2000,
+		flattenWhite: true,
+	});
+	// Inversão de pixel exata. `alpha:false` porque já achatamos em branco
+	// (sem transparência de verdade pra inverter).
+	const negated = await sharp(png).negate({ alpha: false }).png().toBuffer();
+	const b64 = negated.toString('base64');
 
-	const outlineSvg = await vectorizeImage(
-		png,
-		parseVectorizeParams({
-			mode: 'trace',
-			edgeDetection: 'none',
-			threshold: '128',
-			turdSize: '8', // contorno liso: suprime respingos da morfologia
-		}),
-	);
-	const outlineD = outlineSvg.match(/\bd="([^"]+)"/)?.[1];
-	if (!outlineD) throw new Error(INVERT_UNSUPPORTED.no_geometry);
-
-	// O trace do contorno sai em px do raster; a arte está em unidades do
-	// viewBox. Um fator só alinha os dois (o Potrace não usa comandos relativos).
-	const scaled = scalePathNumbers(outlineD, geo.w / width);
-	const combined = `${scaled} ${geo.ds.join(' ')}`;
-
-	return `<svg xmlns="http://www.w3.org/2000/svg" width="${geo.w}" height="${geo.h}" viewBox="${geo.x} ${geo.y} ${geo.w} ${geo.h}"><path fill="${geo.ink}" fill-rule="evenodd" d="${combined}"/></svg>`;
+	return `<svg xmlns="http://www.w3.org/2000/svg" width="${geo.w}" height="${geo.h}" viewBox="${geo.x} ${geo.y} ${geo.w} ${geo.h}"><image x="${geo.x}" y="${geo.y}" width="${geo.w}" height="${geo.h}" preserveAspectRatio="none" href="data:image/png;base64,${b64}"/></svg>`;
 }
 
 export const vectorInvertService = {
@@ -125,7 +118,7 @@ export const vectorInvertService = {
 
 			let svgContent: string;
 			if (mode === 'silhouette') {
-				svgContent = await silhouettePath(original);
+				svgContent = await rasterNegative(original);
 			} else {
 				const result = invertSvgPolarity(original);
 				if ('error' in result) {
