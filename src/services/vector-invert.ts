@@ -4,6 +4,7 @@ import { uploadVectorPng } from '../lib/storage.js';
 import { invertSvgPolarity, readSvgGeometry } from '../lib/svg-invert.js';
 import { chooseInvertMode, invertModeForSubject } from '../lib/svg-negative.js';
 import { rasterizeSvgToPng } from '../lib/svg-raster.js';
+import { buildSilhouetteContourSvg } from '../lib/svg-silhouette-contour.js';
 import { svgToDxf } from '../lib/vectorize.js';
 import { vectorRepository } from '../repositories/vector.js';
 
@@ -14,25 +15,38 @@ import { vectorRepository } from '../repositories/vector.js';
 //
 // Dois caminhos:
 //   geométrico  — complemento exato (lossless). Default: logo, texto, traço.
-//   silhueta    — negativo RASTER. Só pra gravura hachurada, onde o
-//                 complemento viraria uma chapa preta.
+//   silhueta    — NEGATIVO LOCAL: inverte os tons só DENTRO da silhueta do
+//                 assunto, preservando o desenho original e o fundo
+//                 verdadeiro. Pra gravura hachurada, onde o complemento
+//                 geométrico viraria uma chapa preta.
 //
-// A silhueta já foi um negativo MORFOLÓGICO (reconstruía um contorno
-// vetorial da silhueta via raster→morfologia→re-trace, mantendo a arte
-// original em vetor como furos). Trocado por raster puro: a reconstrução do
-// contorno não fechava direito formas finas/diagonais (ex.: a pá de um remo
-// cruzado ficava parcialmente fora do contorno calculado — visível com
-// zoom, reportado pelo usuário) — limitação de fundo da morfologia de
-// fechamento, não um bug de escala/deslocamento (esse foi achado e
-// corrigido no caminho, mas não resolveu sozinho).
+// A silhueta já passou por três encarnações antes desta:
+//   1. negativo morfológico COM FUROS — reconstruía um contorno vetorial da
+//      silhueta via raster→morfologia→re-trace e mantinha a arte original em
+//      vetor como furos (compound path, even-odd). A reconstrução do contorno
+//      não fechava direito formas finas/diagonais (ex.: a pá de um remo
+//      cruzado ficava parcialmente fora do contorno calculado — visível com
+//      zoom, reportado pelo usuário).
+//   2. negativo RASTER puro (`rasterNegative` abaixo) — inversão de pixel
+//      direta (como o "Negative Image" do LightBurn), sem reconstrução
+//      nenhuma. Perfeita por construção, mas inverte a imagem INTEIRA,
+//      fundo incluso — pra retrato com muito espaço em branco ao redor, o
+//      resultado fica uma chapa preta pesada e "suja".
+//   3. SILHUETA SÓLIDA CHAPADA — preenchia a forma inteira de uma cor só,
+//      sem detalhe nenhum. Rejeitada pelo usuário ao ver o resultado: "perdeu
+//      todo conteúdo da foto" — ele queria o detalhe do desenho preservado,
+//      só com o FUNDO fora do personagem sem inverter.
 //
-// A referência do setor (LightBurn) confirma: pra imagem/foto eles NÃO
-// tentam reconstruir contorno nenhum — só invertem os valores de pixel do
-// raster ("Negative Image"). Perfeito por construção, sem etapa de
-// aproximação. Custo: o resultado deixa de ser 100% vetor (paths) — vira uma
-// imagem embutida no SVG. Isso já era esperado pro DXF de uma foto invertida
-// (só a moldura, sem preenchimento — DXF não tem conceito de preenchimento
-// mesmo com paths) e passa a valer pro SVG/PNG também.
+// O caminho ATUAL (`buildSilhouetteContourSvg`, em `svg-silhouette-contour.ts`)
+// reaproveita a mesma máscara morfológica das encarnações 1 e 3, mas usa ela
+// só como CRITÉRIO de "que pixel inverter" — a inversão em si é raster puro
+// (igual `rasterNegative`), restrita à área da silhueta. Sem reconstrução
+// vetorial nenhuma, então não tem "vazar pra fora do contorno"; o risco
+// residual é um pedaço pequeno (ex.: pulseira/franja solta) não fundir à
+// silhueta principal e ficar com a polaridade errada — pego por um detector
+// de componentes conectados antes de aceitar; se sobrar mais de um pedaço
+// significativo, cai automaticamente em `rasterNegative` — que continua
+// existindo como rede de segurança, não mais como o caminho padrão.
 // ─────────────────────────────────────────────────────────────────────
 
 export type InvertMode = 'auto' | 'geometric' | 'silhouette';
@@ -118,7 +132,14 @@ export const vectorInvertService = {
 
 			let svgContent: string;
 			if (mode === 'silhouette') {
-				svgContent = await rasterNegative(original);
+				// Tenta o negativo local (só dentro da silhueta) primeiro; só cai no
+				// raster negate (imagem inteira) se o detector de fragmentação
+				// recusar o resultado. Sem classificador manual por tipo de imagem —
+				// o fallback automático É o diferenciador entre os dois caminhos.
+				const contour = await buildSilhouetteContourSvg(original);
+				svgContent = contour.ok
+					? contour.svg
+					: await rasterNegative(original);
 			} else {
 				const result = invertSvgPolarity(original);
 				if ('error' in result) {
