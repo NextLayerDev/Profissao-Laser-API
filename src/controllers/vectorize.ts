@@ -11,7 +11,7 @@ import {
 	settleInvocation,
 } from '../lib/upvox-tools.js';
 import { parseVectorizeParams } from '../lib/vectorize.js';
-import { analyzeImage } from '../lib/vectorize-analyze.js';
+import { analyzeImage, type ImageProfile } from '../lib/vectorize-analyze.js';
 import { vectorRepository } from '../repositories/vector.js';
 import {
 	INVERT_UNSUPPORTED,
@@ -164,6 +164,60 @@ export const downloadVectorFormatController = async (
 };
 
 /**
+ * Roda a vetorização tradicional (sem IA) a partir de um `ImageProfile` já
+ * calculado. Usado tanto quando a IA nem chega a ser chamada (imagem já é
+ * P&B chapado) quanto quando ela falha na verificação — mesmo formato de
+ * resposta nos dois casos: `paidFormats: []`, já que a geração não cobrou
+ * nada de IA (baixar um formato cobra normalmente, como em "Vetorizar").
+ */
+async function runVectorizeWithoutAi(
+	reply: FastifyReply,
+	customerId: string,
+	fileBuffer: Buffer,
+	filename: string,
+	fields: Record<string, string>,
+	wantsColor: boolean,
+	subject: NanquimSubject,
+	profile: ImageProfile,
+	extra: Record<string, unknown>,
+) {
+	// Descarta null/undefined ANTES de virar string (mesma convenção do front
+	// ao montar o FormData). `String(null)` daria "null", que é truthy no
+	// parser: `parseFloat("null")` = NaN e o clamp devolve NaN (NaN falha as
+	// duas comparações) → sharp receberia blur(NaN).
+	const recommended = Object.fromEntries(
+		Object.entries(profile.recommendedParams)
+			.filter(([, v]) => v !== null && v !== undefined)
+			.map(([k, v]) => [k, String(v)]),
+	);
+	const fallbackParams = parseVectorizeParams({
+		...fields,
+		...recommended,
+		...(wantsColor ? { mode: 'color' } : {}),
+		// Sem isso o vetor fica com `subject: null` e a inversão cai na
+		// heurística de pixel (chooseInvertMode), que erra em foto hachurada de
+		// baixa cobertura de tinta e entrega o retângulo geométrico em vez da
+		// silhueta.
+		subject: wantsColor ? 'color' : subject,
+	});
+	const { data: fbResult, error: fbError } = await vectorizeService.vectorize(
+		customerId,
+		{
+			buffer: fileBuffer,
+			filename,
+			mimetype: 'image/png',
+			params: fallbackParams,
+		},
+	);
+	if (fbError) {
+		const message =
+			fbError instanceof Error ? fbError.message : 'Unknown error';
+		return reply.status(500).send({ message });
+	}
+	return reply.status(201).send({ ...fbResult, paidFormats: [], ...extra });
+}
+
+/**
  * LINE-ART com IA (foto → gravura "nanquim" via Gemini → vetor Potrace). Cobrada
  * NA GERAÇÃO (a IA tem custo por chamada): o front invoca (debita) e manda o
  * `invocation_id`; validamos → rodamos a IA + vetorizamos → liquidamos (ou
@@ -210,13 +264,44 @@ export const aiLineartController = async (
 		}
 		invocationId = gate.mode === 'paid' ? gate.invocationId : null;
 
+		const wantsColor = fields.variant === 'color';
+
+		// 0) Já é P&B chapado (halftone denso, arte de linha, logo) → pula a IA.
+		// Mandar isso pro redesenho reinterpreta a textura fina — um halftone
+		// vira blob grosseiro — e o resultado sai PIOR que a vetorização direta.
+		// Só se aplica à variante P&B: ilustração colorida chapada é outro
+		// problema (cores, não bimodalidade) e não está coberta aqui.
+		if (!wantsColor) {
+			const profile = await analyzeImage(fileBuffer);
+			const alreadyFlatBW =
+				profile.class === 'text' ||
+				profile.class === 'line_art' ||
+				profile.class === 'logo';
+			if (alreadyFlatBW) {
+				if (invocationId) {
+					await refundInvocation(customerId, invocationId, authHeader);
+					invocationId = null;
+				}
+				return runVectorizeWithoutAi(
+					reply,
+					customerId,
+					fileBuffer,
+					filename,
+					fields,
+					wantsColor,
+					'logo',
+					profile,
+					{ aiSkipped: true, aiSkipReason: `already_${profile.class}` },
+				);
+			}
+		}
+
 		// 1) IA redesenha: gravura P&B ("nanquim") OU vetor de cores chapadas (UV).
 		// Pode lançar ToolEngineError → o catch estorna a cobrança.
 		//
 		// A escolha do PROMPT (foto vs logo) é SERVER-SIDE e autoritativa: o front
 		// não manda essa decisão e nada disso aparece na UI. Mandar logo no prompt
 		// de foto era o bug que fazia um logo virar 4 retratos em grade.
-		const wantsColor = fields.variant === 'color';
 		let subject: NanquimSubject = 'photo';
 		if (!wantsColor) {
 			const detected = await classifyImage(fileBuffer);
@@ -243,43 +328,17 @@ export const aiLineartController = async (
 				invocationId = null;
 			}
 			const profile = await analyzeImage(fileBuffer);
-			// Descarta null/undefined ANTES de virar string (mesma convenção do
-			// front ao montar o FormData). `String(null)` daria "null", que é
-			// truthy no parser: `parseFloat("null")` = NaN e o clamp devolve NaN
-			// (NaN falha as duas comparações) → sharp receberia blur(NaN).
-			const recommended = Object.fromEntries(
-				Object.entries(profile.recommendedParams)
-					.filter(([, v]) => v !== null && v !== undefined)
-					.map(([k, v]) => [k, String(v)]),
+			return runVectorizeWithoutAi(
+				reply,
+				customerId,
+				fileBuffer,
+				filename,
+				fields,
+				wantsColor,
+				subject,
+				profile,
+				{ aiFallback: true, aiFallbackReason: outcome.failures.join(',') },
 			);
-			const fallbackParams = parseVectorizeParams({
-				...fields,
-				...recommended,
-				...(wantsColor ? { mode: 'color' } : {}),
-				// Mesma gravação do caminho de sucesso (linha ~275): sem isso o vetor
-				// fica com `subject: null` e a inversão cai na heurística de pixel
-				// (chooseInvertMode), que erra em foto hachurada de baixa cobertura de
-				// tinta e entrega o retângulo geométrico em vez da silhueta.
-				subject: wantsColor ? 'color' : subject,
-			});
-			const { data: fbResult, error: fbError } =
-				await vectorizeService.vectorize(customerId, {
-					buffer: fileBuffer,
-					filename,
-					mimetype: 'image/png',
-					params: fallbackParams,
-				});
-			if (fbError) {
-				const message =
-					fbError instanceof Error ? fbError.message : 'Unknown error';
-				return reply.status(500).send({ message });
-			}
-			return reply.status(201).send({
-				...fbResult,
-				paidFormats: [],
-				aiFallback: true,
-				aiFallbackReason: outcome.failures.join(','),
-			});
 		}
 
 		// 2) Vetoriza o resultado limpo (trace p/ P&B; cor em alta def p/ UV).
