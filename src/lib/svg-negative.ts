@@ -1,22 +1,26 @@
 import sharp from 'sharp';
+import { readSvgGeometry } from './svg-invert.js';
 import { rasterizeSvgToInkMask } from './svg-raster.js';
 
 // ─────────────────────────────────────────────────────────────────────
-// NEGATIVO MORFOLÓGICO — o caminho de FOTO/gravura da inversão.
-//
-// Numa gravura hachurada, o complemento geométrico não serve: a arte é traço
-// fino, e o complemento vira uma chapa quase toda preta. O que se quer é o
-// negativo de gravação (copo escuro/anodizado, onde o laser REMOVE o
-// revestimento): a SILHUETA sólida do assunto vira a área gravada, e as LINHAS
-// do desenho permanecem, aparecendo como furos dentro da silhueta.
+// SILHUETA — máscara sólida do contorno externo do assunto (usada pelo modo
+// `silhouette` do Inverter, ver `svg-silhouette-contour.ts`).
 //
 //   1. máscara de tinta (a partir do SVG já aprovado, não da foto original)
 //   2. silhueta sólida = close (funde traços) + fill-holes (preenche o miolo)
 //   3. borda = dilata a silhueta
-//   4. negativo = (silhueta+borda) E NÃO (tinta) → preto = gravar
 //
-// O Potrace traça o preto → UM compound path: contorno da silhueta + linhas
-// como furos (even-odd).
+// Histórico: essa máscara já alimentou duas ideias ABANDONADAS: (1) um
+// "negativo de gravação" vetorial (compound path = contorno da silhueta
+// MENOS a arte original como furos, even-odd) que vazava em formas finas/
+// diagonais; (2) uma silhueta sólida chapada (preenchia a forma toda de uma
+// cor, sem detalhe interno) — o usuário rejeitou por perder o desenho
+// original. O consumidor ATUAL é `buildSilhouetteContourSvg`
+// (`svg-silhouette-contour.ts`), que usa a máscara só como CRITÉRIO de "que
+// pixel inverter": inverte os tons do raster original onde a máscara é
+// foreground, preserva onde não é — sem reconstrução vetorial, sem perder
+// detalhe. Detector de componentes conectados cai de volta pro raster negate
+// (imagem inteira) quando algum pedaço não funde à silhueta principal.
 // ─────────────────────────────────────────────────────────────────────
 
 const clamp = (v: number, lo: number, hi: number) =>
@@ -238,6 +242,63 @@ export interface NegativeOptions {
 	border?: number;
 	/** Lado maior do raster de trabalho. */
 	workDim?: number;
+	/**
+	 * Override do raio de fechamento (default: ~1% da menor dimensão, 1-6px).
+	 * Formas finas/diagonais (ex.: mechas de cabelo) podem precisar de um raio
+	 * maior pra fechar sem deixar vão — usado pela retentativa de
+	 * `buildSilhouetteContourSvg` quando o detector de vazamento dispara.
+	 */
+	closeR?: number;
+}
+
+/**
+ * Silhueta sólida (1 = dentro da figura), a partir de uma máscara de tinta já
+ * rasterizada: close (funde traços) → sela contra bordas (figura cortada pelo
+ * enquadramento) → preenche o miolo → dilata a borda.
+ *
+ * Função pura, sem I/O — separada de `silhouetteMaskPng` pra quem precisa da
+ * máscara de tinta ORIGINAL além do resultado (ex.: detectar vazamento
+ * comparando a tinta com o contorno traçado).
+ */
+export function computeSilhouetteMask(
+	ink: Uint8Array,
+	W: number,
+	H: number,
+	opts: NegativeOptions = {},
+): Uint8Array {
+	const minDim = Math.min(W, H);
+	// Teto alto de propósito: o default (~1% de minDim) fica bem abaixo dele
+	// sempre; quem precisa do teto alto é a retentativa de
+	// `buildSilhouetteContourSvg` (multiplica o raio pra fechar vãos diagonais
+	// que a primeira passada deixou abertos) — um teto baixo aqui anularia esse
+	// multiplicador silenciosamente.
+	const closeR = clamp(opts.closeR ?? Math.round(minDim * 0.01), 1, 40);
+	const sealDepth = clamp(Math.round(minDim * 0.05), 4, 60);
+	const sealGap = clamp(Math.round(minDim * 0.04), 4, 48);
+	const freeMargin = inkMarginToBorder(ink, W, H);
+	const borderR = Math.min(
+		clamp(opts.border ?? Math.round(minDim * 0.018), 2, 14),
+		Math.floor(freeMargin / 2),
+	);
+
+	let sil = closeSquare(ink, W, H, closeR);
+	sil = sealAgainstEdges(sil, W, H, sealDepth, sealGap);
+	sil = fillHoles(sil, W, H);
+	sil = dilateSquare(sil, W, H, borderR);
+	return sil;
+}
+
+/** Codifica uma máscara binária (1 = frente) num PNG 1-canal (0 = preto, 255 = branco). */
+export async function encodeMaskToPng(
+	mask: Uint8Array,
+	W: number,
+	H: number,
+): Promise<Buffer> {
+	const out = Buffer.allocUnsafe(W * H);
+	for (let i = 0; i < W * H; i++) out[i] = mask[i] === 1 ? 0 : 255;
+	return sharp(out, { raw: { width: W, height: H, channels: 1 } })
+		.png()
+		.toBuffer();
 }
 
 /**
@@ -253,30 +314,15 @@ export async function silhouetteMaskPng(
 	opts: NegativeOptions = {},
 ): Promise<{ png: Buffer; width: number; height: number }> {
 	const { ink, width: W, height: H } = await rasterizeSvgToInkMask(svg, maxDim);
-	const minDim = Math.min(W, H);
-	const closeR = clamp(Math.round(minDim * 0.01), 1, 6);
-	const sealDepth = clamp(Math.round(minDim * 0.05), 4, 60);
-	const sealGap = clamp(Math.round(minDim * 0.04), 4, 48);
-	const freeMargin = inkMarginToBorder(ink, W, H);
-	const borderR = Math.min(
-		clamp(opts.border ?? Math.round(minDim * 0.018), 2, 14),
-		Math.floor(freeMargin / 2),
-	);
-
-	let sil = closeSquare(ink, W, H, closeR);
-	sil = sealAgainstEdges(sil, W, H, sealDepth, sealGap);
-	sil = fillHoles(sil, W, H);
-	sil = dilateSquare(sil, W, H, borderR);
-
-	const out = Buffer.allocUnsafe(W * H);
-	for (let i = 0; i < W * H; i++) out[i] = sil[i] === 1 ? 0 : 255;
-	const png = await sharp(out, { raw: { width: W, height: H, channels: 1 } })
-		.png()
-		.toBuffer();
+	const sil = computeSilhouetteMask(ink, W, H, opts);
+	const png = await encodeMaskToPng(sil, W, H);
 	return { png, width: W, height: H };
 }
 
 const MODE_DIM = 256;
+
+/** Ver comentário em `chooseInvertMode` — medido contra um retrato em nanquim real. */
+const SUBPATH_COMPLEXITY_THRESHOLD = 200;
 
 /**
  * Escolhe o modo de inversão.
@@ -343,7 +389,20 @@ export async function chooseInvertMode(
 	// sobrevive. Testado: um retrato hachurado com 5,6% de tinta tinha
 	// survivalErode2=0 e bboxCoverage>0.5 — só o limiar de 8% (alto demais)
 	// barrava. Medido com hachura sintética de 1px em várias densidades.
-	return survivalErode2 < 0.25 && occ > 0.02 && bboxCoverage > 0.5
-		? 'silhouette'
-		: 'geometric';
+	const bySparsity = survivalErode2 < 0.25 && occ > 0.02 && bboxCoverage > 0.5;
+	if (bySparsity) return 'silhouette';
+
+	// `survivalErode2` só pega TRAÇO FINO (desaparece na erosão). Line-art densa
+	// de traço médio/grosso (ex.: ilustração em nanquim com sombreado em blocos,
+	// não hachura de 1px) sobrevive à erosão como um logo — mas ainda tem
+	// detalhe fino demais pro complemento geométrico ficar legível (cada
+	// mecha/textura vira um furo minúsculo próprio). O que separa esse caso de
+	// um logo de verdade é a CONTAGEM de subpaths do próprio vetor: um retrato
+	// em nanquim medido tinha 1548 subpaths com survivalErode2=0,59 (bem acima
+	// do limiar acima) — um logo típico fica na casa de dezenas, não centenas.
+	const geo = readSvgGeometry(svg);
+	const subpathCount = geo
+		? geo.ds.reduce((acc, d) => acc + (d.match(/M/g)?.length ?? 0), 0)
+		: 0;
+	return subpathCount > SUBPATH_COMPLEXITY_THRESHOLD ? 'silhouette' : 'geometric';
 }

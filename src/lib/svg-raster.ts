@@ -27,22 +27,37 @@ export function readViewBox(
 /**
  * Força width/height às dimensões em px do viewBox, pra rasterização não ser
  * afetada por unidades físicas (mm) escritas pro laser.
+ *
+ * Reescreve SÓ os atributos da tag `<svg>` raiz — isolada primeiro num
+ * substring próprio. Sem isso, um SVG cujo `<svg>` raiz não declara
+ * width/height (comum quando só o viewBox é usado) faz o regex de
+ * width/height "sem âncora" casar o PRIMEIRO `width="..."`/`height="..."` de
+ * qualquer elemento FILHO (ex.: um `<rect>`) e corromper as dimensões dele em
+ * vez de inserir na raiz — silencioso e catastrófico pro raster resultante.
  */
 export function normalizeSvgForRaster(svg: string): string {
 	const vb = readViewBox(svg);
 	if (!vb) return svg;
-	let out = svg;
-	if (/\bwidth\s*=\s*"[^"]*"/i.test(out)) {
-		out = out.replace(/\bwidth\s*=\s*"[^"]*"/i, `width="${vb.w}"`);
+	const tagMatch = svg.match(/<svg\b[^>]*>/i);
+	if (!tagMatch || tagMatch.index === undefined) return svg;
+
+	let tag = tagMatch[0];
+	if (/\bwidth\s*=\s*"[^"]*"/i.test(tag)) {
+		tag = tag.replace(/\bwidth\s*=\s*"[^"]*"/i, `width="${vb.w}"`);
 	} else {
-		out = out.replace(/(<svg\b)/i, `$1 width="${vb.w}"`);
+		tag = tag.replace(/^<svg\b/i, `<svg width="${vb.w}"`);
 	}
-	if (/\bheight\s*=\s*"[^"]*"/i.test(out)) {
-		out = out.replace(/\bheight\s*=\s*"[^"]*"/i, `height="${vb.h}"`);
+	if (/\bheight\s*=\s*"[^"]*"/i.test(tag)) {
+		tag = tag.replace(/\bheight\s*=\s*"[^"]*"/i, `height="${vb.h}"`);
 	} else {
-		out = out.replace(/(<svg\b)/i, `$1 height="${vb.h}"`);
+		tag = tag.replace(/^<svg\b/i, `<svg height="${vb.h}"`);
 	}
-	return out;
+
+	return (
+		svg.slice(0, tagMatch.index) +
+		tag +
+		svg.slice(tagMatch.index + tagMatch[0].length)
+	);
 }
 
 export interface RasterOptions {
