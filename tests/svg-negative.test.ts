@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
 	closeSquare,
+	computeSilhouetteMask,
 	dilateSquare,
+	encodeMaskToPng,
 	erodeSquare,
 	fillHoles,
 	sealAgainstEdges,
+	silhouetteMaskPng,
 } from '@/lib/svg-negative.js';
+import { rasterizeSvgToInkMask } from '@/lib/svg-raster.js';
 
 // ─── Referência ingênua: 3×3 repetido r vezes (o algoritmo original) ──
 // A versão de produção usa morfologia separável com janela corrente, O(N) e
@@ -214,5 +218,121 @@ describe('invertModeForSubject', () => {
 		// Desconhecido/ausente → null, e o chamador cai na heurística.
 		expect(invertModeForSubject('color')).toBeNull();
 		expect(invertModeForSubject(undefined)).toBeNull();
+	});
+});
+
+describe('chooseInvertMode — sinal de complexidade (subpaths)', () => {
+	it('line-art densa de traço médio (sobrevive à erosão, mas com centenas de subpaths) → silhueta', async () => {
+		const { chooseInvertMode } = await import('@/lib/svg-negative.js');
+		// Retrato real medido: 1548 subpaths, survivalErode2=0,59 (bem acima do
+		// limiar de 0,25 que pega hachura FINA) — sem o sinal de complexidade,
+		// esse tipo de ilustração caía em 'geometric' e reproduzia o mesmo
+		// "fundo quase sólido cheio de furinhos" que o subject='photo' existe
+		// pra evitar. Sintético aqui: 250 blocos de 6×6 (grossos o bastante pra
+		// sobreviver à erosão), muitos subpaths.
+		let shapes = '';
+		for (let i = 0; i < 250; i++) {
+			const x = 10 + (i % 25) * 20;
+			const y = 10 + Math.floor(i / 25) * 20;
+			shapes += `<rect x="${x}" y="${y}" width="6" height="6" fill="black"/>`;
+		}
+		const denseLineArt = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="220" viewBox="0 0 520 220">${shapes}</svg>`;
+
+		expect(await chooseInvertMode(denseLineArt)).toBe('silhouette');
+	});
+
+	it('logo simples (poucos subpaths, formas sólidas) → geométrico', async () => {
+		const { chooseInvertMode } = await import('@/lib/svg-negative.js');
+		const simpleLogo =
+			'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
+			'<rect x="20" y="20" width="160" height="160" fill="black"/>' +
+			'<rect x="70" y="70" width="60" height="60" fill="black"/></svg>';
+
+		expect(await chooseInvertMode(simpleLogo)).toBe('geometric');
+	});
+});
+
+describe('computeSilhouetteMask (extraída de silhouetteMaskPng)', () => {
+	it('silhouetteMaskPng continua usando o pipeline rasterize→computeSilhouetteMask→encode', async () => {
+		// Regressão da extração: silhouetteMaskPng() precisa continuar batendo
+		// bit a bit com chamar as peças separadamente — é o mesmo contrato de
+		// antes, só reorganizado pra buildSilhouetteContourSvg reaproveitar a
+		// máscara de tinta original (`ink`), que silhouetteMaskPng descarta.
+		const svg =
+			'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">' +
+			'<rect x="10" y="10" width="20" height="20" fill="black"/></svg>';
+
+		const { ink, width, height } = await rasterizeSvgToInkMask(svg, 64);
+		const expectedMask = computeSilhouetteMask(ink, width, height);
+		const expectedPng = await encodeMaskToPng(expectedMask, width, height);
+
+		const { png, width: w2, height: h2 } = await silhouetteMaskPng(svg, 64);
+		expect(w2).toBe(width);
+		expect(h2).toBe(height);
+		expect(Buffer.compare(png, expectedPng)).toBe(0);
+	});
+
+	/**
+	 * Duas "mechas" quase-paralelas (diagonais, staircase de baixa inclinação,
+	 * o padrão real de cabelo fino) com um vão de 18px entre elas, numa tela
+	 * 100×100. Valores medidos diretamente (não chutados): com o `closeR`
+	 * pequeno (comparável ao default ~1% da menor dimensão) o vão NÃO fecha;
+	 * só um `closeR` bem maior (a retentativa de `buildSilhouetteContourSvg`)
+	 * funde as duas mechas num miolo sólido. É o mecanismo exato que a
+	 * retentativa depende — se ele parar de funcionar aqui, a retentativa
+	 * também para de funcionar contra "caso 1".
+	 */
+	it('vão largo entre mechas finas não fecha com closeR pequeno, mas fecha com closeR maior', () => {
+		const W = 100;
+		const H = 100;
+		const GAP = 18;
+		const ink = new Uint8Array(W * H);
+		for (let y = 5; y < H - 10; y++) {
+			const x1 = 20 + Math.floor(y * 0.3);
+			const x2 = x1 + GAP;
+			if (x1 >= 0 && x1 < W) ink[y * W + x1] = 1;
+			if (x2 >= 0 && x2 < W) ink[y * W + x2] = 1;
+		}
+		const probeY = 50;
+		const probeX = 20 + Math.floor(probeY * 0.3) + Math.round(GAP / 2);
+
+		const small = computeSilhouetteMask(ink, W, H, { closeR: 2 });
+		expect(small[probeY * W + probeX]).toBe(0);
+
+		const big = computeSilhouetteMask(ink, W, H, { closeR: 8 });
+		expect(big[probeY * W + probeX]).toBe(1);
+	});
+
+	/**
+	 * Análogo sintético do bug real (pá de remo cruzado parcialmente fora do
+	 * contorno calculado): um blob sólido principal + poeira de pixels isolados
+	 * longe demais pra fechar com qualquer `closeR` razoável. Serve de fixture
+	 * pro detector de fragmentação/vazamento de `buildSilhouetteContourSvg`
+	 * (tests/svg-silhouette-contour.test.ts) — com essa máscara, o contorno
+	 * traçado do blob principal não cobre os pixels isolados, e a contagem de
+	 * subpaths dispara.
+	 */
+	it('poeira isolada longe do blob principal não é absorvida (fixture adversarial)', () => {
+		const W = 120;
+		const H = 120;
+		const ink = new Uint8Array(W * H);
+		for (let y = 40; y < 80; y++) {
+			for (let x = 40; x < 80; x++) ink[y * W + x] = 1;
+		}
+		const specks: Array<[number, number]> = [
+			[10, 10],
+			[105, 15],
+			[15, 105],
+			[105, 105],
+		];
+		for (const [x, y] of specks) ink[y * W + x] = 1;
+
+		const sil = computeSilhouetteMask(ink, W, H, { closeR: 2 });
+		// miolo do blob principal preenchido
+		expect(sil[60 * W + 60]).toBe(1);
+		// poeira isolada continua isolada, não fundida ao blob nem apagada
+		for (const [x, y] of specks) expect(sil[y * W + x]).toBe(1);
+		// e o entorno imediato da poeira continua vazio (não virou um blob maior)
+		expect(sil[10 * W + 30]).toBe(0);
 	});
 });
