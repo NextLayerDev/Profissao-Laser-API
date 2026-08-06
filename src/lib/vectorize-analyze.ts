@@ -229,7 +229,14 @@ function classify(m: ImageMetrics): ImageProfile {
 			alphaMax: isLogo ? 1.1 : 1.2,
 			optTolerance: isLogo ? 0.3 : 0.2,
 			sharpen: isLogo,
-			blur: maybeBlur,
+			// SEM blur aqui (ao contrário dos outros ramos): nesta classe já
+			// bimodal, `noise` alto costuma ser textura fina intencional
+			// (halftone, hachura de nanquim), não ruído de scanner. Testado numa
+			// ilustração de hachura densa: `blur:0.5` fundia as linhas em blobs
+			// pretos sólidos antes do threshold; sem blur, o traço preserva as
+			// linhas individuais — e não piora um halftone denso (BMW), que sai
+			// igual ou mais nítido.
+			blur: null,
 		};
 	} else if (m.grayEntropy > 5.8) {
 		// 4) Tons de cinza contínuos → posterize por níveis (padrão grátis). Para foto
@@ -289,12 +296,20 @@ export async function analyzeImage(buffer: Buffer): Promise<ImageProfile> {
 	// RGBA cru (com alpha) — fundo transparente vira BRANCO no cinza (convenção
 	// de gravação: branco = não grava). Sem isso, preto-sobre-transparente era
 	// lido como "fundo escuro" → invertia → resultado vazio.
+	//
+	// kernel 'nearest' de propósito (mesmo motivo de `heuristicClassify` em
+	// image-classify.ts): um resize suavizante (lanczos etc.) borra halftone/
+	// dither fino em cinza médio contínuo, fazendo uma imagem já 100% P&B
+	// (bilevel) parecer foto em tom contínuo — `bimodality` cai, `grayEntropy`
+	// sobe, e o router recomenda IA (`recommendTool: 'engraving'`) num caso que
+	// não precisa. Nearest não mistura pixels vizinhos: preserva a dureza real.
 	const { data, info } = await sharp(buffer)
 		.resize({
 			width: ANALYZE_DIM,
 			height: ANALYZE_DIM,
 			fit: 'inside',
 			withoutEnlargement: true,
+			kernel: 'nearest',
 		})
 		.ensureAlpha()
 		.raw()
