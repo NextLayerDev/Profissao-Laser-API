@@ -34,7 +34,10 @@ export interface SilhouetteContourOptions {
 	maxDim?: number;
 }
 
-export type SilhouetteContourFailReason = 'no_geometry' | 'empty' | 'fragmented';
+export type SilhouetteContourFailReason =
+	| 'no_geometry'
+	| 'empty'
+	| 'fragmented';
 
 export type SilhouetteContourResult =
 	| { ok: true; svg: string }
@@ -161,7 +164,10 @@ export async function buildSilhouetteContourSvg(
 		if (inkCount === 0) return { ok: false, reason: 'empty' };
 
 		const minDim = Math.min(W, H);
-		const closeR = Math.max(1, Math.round(minDim * 0.01 * attempt.closeRMultiplier));
+		const closeR = Math.max(
+			1,
+			Math.round(minDim * 0.01 * attempt.closeRMultiplier),
+		);
 		const sil = computeSilhouetteMask(ink, W, H, { closeR });
 
 		const components = countSignificantComponents(

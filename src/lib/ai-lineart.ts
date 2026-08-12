@@ -101,27 +101,19 @@ OUTPUT: an ultra-premium steel-plate, museum-quality banknote engraving — extr
 ${ARTE_UNICA}`;
 
 /**
- * Prompt de LOGO. Portado do LaserPro do comunidade_laser, onde já roda em
- * produção — inclusive o bloco anti-alucinação, que nasceu de uma correção
- * real (o modelo inventava canecas/mockups e texto). Mantido verbatim; a única
- * adição é a trava de ARTE ÚNICA, que lá também faltava.
+ * Prompt de LOGO, customizado a pedido. A única instrução não óbvia lendo o
+ * texto puro: figuras humanas dentro do logo viram SILHUETA preta detalhada
+ * (não contorno/linha), com anatomia clara — diferente do resto do prompt,
+ * que é fidelidade 1:1 de forma/cor.
  */
-const LOGO_PROMPT = `Redesenhe a arte da imagem fornecida como arte vetorial profissional em preto e branco, reproduzindo-a de forma IDÊNTICA.
-
-REGRA MAIS IMPORTANTE — FIDELIDADE TOTAL À IMAGEM ORIGINAL:
-- A saída deve conter EXATAMENTE a mesma arte da imagem de entrada: mesma composição, mesmos elementos, mesmas proporções e mesmo enquadramento.
-- NÃO adicione NADA que não exista na imagem original: nenhum texto novo, nenhuma palavra, nenhuma letra, nenhum número, nenhum objeto, nenhum produto, nenhum copo, caneca, camiseta ou qualquer mockup, nenhuma moldura ou borda, nenhum fundo ou cenário, nenhuma marca d'água, nenhuma assinatura, nenhum ornamento decorativo.
-- NÃO remova, substitua ou redesenhe elementos existentes. NÃO "melhore", NÃO reinterprete e NÃO crie uma variação da arte.
-- Se a imagem contém texto, reproduza-o LETRA POR LETRA, com o mesmo desenho de fonte. NUNCA invente, corrija, traduza ou complete texto.
-- NÃO aplique a arte sobre nenhum objeto ou superfície. O resultado é a arte SOZINHA, plana e frontal, sobre fundo branco puro.
-
-CONVERSÃO DE ESTILO (a única transformação permitida):
-- Remover todas as cores: apenas preto puro (#000000) nas áreas sólidas e branco puro (#FFFFFF) no fundo.
-- Contornos nítidos e bem definidos; texto existente com leitura perfeita.
-- Sem gradientes, sombras, tons de cinza ou efeitos rasterizados.
-- Caminhos fechados, contínuos e limpos, prontos para gravação ou corte a laser.
-
-Estilo final: a MESMA arte da entrada, em vetor P&B de alto contraste, acabamento profissional.
+const LOGO_PROMPT = `Converter a imagem fornecida em uma arte vetorial profissional em preto e branco.
+Remover completamente todas as cores, mantendo apenas preto puro (#000000) para áreas sólidas e branco puro (#FFFFFF) como fundo.
+Preservar todos os elementos da composição original: figuras humanas, símbolos, tipografia, estrelas, faixas e formas geométricas.
+As figuras humanas devem ser transformadas em silhuetas pretas detalhadas, com contornos bem definidos e anatomia clara.
+Textos devem ser vetorizados com bordas nítidas e leitura perfeita.
+Não utilizar gradientes, sombras, bitmap, tons de cinza ou efeitos rasterizados.
+Todos os caminhos devem ser fechados, contínuos e limpos, prontos para gravação ou corte a laser.
+Estilo final: arte vetorial técnica, alto contraste, acabamento profissional.
 
 ${ARTE_UNICA}`;
 
