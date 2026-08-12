@@ -404,5 +404,7 @@ export async function chooseInvertMode(
 	const subpathCount = geo
 		? geo.ds.reduce((acc, d) => acc + (d.match(/M/g)?.length ?? 0), 0)
 		: 0;
-	return subpathCount > SUBPATH_COMPLEXITY_THRESHOLD ? 'silhouette' : 'geometric';
+	return subpathCount > SUBPATH_COMPLEXITY_THRESHOLD
+		? 'silhouette'
+		: 'geometric';
 }
