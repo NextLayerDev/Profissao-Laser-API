@@ -26,7 +26,8 @@ vi.mock('@/lib/storage.js', () => ({
 
 const buildSilhouetteContourSvg = vi.fn();
 vi.mock('@/lib/svg-silhouette-contour.js', () => ({
-	buildSilhouetteContourSvg: (...a: unknown[]) => buildSilhouetteContourSvg(...a),
+	buildSilhouetteContourSvg: (...a: unknown[]) =>
+		buildSilhouetteContourSvg(...a),
 }));
 
 const { vectorInvertService } = await import('@/services/vector-invert.js');
@@ -48,7 +49,9 @@ function mockVector(subject: 'photo' | 'logo' | 'color' | null) {
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	uploadVectorPng.mockResolvedValue('https://cdn.example.com/vec-1_inverted.png');
+	uploadVectorPng.mockResolvedValue(
+		'https://cdn.example.com/vec-1_inverted.png',
+	);
 	vi.spyOn(globalThis, 'fetch').mockResolvedValue(
 		new Response(ORIGINAL_SVG, { status: 200 }),
 	);
@@ -62,7 +65,11 @@ describe('vectorInvertService.invert — modo silhouette', () => {
 			'<image x="0" y="0" width="40" height="40" href="data:image/png;base64,AAAA"/></svg>';
 		buildSilhouetteContourSvg.mockResolvedValue({ ok: true, svg: contourSvg });
 
-		const result = await vectorInvertService.invert('cust-1', 'vec-1', 'silhouette');
+		const result = await vectorInvertService.invert(
+			'cust-1',
+			'vec-1',
+			'silhouette',
+		);
 
 		expect(result.error).toBeNull();
 		expect(result.data?.mode).toBe('silhouette');
@@ -73,9 +80,16 @@ describe('vectorInvertService.invert — modo silhouette', () => {
 
 	it('cai no raster negate quando buildSilhouetteContourSvg recusa (ok:false)', async () => {
 		mockVector('photo');
-		buildSilhouetteContourSvg.mockResolvedValue({ ok: false, reason: 'fragmented' });
+		buildSilhouetteContourSvg.mockResolvedValue({
+			ok: false,
+			reason: 'fragmented',
+		});
 
-		const result = await vectorInvertService.invert('cust-1', 'vec-1', 'silhouette');
+		const result = await vectorInvertService.invert(
+			'cust-1',
+			'vec-1',
+			'silhouette',
+		);
 
 		expect(result.error).toBeNull();
 		expect(result.data?.mode).toBe('silhouette');
@@ -86,9 +100,16 @@ describe('vectorInvertService.invert — modo silhouette', () => {
 
 	it('não recobra nem cria novo formato pago — paidFormats ecoado sem alteração', async () => {
 		mockVector('photo');
-		buildSilhouetteContourSvg.mockResolvedValue({ ok: false, reason: 'fragmented' });
+		buildSilhouetteContourSvg.mockResolvedValue({
+			ok: false,
+			reason: 'fragmented',
+		});
 
-		const result = await vectorInvertService.invert('cust-1', 'vec-1', 'silhouette');
+		const result = await vectorInvertService.invert(
+			'cust-1',
+			'vec-1',
+			'silhouette',
+		);
 
 		expect(result.data?.paidFormats).toEqual(['svg']);
 		expect(upsertInverted).not.toHaveBeenCalled();

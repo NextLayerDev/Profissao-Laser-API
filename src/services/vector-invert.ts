@@ -137,9 +137,7 @@ export const vectorInvertService = {
 				// recusar o resultado. Sem classificador manual por tipo de imagem —
 				// o fallback automático É o diferenciador entre os dois caminhos.
 				const contour = await buildSilhouetteContourSvg(original);
-				svgContent = contour.ok
-					? contour.svg
-					: await rasterNegative(original);
+				svgContent = contour.ok ? contour.svg : await rasterNegative(original);
 			} else {
 				const result = invertSvgPolarity(original);
 				if ('error' in result) {
