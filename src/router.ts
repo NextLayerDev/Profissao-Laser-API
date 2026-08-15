@@ -38,6 +38,7 @@ import { provisioningRoute } from './routes/provisioning.js';
 import { publicQuoteRoute } from './routes/public-quote.js';
 import { purchaseRoute } from './routes/purchase.js';
 import { quizRoute } from './routes/quiz.js';
+import { quoteProfileRoutes } from './routes/quote-profile.js';
 import { roleRoute } from './routes/role.js';
 import { savedLessonRoute } from './routes/saved-lesson.js';
 import { supportChatRoute } from './routes/support-chat.js';
@@ -96,6 +97,9 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(toolBankRoute);
 	app.register(toolCollectionRoute);
 	app.register(toolBankSmartTemaRoute);
+	// Perfil curto do Orçamento: seis perguntas → os 31 campos. Não cobra, não
+	// grava e não chama modelo — é cadastro, não cotação.
+	app.register(quoteProfileRoutes);
 	app.register(vectorLibraryRoute);
 	app.register(vectorSupportRoute);
 	app.register(faqRoute);

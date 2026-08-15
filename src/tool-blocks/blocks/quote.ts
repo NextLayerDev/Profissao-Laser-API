@@ -17,6 +17,8 @@ import {
 	type LaserKind,
 	resolveCutSpeed,
 } from '../../lib/quote/cut-speed.js';
+import { dossieParaModelo, explicaOrcamento } from '../../lib/quote/explain.js';
+import { numeroBR } from '../../lib/quote/format.js';
 import type {
 	MaterialBasis,
 	MaterialInput,
@@ -24,7 +26,10 @@ import type {
 import {
 	computeQuote,
 	DEFAULT_PROFILE,
+	defaultProfileFor,
+	prefixaAlertas,
 	profileFromCollectionData,
+	type QuoteAlerta,
 	type QuoteBreakdown,
 	type QuoteMetrics,
 	type QuoteProfile,
@@ -316,10 +321,13 @@ export const cadDiagnoseBlock: ToolBlock<z.infer<typeof diagnoseSchema>> = {
 		// orçamento. Saem da versão pública.
 		const publicos = warnings
 			.filter((d) => DIAG_PUBLICOS.has(d.code))
-			.map(({ code, severity, message, count }) => ({
+			// `publicMessage` quando existe: a `message` é escrita para quem opera a
+			// máquina e termina em "avise o cliente" — frase que o cliente lia sobre
+			// ele mesmo no orçamento. Ver `Diagnostic.publicMessage`.
+			.map(({ code, severity, message, publicMessage, count }) => ({
 				code,
 				severity,
-				message,
+				message: publicMessage ?? message,
 				count,
 			}));
 
@@ -433,6 +441,28 @@ const priceSchema = z.object({
 	tempo_manual_min: numOpcional(0, 10_000),
 	desconto_pct: numOpcional(0, 99),
 	precificar_por: z.enum(['perfil', 'markup', 'margem']).default('perfil'),
+
+	/**
+	 * "E se eu fizer 50 em vez de 10?" — as quantidades da CURVA DE ESCALA.
+	 *
+	 * Chega como `10|50|100` (é multipart: tudo é string) ou como array. Vazio =
+	 * curva desligada, e o bloco se comporta exatamente como antes.
+	 *
+	 * Isto NÃO é uma segunda cobrança nem um segundo pipeline: `computeQuote` é
+	 * pura e não toca banco nenhum, então cada ponto da curva custa microssegundos
+	 * de CPU sobre dados que já estão em memória. Carregar perfil, material e
+	 * cascata de velocidade — o que de fato custa I/O — acontece UMA vez.
+	 */
+	curva_qtds: z.preprocess(
+		(v) => {
+			if (v === '' || v === null || v === undefined) return [];
+			const bruto = Array.isArray(v) ? v : String(v).split(/[|,;\s]+/);
+			return bruto
+				.map((x) => Number(String(x).trim()))
+				.filter((n) => Number.isFinite(n) && n >= 1);
+		},
+		z.array(z.coerce.number().int().min(1).max(100_000)).max(8).default([]),
+	),
 });
 
 type PriceParams = z.infer<typeof priceSchema>;
@@ -547,6 +577,72 @@ function materialDaColecao(
 	};
 }
 
+/**
+ * A PEÇA CABE NA CHAPA QUE ELE COMPRA?
+ *
+ * Duas coisas que a investigação mediu e que a ferramenta calculava, cobrava e
+ * jogava fora:
+ *
+ *  1. `peca_maior_que_chapa` existe em `cad.diagnose`, com `severity: 'erro'`,
+ *     mas só liga quando `chapa_w`/`chapa_h` chegam ao nó — e a tela nova manda
+ *     um subconjunto deliberado que não inclui a chapa (é o que faz a tela ter
+ *     3 perguntas). Resultado: o aluno orçava e aceitava um trabalho que não
+ *     cabe. A medida da chapa NUNCA precisou ser pergunta: está na coleção
+ *     `materiais` (MDF = 2750 × 1830), que é a mesma linha de onde sai a
+ *     densidade e o preço do quilo.
+ *  2. Unidade errada devolvia R$ 56.278,00 sem uma palavra: o mesmo arquivo lido
+ *     em polegada vira uma peça de 33 METROS e o preço sobe 439×. Não existe
+ *     teto de sanidade em lugar nenhum do motor — e não precisa existir um
+ *     número mágico: uma peça de laser que não cabe em nenhuma chapa do mundo
+ *     já é o teto, e é este mesmo teste que o pega.
+ *
+ * É ALERTA, não `throw`: pode ser peça de dobra, ou chapa especial que ele
+ * compra fora do padrão. O preço continua saindo — mas com o erro na cara, em
+ * vermelho, em vez de silêncio.
+ *
+ * Exportada pelo mesmo motivo de `lucroDoPedido` e `orcamentoPublico`: é regra
+ * de dinheiro e tem teste próprio, sem banco, sem coleção e sem arquivo.
+ */
+export function cabeNaChapa(
+	bbox: { w: number; h: number } | undefined,
+	material: MaterialInput,
+): QuoteAlerta[] {
+	const w = bbox?.w;
+	const h = bbox?.h;
+	if (!(w && h) || w <= 0 || h <= 0) return [];
+	const cw = material.chapaWmm;
+	const ch = material.chapaHmm;
+
+	if (cw && ch && cw > 0 && ch > 0) {
+		// Deitada ou em pé: a chapa não tem lado certo.
+		if ((w <= cw && h <= ch) || (w <= ch && h <= cw)) return [];
+		return [
+			{
+				codigo: 'peca_maior_que_chapa',
+				severidade: 'erro',
+				titulo: 'A peça não cabe na chapa',
+				mensagem: `a peça mede ${numeroBR(w, 0)} × ${numeroBR(h, 0)} mm e a chapa de ${material.nome} tem ${numeroBR(cw, 0)} × ${numeroBR(ch, 0)} mm. Esse trabalho não sai como está: divida a peça, compre chapa maior — ou confira a UNIDADE do desenho, porque um arquivo em polegada lido como milímetro sai 25 vezes maior e o preço sobe junto.`,
+			},
+		];
+	}
+
+	// Material sem medida de chapa cadastrada (couro, por exemplo). Sobra o teto
+	// de sanidade: 3 m é maior que a maior chapa da base (2750 mm) e que a mesa
+	// de qualquer máquina deste público.
+	const maior = Math.max(w, h);
+	if (maior > 3000) {
+		return [
+			{
+				codigo: 'peca_gigante',
+				severidade: 'erro',
+				titulo: 'Essa peça tem metros',
+				mensagem: `o desenho foi lido como ${numeroBR(w / 1000, 2)} × ${numeroBR(h / 1000, 2)} METROS. Se não é isso mesmo, o arquivo está em outra unidade — em polegada, o mesmo desenho sai 25 vezes maior e o preço sobe junto.`,
+			},
+		];
+	}
+	return [];
+}
+
 /** Registro de `velocidades` → linha curada da cascata de velocidade. */
 function linhaVelocidade(d: Row): CuratedSpeedRow | null {
 	const espessuraMm = num(d.espessura_mm);
@@ -569,6 +665,130 @@ function linhaVelocidade(d: Row): CuratedSpeedRow | null {
 			laser === 'fibra' || laser === 'co2' ? (laser as LaserKind) : undefined,
 		fonte: str(d.maquina),
 	};
+}
+
+/* ─────────────────────── "quanto sobra" e "e se eu fizer 50?" ─────────────── */
+
+/**
+ * O LUCRO EM REAIS — a pergunta que o dono faz e que a ferramenta nunca
+ * respondia.
+ *
+ * O breakdown já trazia `margemEfetivaComDescontoPct`, um percentual. Ninguém
+ * paga conta com percentual: "47,8% de margem" não diz se dá para comprar a
+ * chapa do mês. O mesmo número em dinheiro, e o piso que responde "qual o menor
+ * preço que não me faz perder dinheiro?", são hoje campos do próprio
+ * `QuoteBreakdown`:
+ *
+ *   líquido = o que entra depois do imposto (o imposto é sobre a NOTA)
+ *   sobra   = líquido − custo (direto + overhead), por peça e no pedido
+ *   piso    = custo com imposto e desconto por cima, arredondado para CIMA
+ *
+ * NADA aqui é opinião nem estimativa: é aritmética que o precificador já fechou.
+ * Nenhum modelo toca nisto — ver o cabeçalho do arquivo.
+ *
+ * Exportada pelo mesmo motivo de `orcamentoPublico`: é dinheiro, e dinheiro tem
+ * teste próprio — sem precisar de banco, de coleção nem de arquivo.
+ */
+export function lucroDoPedido(b: QuoteBreakdown): {
+	porPecaCents: number;
+	doPedidoCents: number;
+	margemPct: number;
+	pisoUnitCents: number;
+	/**
+	 * O piso na base EFETIVA (o que o cliente paga por peça). É ESTE que a tela
+	 * usa, porque a manchete dela é o preço efetivo — o piso de tabela ao lado de
+	 * um preço efetivo fazia o mesmo cartão dizer "sobram R$ 144,20" e "abaixo de
+	 * R$ 10,45 dá prejuízo" enquanto o número grande na tela era R$ 7,80.
+	 */
+	pisoUnitEfetivoCents: number;
+	abaixoDoCusto: boolean;
+} {
+	// ESTA FUNÇÃO NÃO CALCULA NADA, DE PROPÓSITO. O lucro e o piso passaram a
+	// sair do próprio `computeQuote` (`precos.lucroPedidoCents`,
+	// `precos.precoUnitMinimoCents`), junto com o aviso de prejuízo — dinheiro
+	// tem UM dono neste produto, e é `lib/quote/pricing.ts`. Aqui sobrou só o
+	// nome dos campos que a tela já consome.
+	//
+	// Uma diferença que veio junto e é melhoria: o piso agora respeita o
+	// DESCONTO deste pedido. "O menor preço que não me faz perder dinheiro" com
+	// 15% de desconto na mesa é 15% mais alto na tabela — o piso sem desconto
+	// respondia a uma pergunta que ninguém fez.
+	const p = b.precos;
+	return {
+		porPecaCents: p.lucroPorPecaCents,
+		doPedidoCents: p.lucroPedidoCents,
+		margemPct: p.margemEfetivaComDescontoPct,
+		pisoUnitCents: p.precoUnitMinimoCents,
+		pisoUnitEfetivoCents: p.precoUnitMinimoEfetivoCents,
+		abaixoDoCusto: p.lucroPedidoCents < 0,
+	};
+}
+
+/** Um ponto da curva de escala. Só o que a tela desenha — nada de custo interno. */
+export interface PontoDaCurva {
+	qtd: number;
+	precoUnitCents: number;
+	/** O que o cliente paga por peça de fato (total ÷ qtd) — é este que compara. */
+	precoUnitEfetivoCents: number;
+	totalCents: number;
+	custoPecaCents: number;
+	lucroTotalCents: number;
+	margemPct: number;
+	descontoPct: number;
+	prazoDias: number;
+	aplicouPedidoMinimo: boolean;
+	/** Marca o ponto que corresponde à quantidade realmente pedida. */
+	atual: boolean;
+}
+
+/**
+ * A CURVA DE ESCALA — "e se eu fizer 50 em vez de 10?".
+ *
+ * Um preço unitário solto engana: ele muda com a quantidade por DOIS motivos
+ * que o profissional confunde o tempo todo — o setup, que é rateado (uma peça
+ * paga os 5 min de preparação sozinha; cem peças pagam 3 s cada), e a faixa de
+ * desconto do perfil, que é automática. Mostrar um número só faz o aluno
+ * responder "quanto sai 50?" refazendo o orçamento — e, antes desta função,
+ * pagando de novo por isso.
+ *
+ * `computeQuote` é PURA: mesma métrica, mesmo perfil, mesma velocidade, só o
+ * `qty` muda. Por isso a curva pode ser calculada aqui sem uma segunda ida ao
+ * banco e sem uma segunda cobrança.
+ */
+export function montaCurva(
+	qtds: number[],
+	qtdAtual: number,
+	calcula: (qty: number) => QuoteBreakdown,
+	atual: QuoteBreakdown,
+): PontoDaCurva[] {
+	// A quantidade pedida SEMPRE entra na curva, mesmo que a definition não a
+	// tenha listado: sem ela o aluno compara faixas que não incluem a dele e não
+	// tem âncora nenhuma para ler o resto.
+	const unicas = [...new Set([qtdAtual, ...qtds])]
+		.filter((n) => Number.isFinite(n) && n >= 1)
+		.sort((a, b) => a - b);
+
+	return unicas.map((qtd) => {
+		// Reaproveita o breakdown que já foi calculado em vez de refazê-lo: além
+		// de barato, garante que o ponto "atual" da curva seja bit a bit o mesmo
+		// número do topo da tela. Dois valores diferentes para a mesma quantidade
+		// seria o pior defeito possível numa tela de preço.
+		const b = qtd === qtdAtual ? atual : calcula(qtd);
+		const l = lucroDoPedido(b);
+		return {
+			qtd,
+			precoUnitCents: b.precos.precoUnitCents,
+			precoUnitEfetivoCents: b.precos.precoUnitEfetivoCents,
+			totalCents: b.precos.precoTotalCents,
+			custoPecaCents: b.custos.totalCents,
+			lucroTotalCents: l.doPedidoCents,
+			margemPct: r3(b.precos.margemEfetivaComDescontoPct * 100),
+			descontoPct: r3(b.precos.descontoPct * 100),
+			prazoDias: b.prazoDias,
+			aplicouPedidoMinimo: b.precos.aplicouPedidoMinimo,
+			atual: qtd === qtdAtual,
+		};
+	});
 }
 
 /**
@@ -652,7 +872,10 @@ export const quotePriceBlock: ToolBlock<PriceParams> = {
 
 		/* ── perfil de precificação ─────────────────────────────────────────── */
 		let profile: QuoteProfile = DEFAULT_PROFILE;
-		const avisos: string[] = [];
+		// O que só o BLOCO sabe (não tem perfil, o desenho traz cópias) entra como
+		// alerta, igual ao que o precificador produz — a tela não precisa saber de
+		// onde cada aviso veio para pintar os dois do mesmo jeito.
+		const doBloco: QuoteAlerta[] = [];
 		if (p.perfil_id) {
 			const perfil = await repo.findById(p.perfil_id, p.tool, 'perfis');
 			if (!perfil) {
@@ -666,10 +889,16 @@ export const quotePriceBlock: ToolBlock<PriceParams> = {
 			}
 			profile = profileFromCollectionData(perfil.data);
 		} else {
-			avisos.push(
-				'sem perfil de custo: o orçamento saiu com os valores padrão do sistema. Crie o seu perfil para o preço valer para a SUA máquina.',
-			);
+			doBloco.push({
+				codigo: 'sem_perfil',
+				severidade: 'aviso',
+				titulo: 'Este preço não é da sua máquina',
+				mensagem:
+					'o orçamento saiu com os valores padrão do sistema, não com os seus. Cadastre a sua oficina uma vez e o preço passa a ser o SEU.',
+			});
 		}
+		/** Sem perfil do dono, o padrão ainda pode ser trocado pelo do material. */
+		const semPerfilProprio = !p.perfil_id;
 
 		/* ── material ───────────────────────────────────────────────────────── */
 		let matEntry: { title: string; data: Row } | null = null;
@@ -695,6 +924,34 @@ export const quotePriceBlock: ToolBlock<PriceParams> = {
 				);
 			}
 		}
+		/**
+		 * O padrão do sistema é uma FIBRA de 1500 W, e a cascata de velocidade
+		 * recusa — com razão — material de CO2 num perfil de fibra: MDF não corta
+		 * em fibra. Só que MDF é o material mais comum deste público, então quem
+		 * abria a ferramenta sem ter criado perfil e escolhia MDF tomava um erro
+		 * seco em vez de um orçamento. O caminho mais provável da primeira visita
+		 * era o único que não funcionava.
+		 *
+		 * Quando o dono NÃO tem perfil próprio e o material declara o tipo de
+		 * laser, o padrão passa a ser o coerente com o material. Se ele TEM
+		 * perfil, nada é trocado: aí o conflito é real (a máquina dele não faz
+		 * esse material) e a cascata precisa dizer isso.
+		 */
+		const laserDoMaterial = matEntry ? str(matEntry.data.laser) : undefined;
+		if (
+			semPerfilProprio &&
+			(laserDoMaterial === 'co2' || laserDoMaterial === 'fibra') &&
+			laserDoMaterial !== profile.laser
+		) {
+			profile = defaultProfileFor(laserDoMaterial);
+			doBloco.push({
+				codigo: 'maquina_assumida',
+				severidade: 'info',
+				titulo: 'Máquina assumida',
+				mensagem: `assumimos uma máquina de ${laserDoMaterial === 'co2' ? 'CO2 (100 W)' : 'fibra (1500 W)'}, porque é o que corta o material que você escolheu.`,
+			});
+		}
+
 		const material = materialDaColecao(p, matEntry, profile);
 
 		/* ── velocidade de corte (cascata) ──────────────────────────────────── */
@@ -737,8 +994,14 @@ export const quotePriceBlock: ToolBlock<PriceParams> = {
 		const ponte = toQuoteMetrics(p.metrics, profile, {
 			tempoManualMin: p.tempo_manual_min,
 		});
-		const breakdown = computeQuote(ponte.metrics, profile, {
-			qty: p.qtd,
+		doBloco.push(...cabeNaChapa(ponte.metrics.bbox, material));
+		/**
+		 * As opções do orçamento SEM o `qty`, para que a curva de escala use
+		 * exatamente os mesmos números do preço principal. Extraídas para uma
+		 * constante de propósito: uma segunda cópia desse objeto, com um
+		 * `acabamento` esquecido, faria a curva discordar do preço do topo da tela.
+		 */
+		const opcoes = {
 			material,
 			speed,
 			...(p.acabamento !== undefined
@@ -755,13 +1018,47 @@ export const quotePriceBlock: ToolBlock<PriceParams> = {
 			...(p.desconto_pct !== undefined
 				? { descontoPct: p.desconto_pct / 100 }
 				: {}),
+		};
+		const breakdown = computeQuote(ponte.metrics, profile, {
+			...opcoes,
+			qty: p.qtd,
 		});
-		breakdown.avisos.unshift(...avisos, ...ponte.avisos);
+		prefixaAlertas(breakdown, [
+			...doBloco,
+			...ponte.avisos.map((mensagem) => ({
+				codigo: 'desenho',
+				severidade: 'aviso' as const,
+				titulo: 'O desenho',
+				mensagem,
+			})),
+		]);
+
+		const lucro = lucroDoPedido(breakdown);
+		const curva = montaCurva(
+			p.curva_qtds,
+			p.qtd,
+			(qty) => computeQuote(ponte.metrics, profile, { ...opcoes, qty }),
+			breakdown,
+		);
+
+		// A conta explicada em português, e o DOSSIÊ — a única forma do orçamento
+		// que pode ser entregue a um modelo de IA (só texto já formatado, ver
+		// `lib/quote/explain.ts`). Os dois saem do breakdown JÁ FECHADO: são
+		// leitura, não recálculo.
+		const explicacao = explicaOrcamento(breakdown);
+		const dossie = dossieParaModelo(breakdown);
 
 		const publico = orcamentoPublico(breakdown, p.metrics, p.espessura_mm);
 		return {
 			breakdown,
 			json: JSON.stringify(breakdown),
+			explicacao,
+			explicacao_texto: explicacao.texto,
+			veredito: explicacao.veredito,
+			alertas: breakdown.alertas,
+			/** Para um bloco de IA ligar em `{{quote.dossie_json}}` e mais nada. */
+			dossie,
+			dossie_json: JSON.stringify(dossie),
 			public: publico,
 			public_json: JSON.stringify(publico),
 			price_unit_cents: breakdown.precos.precoUnitCents,
@@ -769,6 +1066,15 @@ export const quotePriceBlock: ToolBlock<PriceParams> = {
 			price_unit: brl(breakdown.precos.precoUnitCents),
 			price_total: brl(breakdown.precos.precoTotalCents),
 			cost_unit_cents: breakdown.custos.totalCents,
+			/* "quanto sobra" e "e se eu fizer 50" — ver `lucroDoPedido`/`montaCurva`.
+			   Ambos são NEGÓCIO DO PROFISSIONAL: não entram em `public`, que é o
+			   documento do cliente final. */
+			lucro,
+			profit_total_cents: lucro.doPedidoCents,
+			profit_unit_cents: lucro.porPecaCents,
+			/** Menor unitário que empata com o custo. Abaixo dele, o pedido dá prejuízo. */
+			floor_unit_cents: lucro.pisoUnitCents,
+			curva,
 			lead_time_days: breakdown.prazoDias,
 			confidence: breakdown.velocidade.confidence,
 			speed_source: breakdown.velocidade.source,

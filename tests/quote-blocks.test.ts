@@ -13,6 +13,8 @@ import {
 	cadMetricsBlock,
 	cadParseBlock,
 	cadPreviewSvgBlock,
+	lucroDoPedido,
+	montaCurva,
 	orcamentoPublico,
 	quotePriceBlock,
 } from '@/tool-blocks/blocks/quote.js';
@@ -329,6 +331,10 @@ describe('regressões: orçamento público', () => {
 		source: 'curated' as const,
 		confidence: 1,
 		estimativa: false,
+		// `detalhe` é obrigatório em `CutSpeedResult`: é a frase que explica de
+		// onde a velocidade saiu, e o orçamento a repete na tela. Sem ela aqui o
+		// fixture não era um resultado de cascata, era um objeto parecido.
+		detalhe: 'linha curada de teste (MDF 3 mm)',
 		avisos: [],
 	};
 	/** Só os campos que o `orcamentoPublico` realmente lê. */
@@ -403,5 +409,160 @@ describe('regressões: orçamento público', () => {
 		expect(
 			chaves.filter((k) => proibido.test(k) && k !== 'pedido_minimo'),
 		).toEqual([]);
+	});
+});
+
+/* ─────────── "quanto sobra" e "e se eu fizer 50" (curva + lucro) ─────────── */
+
+describe('quote.price — o lucro em reais e a curva de escala', () => {
+	const PECA: QuoteMetrics = {
+		cutLengthMm: 5000,
+		pierces: 8,
+		netAreaMm2: 40_000,
+		bboxAreaMm2: 45_000,
+		bbox: { w: 300, h: 150 },
+	};
+	const MAT = { nome: 'MDF 3 mm', espessuraMm: 3, precoM2: 40 };
+	const VEL = {
+		speedMmS: 20,
+		passes: 1,
+		pierceS: 0.4,
+		source: 'curated' as const,
+		confidence: 1,
+		estimativa: false,
+		detalhe: 'receita medida na máquina',
+		avisos: [],
+	};
+	/** Perfil sem pedido mínimo: o piso mascararia a curva nas quantidades baixas. */
+	const PERFIL = { ...DEFAULT_PROFILE, pedidoMinimo: 0 };
+	const orca = (qty: number) =>
+		computeQuote(PECA, PERFIL, { qty, material: MAT, speed: VEL });
+
+	it('o lucro em reais é o líquido (pós-imposto) menos o custo — não um percentual', () => {
+		const b = orca(10);
+		const l = lucroDoPedido(b);
+		const liquido = b.precos.precoTotalCents * (1 - b.precos.impostoPct);
+		expect(l.doPedidoCents).toBe(
+			Math.round(liquido - b.custos.totalCents * b.qty),
+		);
+		// E casa com o percentual que o precificador já publicava.
+		expect(l.margemPct).toBe(b.precos.margemEfetivaComDescontoPct);
+		expect(l.doPedidoCents).toBeGreaterThan(0);
+		expect(l.abaixoDoCusto).toBe(false);
+	});
+
+	it('o PISO é o unitário que empata: um centavo abaixo dele, o pedido dá prejuízo', () => {
+		const b = orca(10);
+		const { pisoUnitCents } = lucroDoPedido(b);
+		// O piso é preço de TABELA, e a tabela é o que leva o desconto por cima.
+		// Com a faixa de 5% do perfil valendo a partir de 10 peças, o unitário
+		// precisa ser 5% mais alto para o pedido ainda empatar — um piso que
+		// ignorasse o desconto responderia a uma pergunta que ninguém fez.
+		const sobra = (1 - b.precos.descontoPct) * (1 - b.precos.impostoPct);
+		const liquidoNoPiso = pisoUnitCents * sobra;
+		// No piso a sobra é zero ou um arredondamento acima (é `ceil`), nunca abaixo.
+		expect(liquidoNoPiso).toBeGreaterThanOrEqual(b.custos.totalCents);
+		expect((pisoUnitCents - 1) * sobra).toBeLessThan(b.custos.totalCents);
+		// E o preço que a ferramenta pediu está ACIMA do piso, como tem que estar.
+		expect(b.precos.precoUnitCents).toBeGreaterThan(pisoUnitCents);
+	});
+
+	it('preço abaixo do custo é RECONHECIDO como prejuízo, não arredondado para zero', () => {
+		// Desconto de 90% sobre markup de 100%: (1+1)×(1−0,9) = 0,2 do custo.
+		const b = computeQuote(PECA, PERFIL, {
+			qty: 10,
+			material: MAT,
+			speed: VEL,
+			descontoPct: 0.9,
+		});
+		const l = lucroDoPedido(b);
+		expect(l.doPedidoCents).toBeLessThan(0);
+		expect(l.abaixoDoCusto).toBe(true);
+	});
+
+	it('a curva SEMPRE inclui a quantidade pedida, ordenada e sem repetir', () => {
+		const c = montaCurva([50, 10, 100, 10], 10, orca, orca(10));
+		expect(c.map((p) => p.qtd)).toEqual([10, 50, 100]);
+		expect(c.filter((p) => p.atual).map((p) => p.qtd)).toEqual([10]);
+	});
+
+	it('a quantidade pedida entra na curva mesmo fora da lista da definition', () => {
+		const c = montaCurva([50, 100], 7, orca, orca(7));
+		expect(c.map((p) => p.qtd)).toEqual([7, 50, 100]);
+	});
+
+	it('curva vazia ainda devolve o ponto atual — a tela nunca fica sem âncora', () => {
+		const c = montaCurva([], 25, orca, orca(25));
+		expect(c).toHaveLength(1);
+		expect(c[0].qtd).toBe(25);
+		expect(c[0].atual).toBe(true);
+	});
+
+	it('o ponto ATUAL é o MESMO breakdown do topo da tela, não um recálculo', () => {
+		// Dois números diferentes para a mesma quantidade seria o pior defeito
+		// possível numa tela de preço. Por isso o ponto atual reaproveita o objeto.
+		const b = orca(10);
+		const atual = montaCurva([1, 10, 100], 10, orca, b).find((p) => p.atual);
+		expect(atual?.totalCents).toBe(b.precos.precoTotalCents);
+		expect(atual?.precoUnitCents).toBe(b.precos.precoUnitCents);
+		expect(atual?.custoPecaCents).toBe(b.custos.totalCents);
+	});
+
+	it('a curva mostra o RATEIO DO SETUP: peça avulsa custa mais que peça em lote', () => {
+		const c = montaCurva([1, 10, 100], 1, orca, orca(1));
+		const [uma, dez, cem] = c;
+		// O setup (5 min) é diluído: o custo por peça cai monotonicamente.
+		expect(uma.custoPecaCents).toBeGreaterThan(dez.custoPecaCents);
+		expect(dez.custoPecaCents).toBeGreaterThan(cem.custoPecaCents);
+		// E o desconto por faixa do perfil aparece junto (5% em 10, 15% em 100).
+		expect(dez.descontoPct).toBe(5);
+		expect(cem.descontoPct).toBe(15);
+		// Fazer mais rende mais dinheiro, ainda que a margem % caia com o desconto.
+		expect(cem.lucroTotalCents).toBeGreaterThan(dez.lucroTotalCents);
+	});
+
+	it('`curva_qtds` aceita a string do multipart e a lista já pronta', () => {
+		const base = {
+			metrics: { comprimento_corte_mm: 1, contornos: [] },
+			espessura_mm: 3,
+		};
+		const doTexto = quotePriceBlock.paramsSchema.parse({
+			...base,
+			curva_qtds: '1|10|50|100',
+		}) as { curva_qtds: number[] };
+		expect(doTexto.curva_qtds).toEqual([1, 10, 50, 100]);
+
+		const doArray = quotePriceBlock.paramsSchema.parse({
+			...base,
+			curva_qtds: [10, 50],
+		}) as { curva_qtds: number[] };
+		expect(doArray.curva_qtds).toEqual([10, 50]);
+
+		// Vazio (campo em branco no multipart) = curva desligada, sem erro.
+		const vazio = quotePriceBlock.paramsSchema.parse({
+			...base,
+			curva_qtds: '',
+		}) as { curva_qtds: number[] };
+		expect(vazio.curva_qtds).toEqual([]);
+	});
+
+	it('o LUCRO e a CURVA nunca entram no documento do cliente final', () => {
+		// Guarda gêmea da de cima: sobra e custo por peça são negócio do
+		// profissional. O cliente vê preço, prazo e a peça — nada mais.
+		const b = orca(10);
+		const pub = orcamentoPublico(
+			b,
+			{
+				bbox: { w: 300, h: 150, minX: 0, minY: 0, maxX: 300, maxY: 150 },
+				n_furos: 8,
+				comprimento_corte_mm: 5000,
+			} as unknown as CadMetrics,
+			3,
+		);
+		const texto = JSON.stringify(pub);
+		expect(texto).not.toContain('lucro');
+		expect(texto).not.toContain('curva');
+		expect(texto).not.toContain('piso');
+		expect(Object.keys(pub)).not.toContain('lucro');
 	});
 });

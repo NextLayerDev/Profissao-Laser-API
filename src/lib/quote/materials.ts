@@ -196,8 +196,9 @@ export function pecasPorChapa(
  *   corta muita peça pequena e reaproveita a sobra de verdade.
  * - `bbox`: área do retângulo envolvente. É o mais honesto para chapa: o retalho
  *   em volta do contorno raramente vira outra peça, e quem paga por ele é você.
- * - `chapa`: chapa inteira rateada pelas peças que cabem no grid. Para quem
- *   compra chapa por pedido e não guarda sobra.
+ * - `chapa`: as chapas INTEIRAS que o pedido consome (`ceil(qtd / peças por
+ *   chapa)`), rateadas pelas peças pedidas. Para quem compra chapa por pedido e
+ *   não guarda sobra: a sobra da última chapa é dele, então está no preço.
  */
 export type MaterialBasis = 'liquido' | 'bbox' | 'chapa';
 
@@ -233,20 +234,32 @@ export interface AreaCobradaInput {
 
 export interface AreaCobradaResult {
 	basis: MaterialBasis;
+	/** Área cobrada de UMA peça (mm²). */
 	areaMm2: number;
 	/** Só em `basis: 'chapa'`: quantas peças o grid põe na chapa. */
 	pecasPorChapa?: number;
+	/** Só em `basis: 'chapa'`: quantas chapas o pedido inteiro consome. */
+	chapas?: number;
+	/** Só em `basis: 'chapa'`: capacidade comprada e não usada, em peças. */
+	sobraPecas?: number;
 	aproveitamento?: number;
 	avisos: string[];
+}
+
+export interface AreaCobradaOpts {
+	/** Quantidade do PEDIDO. Decide quantas chapas ele consome de verdade. */
+	qty?: number;
 }
 
 /** Área que entra na conta de material, segundo a política escolhida. */
 export function areaCobradaMm2(
 	metrics: AreaCobradaInput,
 	material: MaterialInput,
+	opts: AreaCobradaOpts = {},
 ): AreaCobradaResult {
 	const basis = material.basis ?? 'bbox';
 	const avisos: string[] = [];
+	const qty = Math.max(1, Math.floor(opts.qty ?? 1));
 
 	if (basis === 'liquido') {
 		const aprov = material.aproveitamento ?? APROVEITAMENTO_PADRAO;
@@ -283,15 +296,36 @@ export function areaCobradaMm2(
 			`a peça (${metrics.bbox.w.toFixed(1)}×${metrics.bbox.h.toFixed(1)} mm) não cabe na chapa (${chapaWmm}×${chapaHmm} mm)`,
 		);
 	}
+
+	// AQUI ESTAVA UM BURACO DE DINHEIRO MEDIDO: a conta era `chapa / n`,
+	// INDEPENDENTE da quantidade pedida. Só que `basis: 'chapa'` significa "eu
+	// compro a chapa por pedido e não guardo sobra" — quem pede 1 peça compra 1
+	// chapa inteira, e quem pede 28 (com 27 por chapa) compra DUAS. Na fórmula
+	// antiga, um pedido de 28 peças cobrava 1,04 chapa e o profissional pagava as
+	// outras 0,96 do próprio bolso (R$ 696 num inox 2000×1000).
+	//
+	// A conta certa é a da nota fiscal do fornecedor: chapas inteiras.
+	//   chapas       = ceil(qty / peças_por_chapa)
+	//   área/peça    = chapas × área_da_chapa / qty
+	// Com qty = 1 isso devolve a chapa INTEIRA, que é o que ele compra mesmo —
+	// e é por isso que a sobra vira AVISO em vez de sumir dentro do preço.
+	const chapas = Math.ceil(qty / n);
+	const sobraPecas = chapas * n - qty;
 	if (n === 1) {
 		avisos.push(
-			'só 1 peça cabe na chapa: o orçamento está cobrando a chapa inteira por peça',
+			`só 1 peça cabe na chapa de ${chapaWmm}×${chapaHmm} mm: cada peça deste pedido leva uma chapa inteira`,
+		);
+	} else if (sobraPecas > 0) {
+		avisos.push(
+			`cobrança por chapa: ${qty} ${qty === 1 ? 'peça consome' : 'peças consomem'} ${chapas} ${chapas === 1 ? 'chapa' : 'chapas'} de ${chapaWmm}×${chapaHmm} mm (cabem ${n} por chapa) — a sobra, que daria mais ${sobraPecas} ${sobraPecas === 1 ? 'peça' : 'peças'}, está no preço. É isso que "cobrar por chapa" quer dizer; para não cobrar a sobra, use a cobrança por peça.`,
 		);
 	}
 	return {
 		basis,
-		areaMm2: (chapaWmm * chapaHmm) / n,
+		areaMm2: (chapaWmm * chapaHmm * chapas) / qty,
 		pecasPorChapa: n,
+		chapas,
+		sobraPecas,
 		avisos,
 	};
 }

@@ -8,6 +8,7 @@ import {
 	pierceFallbackS,
 	resolveCutSpeed,
 } from '@/lib/quote/cut-speed.js';
+import { brl, pctBR } from '@/lib/quote/format.js';
 import {
 	APROVEITAMENTO_PADRAO,
 	areaCobradaMm2,
@@ -23,8 +24,11 @@ import {
 	arredondaCents,
 	computeQuote,
 	DEFAULT_PROFILE,
+	DEFAULT_PROFILE_CO2,
+	defaultProfileFor,
 	faixaDesconto,
 	parseDescontos,
+	prefixaAlertas,
 	profileFieldsSpec,
 	profileFromCollectionData,
 	profileToCollectionData,
@@ -153,11 +157,51 @@ describe('materiais', () => {
 		const bbox = areaCobradaMm2(m, { ...ACO_1MM, basis: 'bbox' });
 		expect(bbox.areaMm2).toBe(10_000);
 
-		const chapa = areaCobradaMm2(m, { ...ACO_1MM, basis: 'chapa' });
 		// 2000×1000, margem 10 → útil 1980×980; peça 100 + gap 5 → 18 × 9 = 162
+		// Num lote que enche a chapa exatamente, cada peça paga 1/162 dela.
+		const chapa = areaCobradaMm2(
+			m,
+			{ ...ACO_1MM, basis: 'chapa' },
+			{ qty: 162 },
+		);
 		expect(chapa.pecasPorChapa).toBe(162);
+		expect(chapa.chapas).toBe(1);
 		expect(chapa.areaMm2).toBeCloseTo(2_000_000 / 162, 6);
 		expect(chapa.areaMm2).toBeGreaterThan(bbox.areaMm2);
+	});
+
+	it('cobrança por chapa cobra as chapas INTEIRAS que o pedido consome', () => {
+		// O BURACO QUE ESTE TESTE FECHA: a conta era `chapa ÷ peças que cabem`,
+		// sem olhar a quantidade. Quem pedia 1 peça pagava 1/162 de uma chapa que
+		// comprou inteira, e quem pedia 163 pagava 163/162 — quer dizer, UMA chapa
+		// e um pedacinho, tendo comprado DUAS. O resto saía do bolso dele.
+		const m = {
+			netAreaMm2: PLACA.netAreaMm2,
+			bboxAreaMm2: PLACA.bboxAreaMm2,
+			bbox: PLACA.bbox,
+		};
+		const porChapa = { ...ACO_1MM, basis: 'chapa' as const };
+		const CHAPA_MM2 = 2000 * 1000;
+
+		// 1 peça = 1 chapa comprada. É o que "cobrar por chapa" quer dizer.
+		const uma = areaCobradaMm2(m, porChapa, { qty: 1 });
+		expect(uma.chapas).toBe(1);
+		expect(uma.areaMm2).toBe(CHAPA_MM2);
+		expect(uma.sobraPecas).toBe(161);
+
+		// A chapa cheia: nada de sobra, e nenhum aviso sobre ela.
+		const cheia = areaCobradaMm2(m, porChapa, { qty: 162 });
+		expect(cheia.chapas).toBe(1);
+		expect(cheia.sobraPecas).toBe(0);
+		expect(cheia.avisos).toEqual([]);
+
+		// Uma peça a mais abre a SEGUNDA chapa — e ela entra no preço inteira.
+		const passouUma = areaCobradaMm2(m, porChapa, { qty: 163 });
+		expect(passouUma.chapas).toBe(2);
+		expect(passouUma.areaMm2).toBeCloseTo((2 * CHAPA_MM2) / 163, 6);
+		expect(passouUma.areaMm2).toBeGreaterThan(cheia.areaMm2);
+		expect(passouUma.avisos.join(' ')).toMatch(/2 chapas/);
+		expect(passouUma.avisos.join(' ')).toMatch(/161 peças/);
 	});
 
 	it('cobrança por chapa exige as medidas da chapa', () => {
@@ -410,6 +454,75 @@ describe('arredondaCents', () => {
 		expect(arredondaCents(1290, 'psico_9')).toBe(1290);
 		expect(arredondaCents(1291, 'psico_9')).toBe(1390);
 		expect(arredondaCents(0, 'psico_9')).toBe(0);
+	});
+});
+
+/* ─────────────────────── Perfis padrão por laser ─────────────────────── */
+
+describe('perfil padrão coerente com o material', () => {
+	/**
+	 * O padrão do sistema é uma FIBRA de 1500 W. A cascata de velocidade recusa —
+	 * com razão — material de CO2 num perfil de fibra, porque MDF não corta em
+	 * fibra. Só que MDF é o material mais comum deste público: quem abria a
+	 * ferramenta sem perfil e escolhia MDF tomava um erro seco em vez de um
+	 * orçamento. O caminho mais provável da primeira visita era o único quebrado.
+	 */
+	it('CO2 para material de CO2, fibra para o resto', () => {
+		expect(defaultProfileFor('co2').laser).toBe('co2');
+		expect(defaultProfileFor('fibra').laser).toBe('fibra');
+		expect(defaultProfileFor(undefined).laser).toBe('fibra');
+	});
+
+	it('o perfil de CO2 é uma máquina de CO2, não uma fibra repintada', () => {
+		// Se alguém copiar o perfil de fibra e só trocar o rótulo, o preço sai
+		// errado por ordem de grandeza: 1500 W de fonte contra um tubo de 100 W.
+		expect(DEFAULT_PROFILE_CO2.potenciaW).toBeLessThan(
+			DEFAULT_PROFILE.potenciaW,
+		);
+		expect(DEFAULT_PROFILE_CO2.energiaKw).toBeLessThan(
+			DEFAULT_PROFILE.energiaKw,
+		);
+		expect(DEFAULT_PROFILE_CO2.valorMaquina).toBeLessThan(
+			DEFAULT_PROFILE.valorMaquina,
+		);
+	});
+
+	it('só a máquina muda — a oficina (overhead, margem, imposto) é a mesma', () => {
+		expect(DEFAULT_PROFILE_CO2.overheadPct).toBe(DEFAULT_PROFILE.overheadPct);
+		expect(DEFAULT_PROFILE_CO2.margemPct).toBe(DEFAULT_PROFILE.margemPct);
+		expect(DEFAULT_PROFILE_CO2.impostoPct).toBe(DEFAULT_PROFILE.impostoPct);
+		expect(DEFAULT_PROFILE_CO2.custoHoraOperador).toBe(
+			DEFAULT_PROFILE.custoHoraOperador,
+		);
+	});
+
+	it('o perfil de CO2 resolve velocidade em MDF 3 mm — o caso que quebrava', () => {
+		const r = resolveCutSpeed(
+			{
+				familia: 'mdf',
+				espessuraMm: 3,
+				laser: DEFAULT_PROFILE_CO2.laser,
+				potenciaW: DEFAULT_PROFILE_CO2.potenciaW,
+			},
+			{ curated: [] },
+		);
+		expect(r.speedMmS).toBeGreaterThan(0);
+		// Sem base curada, é estimativa — e tem que sair MARCADA como tal.
+		expect(r.estimativa).toBe(true);
+	});
+
+	it('o perfil de FIBRA continua recusando MDF (não afrouxamos a checagem)', () => {
+		expect(() =>
+			resolveCutSpeed(
+				{
+					familia: 'mdf',
+					espessuraMm: 3,
+					laser: 'fibra',
+					potenciaW: 1500,
+				},
+				{ curated: [] },
+			),
+		).toThrow(/fibra/i);
 	});
 });
 
@@ -950,5 +1063,257 @@ describe('regressões: dinheiro', () => {
 		expect(normal.precos.precoUnitEfetivoCents).toBe(
 			normal.precos.precoUnitCents,
 		);
+	});
+});
+
+/* ───────────── O pedido fecha? (a conta que faltava falar) ───────────── */
+
+describe('avisos de dinheiro', () => {
+	/**
+	 * O perfil que o profissional monta sozinho e que quebra o preço dele: 35%
+	 * "de margem" digitados no campo de MARKUP, imposto do Simples e uma faixa de
+	 * 30% de desconto acima de 100 peças. Cada número é plausível; juntos, dão
+	 * prejuízo — e a ferramenta fechava esse pedido sem dizer nada.
+	 */
+	const CONFUSO = () =>
+		perfil({
+			markupPct: 0.35,
+			impostoPct: 0.06,
+			descontos: [{ minQtd: 100, pct: 0.3 }],
+			pedidoMinimo: 0,
+			regraArredondamento: 'nenhum',
+			overheadPct: 0.2,
+		});
+
+	const orca = (p: QuoteProfile, qty: number, over = {}) =>
+		computeQuote(PLACA, p, {
+			qty,
+			material: ACO_1MM,
+			speed: VELOCIDADE_FIRME,
+			...over,
+		});
+
+	it('preço abaixo do custo vira ERRO, com o prejuízo em reais', () => {
+		const q = orca(CONFUSO(), 100);
+		// (1 + 0,35) ÷ (1 − 0,06) × (1 − 0,30) × (1 − 0,06) = 0,945 × custo.
+		expect(q.precos.lucroPedidoCents).toBeLessThan(0);
+
+		const erro = q.alertas.find((a) => a.codigo === 'preco_abaixo_do_custo');
+		expect(erro?.severidade).toBe('erro');
+		// A frase tem que trazer O NÚMERO que a causou — os três.
+		expect(erro?.mensagem).toContain(brl(-q.precos.lucroPedidoCents));
+		expect(erro?.mensagem).toContain(brl(q.precos.custoLoteCents));
+		expect(erro?.mensagem).toContain('30%');
+		// E aponta o culpado: sem o desconto, este pedido daria lucro.
+		expect(erro?.mensagem).toMatch(/desconto/i);
+	});
+
+	it('o teto de desconto do aviso é o teto de verdade', () => {
+		const p = CONFUSO();
+		const semDesconto = orca(p, 100, { descontoPct: 0 });
+		const teto = semDesconto.precos.descontoMaximoPct;
+		expect(teto).toBeGreaterThan(0);
+		expect(teto).toBeLessThan(0.3);
+
+		// Dando exatamente o teto, o pedido ainda paga o custo…
+		const noTeto = orca(p, 100, { descontoPct: teto });
+		expect(noTeto.precos.lucroPedidoCents).toBeGreaterThanOrEqual(0);
+		expect(
+			noTeto.alertas.some((a) => a.codigo === 'preco_abaixo_do_custo'),
+		).toBe(false);
+
+		// …e um ponto percentual além dele, não paga mais.
+		const acima = orca(p, 100, { descontoPct: teto + 0.01 });
+		expect(acima.precos.lucroPedidoCents).toBeLessThan(0);
+	});
+
+	it('desconto negociado de 60% não passa em silêncio', () => {
+		const q = orca(perfil({ pedidoMinimo: 0, descontos: [] }), 100, {
+			descontoPct: 0.6,
+		});
+		const erro = q.alertas.find((a) => a.codigo === 'preco_abaixo_do_custo');
+		expect(erro).toBeDefined();
+		expect(erro?.mensagem).toContain(pctBR(q.precos.descontoMaximoPct, 1));
+	});
+
+	it('desconto que só MORDE a margem avisa quantos pontos comeu', () => {
+		const q = orca(
+			perfil({
+				markupPct: 1,
+				margemPct: 0.5,
+				precificarPor: 'markup',
+				impostoPct: 0.06,
+				descontos: [{ minQtd: 100, pct: 0.15 }],
+				pedidoMinimo: 0,
+				regraArredondamento: 'nenhum',
+			}),
+			200,
+		);
+		// Continua dando lucro — não é caso de erro, é caso de "olha aqui".
+		expect(q.precos.lucroPedidoCents).toBeGreaterThan(0);
+		const a = q.alertas.find((x) => x.codigo === 'margem_abaixo_da_pedida');
+		expect(a?.severidade).toBe('aviso');
+		expect(a?.mensagem).toMatch(/pontos/);
+		expect(a?.mensagem).toContain(brl(q.precos.lucroPedidoCents));
+		expect(a?.mensagem).toContain('15%');
+	});
+
+	it('markup e margem NÃO são confundidos ao conferir a margem pedida', () => {
+		// Fechando por markup de 35%, a margem pedida é 25,9% — e é com ela que a
+		// margem efetiva tem que ser comparada. Comparar 35% de markup com 35% de
+		// margem geraria alarme em todo orçamento saudável do produto.
+		const q = orca(
+			perfil({
+				markupPct: 0.35,
+				margemPct: 0.35,
+				precificarPor: 'markup',
+				descontos: [],
+				pedidoMinimo: 0,
+				regraArredondamento: 'nenhum',
+			}),
+			10,
+		);
+		expect(q.precos.lucroPedidoCents).toBeGreaterThan(0);
+		expect(
+			q.alertas.filter((a) => a.codigo === 'margem_abaixo_da_pedida'),
+		).toEqual([]);
+	});
+
+	it('pedido saudável não inventa alerta nenhum de dinheiro', () => {
+		const q = orca(
+			perfil({ descontos: [], pedidoMinimo: 0, regraArredondamento: 'nenhum' }),
+			10,
+		);
+		expect(q.precos.lucroPedidoCents).toBeGreaterThan(0);
+		expect(q.alertas.filter((a) => a.severidade === 'erro')).toEqual([]);
+	});
+
+	it('o lucro do pedido é o líquido menos o custo, e fecha com a margem', () => {
+		const q = orca(perfil({ pedidoMinimo: 0, descontos: [] }), 25);
+		expect(q.precos.custoLoteCents).toBe(q.custos.totalCents * q.qty);
+		expect(q.precos.liquidoPedidoCents).toBe(
+			Math.round(q.precos.precoTotalCents * (1 - q.precos.impostoPct)),
+		);
+		expect(q.precos.lucroPedidoCents).toBe(
+			q.precos.liquidoPedidoCents - q.precos.custoLoteCents,
+		);
+		// O percentual que já existia e o dinheiro novo têm que ter o mesmo sinal.
+		expect(q.precos.margemEfetivaComDescontoPct > 0).toBe(
+			q.precos.lucroPedidoCents > 0,
+		);
+	});
+
+	it('o piso é o menor preço que ainda paga o custo — com o desconto do pedido', () => {
+		const comDesconto = orca(perfil({ pedidoMinimo: 0, descontos: [] }), 50, {
+			descontoPct: 0.2,
+		});
+		const sem = orca(perfil({ pedidoMinimo: 0, descontos: [] }), 50);
+		// Com 20% de desconto na mesa, a tabela precisa ser mais alta para o
+		// pedido empatar: o piso É outro, e era isso que faltava dizer.
+		expect(comDesconto.precos.precoUnitMinimoCents).toBeGreaterThan(
+			sem.precos.precoUnitMinimoCents,
+		);
+		// E o piso sem desconto é o custo com o imposto por cima, arredondado
+		// para cima (nunca um centavo abaixo do empate).
+		expect(sem.precos.precoUnitMinimoCents).toBe(
+			Math.ceil(sem.custos.totalCents / (1 - sem.precos.impostoPct)),
+		);
+	});
+
+	it('custo de material que não chega a um centavo é dito, não engolido', () => {
+		// EVA 2 mm, peça de 10×10 mm: R$ 0,0012 de material por peça. A linha
+		// arredonda para R$ 0,00 — mas em 500 peças são R$ 0,60 fora do preço.
+		const miuda: QuoteMetrics = {
+			cutLengthMm: 40,
+			pierces: 1,
+			netAreaMm2: 100,
+			bboxAreaMm2: 100,
+			bbox: { w: 10, h: 10 },
+		};
+		const q = computeQuote(miuda, perfil({ pedidoMinimo: 0, descontos: [] }), {
+			qty: 500,
+			material: {
+				nome: 'EVA 2 mm',
+				familia: 'eva',
+				espessuraMm: 2,
+				precoKg: 60,
+			},
+			speed: VELOCIDADE_FIRME,
+		});
+		expect(q.custos.linhas.find((l) => l.id === 'material')?.cents).toBe(0);
+		const a = q.alertas.find((x) => x.codigo === 'custo_abaixo_do_centavo');
+		expect(a?.mensagem).toMatch(/Material/);
+		expect(a?.mensagem).toMatch(/500 peças/);
+	});
+
+	it('a cobrança por chapa avisa que a sobra está no preço', () => {
+		const q = computeQuote(
+			PLACA,
+			perfil({ materialBasis: 'chapa', pedidoMinimo: 0, descontos: [] }),
+			{ qty: 1, material: ACO_1MM, speed: VELOCIDADE_FIRME },
+		);
+		expect(q.material.chapas).toBe(1);
+		expect(q.material.sobraPecas).toBe(161);
+		expect(q.alertas.some((a) => a.codigo === 'material')).toBe(true);
+		expect(q.avisos.join(' ')).toMatch(/sobra/);
+	});
+
+	it('o lote que abre a segunda chapa paga a segunda chapa', () => {
+		const material = { ...ACO_1MM, basis: 'chapa' as const };
+		const p = perfil({ pedidoMinimo: 0, descontos: [] });
+		const materialDoLote = (qty: number) => {
+			const q = computeQuote(PLACA, p, {
+				qty,
+				material,
+				speed: VELOCIDADE_FIRME,
+			});
+			return (
+				(q.custos.linhas.find((l) => l.id === 'material')?.cents ?? 0) * qty
+			);
+		};
+		// Chapa 2000×1000 de aço 1 mm: 2 m² × 7,85 kg/m² × R$ 10 = R$ 157,00.
+		const CHAPA_CENTS = 15_700;
+		expect(Math.abs(materialDoLote(162) - CHAPA_CENTS)).toBeLessThanOrEqual(
+			162,
+		);
+		expect(Math.abs(materialDoLote(163) - 2 * CHAPA_CENTS)).toBeLessThanOrEqual(
+			163,
+		);
+	});
+
+	it('`avisos` é sempre a projeção de `alertas` — nunca uma segunda lista', () => {
+		const q = orca(CONFUSO(), 100);
+		expect(q.avisos).toEqual(q.alertas.map((a) => a.mensagem));
+		expect(q.alertas.every((a) => a.codigo && a.titulo && a.mensagem)).toBe(
+			true,
+		);
+
+		prefixaAlertas(q, [
+			{
+				codigo: 'teste',
+				severidade: 'info',
+				titulo: 'Teste',
+				mensagem: 'primeiro de todos',
+			},
+		]);
+		expect(q.avisos[0]).toBe('primeiro de todos');
+		expect(q.avisos).toEqual(q.alertas.map((a) => a.mensagem));
+	});
+
+	it('todo aviso de dinheiro traz pelo menos um número dentro', () => {
+		const q = orca(CONFUSO(), 100);
+		const deDinheiro = q.alertas.filter((a) =>
+			[
+				'preco_abaixo_do_custo',
+				'preco_no_custo',
+				'margem_abaixo_da_pedida',
+			].includes(a.codigo),
+		);
+		expect(deDinheiro.length).toBeGreaterThan(0);
+		for (const a of deDinheiro) {
+			expect(a.mensagem, a.codigo).toMatch(/R\$ \d/);
+			// Frase de gente: começa em minúscula depois do título e termina em ponto.
+			expect(a.mensagem.trim().endsWith('.'), a.codigo).toBe(true);
+		}
 	});
 });
