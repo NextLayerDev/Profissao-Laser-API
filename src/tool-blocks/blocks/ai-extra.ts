@@ -1,8 +1,14 @@
 import sharp from 'sharp';
 import { z } from 'zod';
 import { generateToolImage } from '../../lib/image-gen.js';
-import type { FxOutput, Raster } from '../lib/pixels.js';
-import { fxFromRaster, fxSharp, loadRaster } from '../lib/pixels.js';
+import type { FxOutput } from '../lib/pixels.js';
+import {
+	borderStats,
+	chromaKeyAlpha,
+	fxFromRaster,
+	fxSharp,
+	loadRaster,
+} from '../lib/pixels.js';
 import type { ToolBlock } from '../types.js';
 
 /**
@@ -37,25 +43,63 @@ function block<P extends z.ZodRawShape>(
 
 /* ───────────────────────────── Upscale (não-IA) ───────────────────────────── */
 
+/** Lado máximo da saída ampliada. */
+const MAX_SIDE = 10_000;
+/** Megapixels máximos da saída ampliada (~40 MP). */
+export const MAX_MP_AMPLIAR = 40_000_000;
+
+/**
+ * O fator que a ampliação VAI usar de verdade, dado o tamanho de entrada.
+ *
+ * Extraída do bloco (era um cálculo inline) porque virou informação que a TELA
+ * precisa: nos Ajustes o aluno pede "4×" e pode receber 1,55× por causa do
+ * teto — e receber menos do que se pediu sem ninguém dizer nada é o tipo de
+ * silêncio que faz o aluno achar que o botão não funcionou. Quem chama usa esta
+ * mesma função para ANUNCIAR o número antes/depois, sem duplicar a regra.
+ *
+ * Pura: só aritmética sobre dimensões. Nunca devolve menos que 1 (encolher no
+ * "ampliar" seria pior que não ampliar).
+ */
+export function escalaEfetiva(
+	width: number,
+	height: number,
+	factor: number,
+	opts: { maxSide?: number; maxMp?: number } = {},
+): number {
+	const maxSide = opts.maxSide ?? MAX_SIDE;
+	const maxMp = opts.maxMp ?? MAX_MP_AMPLIAR;
+	const w = Math.max(width, 0);
+	const h = Math.max(height, 0);
+	const capBySide = Math.min(
+		maxSide / Math.max(w, 1),
+		maxSide / Math.max(h, 1),
+	);
+	const capByMp = Math.sqrt(maxMp / Math.max(w * h, 1));
+	return Math.max(1, Math.min(factor, capBySide, capByMp));
+}
+
 export const upscaleBlock = block(
 	'image.upscale',
 	'Amplia 2/4/8/16× com reamostragem Lanczos3 (não é IA).',
-	{ factor: z.enum(['2', '4', '8', '16']).default('2').transform(Number) },
+	{
+		factor: z.enum(['2', '4', '8', '16']).default('2').transform(Number),
+		/**
+		 * Teto de megapixels da SAÍDA, por chamada. Ausente = os 40 MP de sempre
+		 * (nenhuma tool publicada muda de comportamento). Existe para o caminho
+		 * GRÁTIS do preview poder ser mais apertado que o cobrado: lá a imagem
+		 * volta inteira em base64 dentro do JSON, e 40 MP viram dezenas de MB
+		 * numa rota sem cobrança e sem limite de uso.
+		 */
+		max_mp: z.coerce.number().min(1_000_000).max(MAX_MP_AMPLIAR).optional(),
+	},
 	async (p) => {
 		// Lê dimensões reais e multiplica pelo fator — mas CLAMPA o fator efetivo
-		// pra saída não estourar (~40MP / 10000px por lado). Sem isso, foto grande
-		// + 16× explode ("Input image exceeds pixel limit") e o cliente toma erro.
+		// pra saída não estourar. Sem isso, foto grande + 16× explode ("Input
+		// image exceeds pixel limit") e o cliente toma erro.
 		const meta = await sharp(p.image).metadata();
 		const w = meta.width ?? 0;
 		const h = meta.height ?? 0;
-		const MAX_SIDE = 10_000;
-		const MAX_MP = 40_000_000;
-		const capBySide = Math.min(
-			MAX_SIDE / Math.max(w, 1),
-			MAX_SIDE / Math.max(h, 1),
-		);
-		const capByMp = Math.sqrt(MAX_MP / Math.max(w * h, 1));
-		const eff = Math.max(1, Math.min(p.factor, capBySide, capByMp));
+		const eff = escalaEfetiva(w, h, p.factor, { maxMp: p.max_mp });
 		const tw = Math.max(1, Math.round(w * eff));
 		const th = Math.max(1, Math.round(h * eff));
 		return fxSharp(p.image, (s) => s.resize(tw, th, { kernel: 'lanczos3' }));
@@ -63,123 +107,8 @@ export const upscaleBlock = block(
 );
 
 /* ──────── Remover fundo HÍBRIDO: chroma-key (grátis) + IA p/ fundo complexo ──────── */
-
-/** Estatísticas das bordas: cor mediana do fundo + desvio (uniformidade). */
-function borderStats(r: Raster) {
-	const { data, width, height } = r;
-	const rs: number[] = [];
-	const gs: number[] = [];
-	const bs: number[] = [];
-	const push = (idx: number) => {
-		const o = idx * 4;
-		if (data[o + 3] < 8) return; // ignora borda já transparente
-		rs.push(data[o]);
-		gs.push(data[o + 1]);
-		bs.push(data[o + 2]);
-	};
-	for (let x = 0; x < width; x++) {
-		push(x);
-		push((height - 1) * width + x);
-	}
-	for (let y = 1; y < height - 1; y++) {
-		push(y * width);
-		push(y * width + width - 1);
-	}
-	const med = (a: number[]) => {
-		a.sort((x, y) => x - y);
-		return a[a.length >> 1];
-	};
-	const std = (a: number[], m: number) => {
-		if (!a.length) return 0;
-		let s = 0;
-		for (const v of a) s += (v - m) * (v - m);
-		return Math.sqrt(s / a.length);
-	};
-	const br = med([...rs]);
-	const bgC = med([...gs]);
-	const bb = med([...bs]);
-	// "uniformidade" = maior desvio entre canais (fundo bagunçado → alto)
-	const dev = Math.max(std(rs, br), std(gs, bgC), std(bs, bb));
-	return { br, bgC, bb, dev, samples: rs.length };
-}
-
-/**
- * Chroma-key IN PLACE: flood-fill 4-conexo das bordas dentro de uma tolerância de
- * cor ao fundo (br,bgC,bb), tornando transparente só o fundo CONECTADO à borda —
- * áreas da mesma cor DENTRO do sujeito ficam intactas. Feather na borda. Devolve
- * o nº de pixels marcados como fundo (0 se não aplicou).
- */
-function chromaKeyAlpha(
-	r: Raster,
-	br: number,
-	bgC: number,
-	bb: number,
-	tolerance: number,
-	feather: number,
-): number {
-	const { data, width, height } = r;
-	const n = width * height;
-	const MAXD = Math.sqrt(3) * 255;
-	const hard = tolerance * MAXD;
-	const soft = Math.min(MAXD, hard * (1 + feather));
-	const dist = (idx: number) => {
-		const o = idx * 4;
-		const dr = data[o] - br;
-		const dg = data[o + 1] - bgC;
-		const db = data[o + 2] - bb;
-		return Math.sqrt(dr * dr + dg * dg + db * db);
-	};
-	const isBg = new Uint8Array(n);
-	const stack = new Int32Array(n);
-	let sp = 0;
-	let marked = 0;
-	const seed = (idx: number) => {
-		if (isBg[idx] === 0 && dist(idx) <= hard) {
-			isBg[idx] = 1;
-			stack[sp++] = idx;
-			marked++;
-		}
-	};
-	for (let x = 0; x < width; x++) {
-		seed(x);
-		seed((height - 1) * width + x);
-	}
-	for (let y = 1; y < height - 1; y++) {
-		seed(y * width);
-		seed(y * width + width - 1);
-	}
-	while (sp > 0) {
-		const idx = stack[--sp];
-		const x = idx % width;
-		const y = (idx - x) / width;
-		if (x > 0) seed(idx - 1);
-		if (x < width - 1) seed(idx + 1);
-		if (y > 0) seed(idx - width);
-		if (y < height - 1) seed(idx + width);
-	}
-	if (marked < 32 || marked > n * 0.985) return 0; // vazou tudo / nada → não aplica
-	for (let idx = 0; idx < n; idx++) if (isBg[idx]) data[idx * 4 + 3] = 0;
-	if (soft > hard) {
-		for (let y = 0; y < height; y++) {
-			for (let x = 0; x < width; x++) {
-				const idx = y * width + x;
-				if (isBg[idx]) continue;
-				const touches =
-					(x > 0 && isBg[idx - 1]) ||
-					(x < width - 1 && isBg[idx + 1]) ||
-					(y > 0 && isBg[idx - width]) ||
-					(y < height - 1 && isBg[idx + width]);
-				if (!touches) continue;
-				const d = dist(idx);
-				if (d < soft) {
-					const a = (d - hard) / (soft - hard);
-					data[idx * 4 + 3] = Math.round(Math.max(0, Math.min(1, a)) * 255);
-				}
-			}
-		}
-	}
-	return marked;
-}
+// `borderStats`/`chromaKeyAlpha` moraram aqui e viraram exports compartilhados
+// em `../lib/pixels.js` — também usados por `vectorize-color.ts`.
 
 /**
  * Removedor de fundo HÍBRIDO:

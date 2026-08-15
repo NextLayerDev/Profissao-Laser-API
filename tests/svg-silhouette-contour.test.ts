@@ -37,18 +37,14 @@ describe('buildSilhouetteContourSvg', () => {
 		const { W, H, at } = await decodeEmbeddedPng(res.svg);
 		const scale = W / 150;
 		// Área que era preta (tinta do quadro) — invertida, agora clara.
-		expect(at(Math.round(30 * scale), Math.round(30 * scale))).toBeGreaterThan(
-			200,
-		);
+		expect(at(Math.round(30 * scale), Math.round(30 * scale))).toBeGreaterThan(200);
 		// Buraco interno (era fundo/branco, mas ENCLOSED pela tinta) — a
 		// silhueta o inclui, então também inverte: agora escuro. É o mecanismo
 		// que preserva detalhe fino (ex.: mechas de cabelo) em vez de perdê-lo.
 		expect(at(Math.round(70 * scale), Math.round(70 * scale))).toBeLessThan(60);
 		// Fora do quadro inteiro — fundo de verdade, nunca fez parte da
 		// silhueta — permanece exatamente como no original (branco).
-		expect(at(Math.round(5 * scale), Math.round(5 * scale))).toBeGreaterThan(
-			200,
-		);
+		expect(at(Math.round(5 * scale), Math.round(5 * scale))).toBeGreaterThan(200);
 		expect(H).toBe(W); // viewBox quadrado
 	});
 

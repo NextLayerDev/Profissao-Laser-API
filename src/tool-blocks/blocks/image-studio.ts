@@ -4,7 +4,7 @@ import { generateToolImage, resolveImageModel } from '../../lib/image-gen.js';
 import { ToolEngineError } from '../../lib/tool-errors.js';
 import { EDITOR_MODEL, editorAiService } from '../../services/editor-ai.js';
 import type { ToolBlock } from '../types.js';
-import { removeBgBlock, upscaleBlock } from './ai-extra.js';
+import { escalaEfetiva, removeBgBlock, upscaleBlock } from './ai-extra.js';
 import { makeTileable } from './tile.js';
 
 /**
@@ -64,6 +64,29 @@ export const STUDIO_MODES = [
 ] as const;
 
 export type StudioMode = (typeof STUDIO_MODES)[number];
+
+/**
+ * Teto de megapixels da ampliação quando ela roda no PREVIEW (rota grátis).
+ * Ver a caixa no `case 'ampliar'`.
+ */
+export const MAX_MP_AMPLIAR_PREVIEW = 24_000_000;
+
+/**
+ * OS FATORES DE AMPLIAÇÃO — uma lista só, e exportada porque a TELA precisa
+ * dela.
+ *
+ * A tela do Ateliê oferecia 2×, 3× e 4× apoiada num comentário do seed que
+ * dizia que o bloco aceitava "'2', '3', '4'". Não aceita: o `image.upscale`
+ * valida `'2'|'4'|'8'|'16'`, e o 3× dava erro em 100% dos cliques — com uma
+ * mensagem que ainda mandava o aluno "tentar de novo em instantes".
+ *
+ * `8` e `16` existem no bloco cru mas ficam FORA daqui de propósito: no
+ * preview (a rota por onde o ampliar do Ateliê passa) o teto de
+ * `MAX_MP_AMPLIAR_PREVIEW` clampa a escala, e 8× sobre uma arte de 1024²
+ * entregaria ~4,8× — um botão que promete oito e devolve cinco. Só entra o que
+ * o Ateliê consegue honrar.
+ */
+export const FATORES_DE_AMPLIACAO = ['2', '4'] as const;
 
 /**
  * Multiplicador de custo por modo, sobre o `vox_cost` da tool.
@@ -131,11 +154,41 @@ const studioSchema = z
 		style_system: z.string().max(4_000).optional(),
 		aspect: z.enum(ASPECT_KEYS).default('1:1'),
 		/** Só `ampliar`. String porque `image.upscale` valida um enum de strings. */
-		factor: z.string().default('2'),
+		/**
+		 * Os fatores que o `image.upscale` REALMENTE aceita — a mesma lista dele,
+		 * não uma paralela.
+		 *
+		 * Era `z.string()`, e o buraco não era teórico: a tela oferecia 2×, 3× e 4×,
+		 * o `upscaleBlock` valida `'2'|'4'|'8'|'16'`, e o `.parse()` lá embaixo
+		 * LANÇA dentro do `run`. A `ZodError` escapava da proteção do motor (que
+		 * vira 400 em português) e chegava ao aluno como 500 com o JSON do Zod
+		 * dentro. Um terço dos cliques no único ajuste grátis, sempre.
+		 *
+		 * Validando aqui, o motor recusa ANTES de rodar e a mensagem é de gente.
+		 */
+		factor: z.enum(FATORES_DE_AMPLIACAO).default('2'),
 		/** Override do modelo OpenRouter (injetado de `definition.model`). */
 		model: z.string().min(1).max(200).optional(),
 		/** Override do system prompt (injetado de `definition.system_prompt`). */
 		system_prompt: z.string().min(1).optional(),
+		/**
+		 * "Sem intermediação" (injetado de `definition.raw_prompt`).
+		 *
+		 * Estava FALTANDO, e o silêncio era o problema: `tool-run` injeta
+		 * `params.raw_prompt` neste bloco (ele está no `IMAGE_GEN_BLOCKS`), o
+		 * `z.object` faz `strip` do que não declara, e a chave morria aqui. O
+		 * admin ligava o interruptor na Fábrica, o motor obedecia, o bloco
+		 * descartava — sem erro, sem log, sem efeito.
+		 *
+		 * OBS: ligar isto DESCARTA o `style_system` e o `system_prompt` (é
+		 * exatamente o que "sem intermediação" quer dizer). O formato real
+		 * (`/v1/images`) NÃO depende mais disto — ver `formatoReal` no `run`.
+		 *
+		 * `z.boolean()` puro, igual ao irmão `ai.generate_image`: o motor injeta
+		 * o booleano de verdade, e `z.coerce.boolean()` seria armadilha
+		 * (`Boolean('false') === true` ligaria o modo com o valor DESLIGADO).
+		 */
+		raw_prompt: z.boolean().optional(),
 		/** Dimensão exata; se vier, vence o `aspect`. */
 		width: z.coerce.number().int().min(64).max(4096).optional(),
 		height: z.coerce.number().int().min(64).max(4096).optional(),
@@ -239,12 +292,34 @@ export const imageStudioBlock: ToolBlock<StudioParams> = {
 		 * chegaria esticado — rosto oval, círculo virando elipse. Corte é
 		 * recuperável (dá pra gerar de novo); distorção passa despercebida até
 		 * estar gravada na peça.
+		 *
+		 * `formatoReal: true` — O CONSERTO DO 9:16 QUE SAÍA QUADRADO.
+		 *
+		 * O aluno escolhe o formato num seletor (`STUDIO_ASPECTS`), então aqui a
+		 * proporção não é preferência: é pedido explícito. Só que ela viajava
+		 * apenas como FRASE no fim do prompt, porque a rota `/v1/images` — a única
+		 * que aceita `aspect_ratio` de verdade — estava amarrada ao `rawPrompt`,
+		 * que este bloco NUNCA passou. Medido nos bytes (2026-08-09):
+		 *   • num modelo GPT, o 9:16 voltava 1024×1024 e o `cover` amputava 43,75%
+		 *     da arte — é este o "9:16 que sai quadrado";
+		 *   • num Gemini voltava 768×1376 e o resize INVENTAVA 27% dos pixels
+		 *     finais pra chegar aos 864×1536.
+		 * Com o formato como parâmetro, o Gemini devolve cobrindo o alvo (o resize
+		 * vira downscale, zero pixel inventado) e o GPT — que não expõe proporção
+		 * em API nenhuma — ao menos sai de 1:1 pra 2:3, com o `cover` aparando
+		 * 15,63% em vez de 43,75%.
+		 *
+		 * O system prompt NÃO se perde na troca de rota: `generateToolImage` dobra
+		 * o system dentro do `prompt` quando não é `rawPrompt` — é o que mantém o
+		 * `style_system` do estilo escolhido valendo aqui.
 		 */
 		const genOpts = {
 			model: p.model,
 			systemPromptOverride,
 			width,
 			height,
+			formatoReal: true,
+			rawPrompt: p.raw_prompt === true,
 			fit: 'cover' as const,
 		};
 
@@ -268,6 +343,14 @@ export const imageStudioBlock: ToolBlock<StudioParams> = {
 		 * geração onde quase sempre não houve.
 		 */
 		let usedModel: string | null = null;
+
+		/**
+		 * Só o modo `ampliar` preenche. `null` nos outros porque "escala" não
+		 * significa nada numa geração — e um `1` ali seria lido pela tela como
+		 * "ampliei uma vez", que é falso.
+		 */
+		let escalaPedida: number | null = null;
+		let escalaReal: number | null = null;
 
 		switch (p.mode) {
 			case 'texto_imagem':
@@ -379,11 +462,34 @@ export const imageStudioBlock: ToolBlock<StudioParams> = {
 				// megapixels). Import direto em vez de lookup no registry: se o id
 				// mudar, o build quebra agora em vez de o aluno tomar "bloco
 				// indisponível" no meio de um run pago.
+				const origem = await sharp(p.image as Buffer).metadata();
+				/**
+				 * NO PREVIEW A AMPLIAÇÃO É MAIS CURTA, E ISSO É DE PROPÓSITO.
+				 *
+				 * `ampliar` é o único ajuste que não chama fornecedor nenhum, então
+				 * é o único que roda na rota NÃO COBRADA. Mas ali a imagem volta
+				 * inteira em base64 dentro do JSON, e a rota não tem cobrança nem
+				 * teto de uso: 40 MP × repetir à vontade é egress nosso de graça.
+				 * O teto menor mantém o ajuste grátis de verdade sem transformar o
+				 * preview num gerador de arquivos de 60 MB.
+				 *
+				 * 24 MP ainda cobre o caso real com folga: 4× sobre a arte quadrada
+				 * de 1024 (16,7 MP) passa inteiro.
+				 */
+				const tetoMp = ctx.preview ? MAX_MP_AMPLIAR_PREVIEW : undefined;
+				escalaPedida = Number(p.factor);
+				escalaReal = escalaEfetiva(
+					origem.width ?? 0,
+					origem.height ?? 0,
+					escalaPedida,
+					{ maxMp: tetoMp },
+				);
 				out = (await upscaleBlock.run(
 					ctx,
 					upscaleBlock.paramsSchema.parse({
 						image: p.image,
 						factor: p.factor,
+						...(tetoMp ? { max_mp: tetoMp } : {}),
 					}),
 				)) as typeof out;
 				break;
@@ -413,6 +519,20 @@ export const imageStudioBlock: ToolBlock<StudioParams> = {
 			cost_multiplier: STUDIO_MODE_COST[p.mode],
 			vectorReady: out.vectorReady === true,
 			tileable: out.tileable === true,
+			/**
+			 * A VERDADE SOBRE A AMPLIAÇÃO. `escala_real` pode ser menor que
+			 * `escala_pedida` quando o teto de megapixels entra — o caso concreto é
+			 * o aluno ampliar uma arte que já foi ampliada duas vezes: aos 4096 px
+			 * um "4×" vira 1,55×. Sem estas chaves ele receberia uma imagem menor do
+			 * que pediu e nenhuma explicação.
+			 */
+			escala_pedida: escalaPedida,
+			escala_real:
+				escalaReal !== null ? Math.round(escalaReal * 100) / 100 : null,
+			limite_ampliacao:
+				escalaReal !== null &&
+				escalaPedida !== null &&
+				escalaReal < escalaPedida - 1e-6,
 		};
 	},
 };
