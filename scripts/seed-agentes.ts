@@ -477,7 +477,7 @@ const M_BUSCA = 'google/gemini-3.1-flash-lite';
 const M_ESCRITA = 'anthropic/claude-sonnet-5';
 const M_REVISOR = 'anthropic/claude-haiku-4.5';
 /** Quem responde do próprio conhecimento, sem busca. */
-const M_INTERNO = 'google/gemini-3-flash-preview';
+const _M_INTERNO = 'google/gemini-3-flash-preview';
 
 /**
  * ┌─ O MAIOR QUE CADA UM JÁ ESCREVEU, EM TOKENS DE SAÍDA MEDIDOS ────────────┐

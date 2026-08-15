@@ -567,7 +567,10 @@ export function planejarTela(
 		// ① a câmera desacelera até o piso, se isso abrir espaço
 		curso = Math.min(
 			g.curso,
-			Math.max(cursoMinimo, Math.round(zFim - margem - arteAltura - faixaPedida)),
+			Math.max(
+				cursoMinimo,
+				Math.round(zFim - margem - arteAltura - faixaPedida),
+			),
 		);
 		let sobra = zFim - margem - curso - arteAltura;
 
@@ -611,7 +614,9 @@ export function planejarTela(
 		faixaAltura > 0
 			? Math.min(
 					Math.max(
-						Math.round(f.zona_segura.base * g.altura - faixaAltura - arteAltura),
+						Math.round(
+							f.zona_segura.base * g.altura - faixaAltura - arteAltura,
+						),
 						curso,
 					),
 					g.altura - arteAltura,
@@ -628,7 +633,8 @@ export function planejarTela(
 			tela_altura: telaAltura,
 			curso,
 			arte_esq: Math.round((telaLargura - arteLargura) / 2),
-			arte_topo: eixo === 'y' ? arteTopo : Math.round((telaAltura - arteAltura) / 2),
+			arte_topo:
+				eixo === 'y' ? arteTopo : Math.round((telaAltura - arteAltura) / 2),
 			arte_largura: arteLargura,
 			arte_altura: arteAltura,
 			fracao_de_fundo: Math.max(0, 1 - (arteLargura * arteAltura) / areaQuadro),
@@ -759,8 +765,11 @@ const semAcento = (s: string): string =>
  */
 const semEmoji = (s: string): string =>
 	s
+		// O ZWJ e os seletores de variacao saem numa alternancia PROPRIA: dentro da
+		// classe de caracteres eles formariam uma sequencia unida (o biome recusa,
+		// e com razao — o comportamento ali e ambiguo).
 		.replace(
-			/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}‍︎️]/gu,
+			/\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Regional_Indicator}|\u200d|\ufe0e|\ufe0f/gu,
 			'',
 		)
 		.replace(/\s+/g, ' ')

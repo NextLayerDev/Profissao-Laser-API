@@ -171,7 +171,7 @@ function buildFileMeta(
 /** Resolve um path do registro do banco: `data.x` → entry.data.x; senão coluna. */
 function resolveBankPath(entry: ToolBankEntry, path: string): unknown {
 	if (path.startsWith('data.')) {
-		return (entry.data ?? {})[path.slice('data.'.length)];
+		return entry.data?.[path.slice('data.'.length)];
 	}
 	return (entry as unknown as Record<string, unknown>)[path];
 }

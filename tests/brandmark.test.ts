@@ -490,7 +490,7 @@ describe('image.brandmark — o logo entra onde o Diretor mandou', () => {
 				// Fração de pixels escuros: 35% na manchete (desvio ≈ 35), 7% no
 				// resto (desvio ≈ 15). `dev = Δ · √(f(1−f))`, com Δ = 60.
 				const limite = naManchete ? 35 : 7;
-				const escuro = ((x * 2654435761 + y * 40503) % 100) < limite;
+				const escuro = (x * 2654435761 + y * 40503) % 100 < limite;
 				const v = escuro ? 120 : 180;
 				const p = (y * w + x) * 3;
 				bruto[p] = v;

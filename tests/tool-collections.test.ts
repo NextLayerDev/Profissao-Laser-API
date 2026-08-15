@@ -97,8 +97,17 @@ describe('resolveCollection', () => {
 	});
 });
 
+/** Campo da fixture, com erro que aponta o campo que sumiu. */
+function campo(nome: string) {
+	const f = receitas.fields.find((x) => x.name === nome);
+	if (!f) throw new Error(`fixture sem o campo '${nome}'`);
+	return f;
+}
+
 describe('showIf', () => {
-	const gas = receitas.fields.find((f) => f.name === 'gas')!;
+	// `find` devolve `| undefined`; o `!` calava o tipo e o biome recusa. Uma
+	// falha aqui e defeito da FIXTURE, e o erro tem que dizer isso.
+	const gas = campo('gas');
 
 	it('aplica quando a condição bate', () => {
 		expect(isFieldApplicable(gas, { operacao: 'corte' })).toBe(true);
@@ -109,7 +118,7 @@ describe('showIf', () => {
 	});
 
 	it('campo sem showIf sempre se aplica', () => {
-		const m = receitas.fields.find((f) => f.name === 'material')!;
+		const m = campo('material');
 		expect(isFieldApplicable(m, {})).toBe(true);
 	});
 });

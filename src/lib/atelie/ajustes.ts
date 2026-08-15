@@ -185,7 +185,10 @@ export function nadaAPagarNesteRun(
 		// Qualquer outra chamada a fornecedor (o time, uma geração, o removedor
 		// híbrido) já justifica a cobrança — e a dúvida pende para cobrar.
 		if (n.block === 'image.removeBackground') return false;
-		if (n.block.startsWith('ai.') && !aiRodaDeGraca(n.block, n.params, fields)) {
+		if (
+			n.block.startsWith('ai.') &&
+			!aiRodaDeGraca(n.block, n.params, fields)
+		) {
 			return false;
 		}
 	}

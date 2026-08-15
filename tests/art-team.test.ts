@@ -318,7 +318,8 @@ describe('o time do Ateliê vem da coleção', () => {
 		const base = { chave: 'x', papel: 'p', pergunta: 'q' };
 		expect(toArtAgentSpec(registro(base))?.raciocinio).toBe('padrao');
 		expect(
-			toArtAgentSpec(registro({ ...base, raciocinio: 'desligado' }))?.raciocinio,
+			toArtAgentSpec(registro({ ...base, raciocinio: 'desligado' }))
+				?.raciocinio,
 		).toBe('desligado');
 		expect(
 			toArtAgentSpec(registro({ ...base, raciocinio: 'baixo' }))?.raciocinio,
