@@ -10,7 +10,8 @@
 		"start": "node dist/server.js",
 		"prepare": "husky",
 		"test": "vitest run",
-		"test:watch": "vitest"
+		"test:watch": "vitest",
+		"typecheck": "node node_modules/typescript/bin/tsc --noEmit"
 	},
 	"author": "tobias.bp2004@gmail.com",
 	"license": "ISC",
@@ -22,6 +23,7 @@
 		"@fastify/multipart": "^9.4.0",
 		"@fastify/swagger": "^9.6.1",
 		"@fastify/swagger-ui": "^5.2.4",
+		"@imgly/background-removal-node": "^1.4.5",
 		"@scalar/fastify-api-reference": "^1.43.11",
 		"@sentry/node": "^10.47.0",
 		"@supabase/supabase-js": "^2.90.1",
@@ -45,7 +47,6 @@
 		"sharp": "^0.34.5",
 		"stripe": "^20.4.1",
 		"svgpath": "^2.6.0",
-		"tsc": "^2.0.4",
 		"tsx": "^4.21.0",
 		"typescript": "^5.9.3",
 		"zod": "^4.3.5"
