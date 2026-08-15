@@ -101,7 +101,15 @@ export async function refundInvocation(
 }
 
 interface EntitlementsResponse {
-	tools?: Array<{ key: string }>;
+	/**
+	 * `vox_cost` vem da coluna da tabela `tools` do upvox — a MESMA que
+	 * `authorizeAndCharge` usa para debitar. É por isso que o preço unitário é
+	 * lido daqui e não de `definition.billing.vox_cost`: os dois divergem em 5
+	 * das 6 tools publicadas hoje (o publish escreve o catálogo, mas o admin
+	 * pode editar o preço na tela de Ferramentas sem republicar a definition).
+	 * Reconciliar com o número errado transformaria run legítimo em recusa.
+	 */
+	tools?: Array<{ key: string; vox_cost?: number | string }>;
 }
 
 /** Customer entitlements via upvox (x-user-id auth). null on any failure. */
@@ -120,19 +128,113 @@ async function fetchEntitlementsAsCustomer(
 	}
 }
 
-/** `true` if `toolKey` is a billed tool for this customer (entitled in their plan). */
+/**
+ * `true` if `toolKey` is a billed tool for this customer (entitled in their plan).
+ *
+ * FALHA FECHANDO, de propósito: se a leitura de entitlements não completa
+ * (upvox fora do ar, gateway 401, timeout), respondemos `true` — "trate como
+ * cobrada". Antes respondia `false`, e `false` aqui vira `mode:'free'` no
+ * portão: uma indisponibilidade do upvox liberava TODA tool paga para rodar de
+ * graça, com o fornecedor pago do nosso bolso. E não custa nada fechar:
+ * com o upvox fora, o `/invoke` também está, então nenhum run legítimo tinha
+ * como acontecer nessa janela de qualquer jeito.
+ */
 export async function isToolBilled(
 	customerId: string,
 	toolKey: string,
 	authHeader?: string,
 ): Promise<boolean> {
 	const ent = await fetchEntitlementsAsCustomer(customerId, authHeader);
-	return Boolean(ent?.tools?.some((t) => t.key === toolKey));
+	if (!ent?.tools) {
+		console.error(
+			`[upvox-tools] entitlements indisponível para ${customerId} — tratando '${toolKey}' como COBRADA (fail-closed).`,
+		);
+		return true;
+	}
+	return ent.tools.some((t) => t.key === toolKey);
 }
 
-/** How an engine run should be billed (see `resolveToolBilling`). */
+/**
+ * Preço unitário da tool em voxxys, do catálogo do upvox (`tools.vox_cost`).
+ *
+ * `undefined` em qualquer falha — rede fora, tool não listada para este cliente,
+ * número inválido. Quem chama TRATA `undefined` como "não sei" e deixa o run
+ * passar: esta leitura existe para reconciliar cobrança, e uma indisponibilidade
+ * do upvox não pode virar recusa de trabalho já pago.
+ */
+export async function getToolVoxCost(
+	customerId: string,
+	toolKey: string,
+	authHeader?: string,
+): Promise<number | undefined> {
+	const ent = await fetchEntitlementsAsCustomer(customerId, authHeader);
+	const raw = ent?.tools?.find((t) => t.key === toolKey)?.vox_cost;
+	if (raw === undefined || raw === null) return undefined;
+	// numeric do Postgres chega como string em alguns caminhos do supabase-js.
+	const n = typeof raw === 'number' ? raw : Number(raw);
+	return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * ┌─ UM RECIBO, UM RUN — a outra metade do furo de cobrança ────────────────┐
+ * │ `resolveToolBilling` LÊ `status === 'pending'` e devolve. Não reserva,   │
+ * │ não marca, não trava. A invocação só sai de `pending` no `settle`, que   │
+ * │ acontece no FIM do run — e o fim, no Ateliê, é 99 s depois (medido).     │
+ * │ Nessa janela o MESMO `invocation_id` passa no portão quantas vezes for   │
+ * │ disparado em paralelo: 3 runs simultâneos = 3× o fornecedor por 1        │
+ * │ cobrança. Fechar a contagem (pagou 1, pediu 4) não fechava isto: o       │
+ * │ atacante só precisa mandar N runs de 1 variação com o mesmo recibo.      │
+ * │                                                                          │
+ * │ Isto aqui é a trava: enquanto um run está em voo com um recibo, nenhum   │
+ * │ outro entra com o mesmo recibo.                                         │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * ALCANCE, DITO SEM MAQUIAGEM: a trava é DESTE PROCESSO. Com mais de uma
+ * réplica da API, dois runs em réplicas diferentes ainda passam. A trava
+ * durável é do upvox — uma transição guardada `pending → running` no próprio
+ * `markInvocationStatusIf`, que já existe lá e já é atômica. Ela não entrou
+ * agora porque exige um valor novo na coluna `status`, e isso é DDL/migração,
+ * que está fora do escopo desta rodada. O que está aqui reduz a exploração de
+ * "ilimitada" para "limitada ao número de réplicas", e não tem contrapartida.
+ */
+const recibosEmVoo = new Set<string>();
+
+/**
+ * Tenta tomar posse de um `invocation_id` para ESTE run. `false` = já tem run
+ * em voo com o mesmo recibo (quem chama recusa sem estornar: estornar mataria
+ * o run legítimo que está lá dentro trabalhando).
+ */
+export function reservarInvocacao(id: string): boolean {
+	if (recibosEmVoo.has(id)) return false;
+	recibosEmVoo.add(id);
+	return true;
+}
+
+/** Devolve o recibo. Tem de rodar em `finally` — inclusive quando o run explode. */
+export function liberarInvocacao(id: string): void {
+	recibosEmVoo.delete(id);
+}
+
+/** Só para teste: nenhum recibo em voo entre casos. */
+export function limparReservas(): void {
+	recibosEmVoo.clear();
+}
+
+/**
+ * How an engine run should be billed (see `resolveToolBilling`).
+ *
+ * `voxesSpent`/`quotaConsumed` são o QUE FOI PAGO, vindos da própria invocação.
+ * Antes o gate buscava a invocação, lia esses dois campos e os jogava fora —
+ * e sem eles o motor não tinha como saber que o cliente pagou por 1 variação e
+ * pediu 4 no run. Ver `variacoesPagas` (`lib/tool-creations.ts`).
+ */
 export type BillingGate =
-	| { mode: 'paid'; invocationId: string }
+	| {
+			mode: 'paid';
+			invocationId: string;
+			voxesSpent: number;
+			quotaConsumed: number;
+	  }
 	| { mode: 'free' }
 	| { mode: 'reject'; status: number; message: string };
 
@@ -159,7 +261,14 @@ export async function resolveToolBilling(
 		) {
 			return { mode: 'reject', status: 403, message: 'invalid_invocation' };
 		}
-		return { mode: 'paid', invocationId };
+		return {
+			mode: 'paid',
+			invocationId,
+			// Números podem chegar como string (numeric do Postgres). Normaliza aqui,
+			// no ponto de entrada, para o resto do motor só ver number.
+			voxesSpent: Number(inv.voxes_spent) || 0,
+			quotaConsumed: Number(inv.quota_consumed) || 0,
+		};
 	}
 	if (await isToolBilled(customerId, toolKey, authHeader)) {
 		return { mode: 'reject', status: 402, message: 'billing_required' };

@@ -68,15 +68,25 @@ describe('text-models-catalog', () => {
 			expect(resolveTextModel(undefined).id).toBe(getDefaultTextModelId());
 		});
 
-		it('descarta modelo sem visão quando `needsVision`', () => {
+		it('`needsVision` nunca devolve modelo sem visão', () => {
+			/**
+			 * Testa a PROPRIEDADE, não o conteúdo do catálogo. A versão anterior
+			 * procurava um modelo sem visão para usar de isca e quebrou quando os
+			 * DeepSeek (os únicos text-only) foram removidos — o teste caía por
+			 * uma mudança que não tinha nada a ver com o que ele protege.
+			 */
 			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 			const semVisao = TEXT_MODELS_CATALOG.find((m) => !m.vision);
-			expect(
-				semVisao,
-				'o catálogo precisa de ao menos um modelo sem visão',
-			).toBeDefined();
-			const m = resolveTextModel(semVisao?.id, { needsVision: true });
+			const m = resolveTextModel(semVisao?.id ?? 'modelo/inexistente', {
+				needsVision: true,
+			});
 			expect(m.vision).toBe(true);
+			// E todo modelo que o catálogo devolve para um pedido de visão vale.
+			for (const alvo of TEXT_MODELS_CATALOG) {
+				expect(resolveTextModel(alvo.id, { needsVision: true }).vision).toBe(
+					true,
+				);
+			}
 			warn.mockRestore();
 		});
 
@@ -95,5 +105,50 @@ describe('text-models-catalog', () => {
 
 	it('findTextModel devolve undefined para id desconhecido', () => {
 		expect(findTextModel('nao/existe')).toBeUndefined();
+	});
+});
+
+/* ─────────────────────── Busca web ─────────────────────── */
+
+describe('webSearch — o filtro que impede gastar busca à toa', () => {
+	/**
+	 * O DeepSeek FOI REMOVIDO do catálogo (era o mais barato, e por isso a
+	 * escolha natural do admin): com busca web devolvia `content: ""` em 6/6, e
+	 * sem busca falhava de forma intermitente por gastar o orçamento de saída
+	 * raciocinando. Este teste impede que ele — ou qualquer parente — volte pela
+	 * porta dos fundos.
+	 */
+	it('nenhum DeepSeek no catálogo', () => {
+		for (const m of getTextModelsCatalog(true)) {
+			expect(
+				m.id.startsWith('deepseek/'),
+				`${m.id} foi removido de propósito`,
+			).toBe(false);
+		}
+	});
+
+	it('todo modelo do catálogo funciona com busca', () => {
+		// A regra passou a ser de ADMISSÃO: modelo que não funciona com busca não
+		// entra. O campo continua existindo para o próximo candidato ser testado.
+		for (const m of getTextModelsCatalog(true)) {
+			expect(
+				m.webSearch,
+				`${m.id} precisa funcionar com busca para entrar`,
+			).toBe(true);
+		}
+	});
+
+	it('existe pelo menos um modelo barato COM busca', () => {
+		const comBusca = getTextModelsCatalog(true).filter(
+			(m) => m.webSearch && m.pricing.in <= 0.5,
+		);
+		expect(comBusca.length).toBeGreaterThan(0);
+	});
+
+	it('pedir busca nunca devolve modelo incompatível', () => {
+		const m = resolveTextModel('modelo/que-nao-existe', {
+			needsWebSearch: true,
+		});
+		expect(m.webSearch).toBe(true);
 	});
 });

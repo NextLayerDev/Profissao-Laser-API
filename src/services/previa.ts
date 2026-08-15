@@ -35,182 +35,177 @@ class PreviaService {
 			name,
 			notes,
 		} = body;
+		// ── Resolver variant do catálogo (substitui imageproduct_url custom) ──
+		const { variant, product } =
+			await laserProductService.getActiveVariantForPreview(productVariantId);
+		const imageproductUrl = variant.imageUrl;
+		const productName = product.name;
+		const productColor = variant.colorName ?? variant.tipo ?? null;
 
-		try {
-			// ── Resolver variant do catálogo (substitui imageproduct_url custom) ──
-			const { variant, product } =
-				await laserProductService.getActiveVariantForPreview(productVariantId);
-			const imageproductUrl = variant.imageUrl;
-			const productName = product.name;
-			const productColor = variant.colorName ?? variant.tipo ?? null;
+		// ── Resolver marca d'água (se solicitada) ────────────────────────────
+		// Resolve modo: watermarkMode > useWatermark (deprecated alias).
+		const resolvedWatermarkMode: 'none' | 'corners' | 'tiled' =
+			watermarkMode ?? (useWatermark === true ? 'corners' : 'none');
 
-			// ── Resolver marca d'água (se solicitada) ────────────────────────────
-			// Resolve modo: watermarkMode > useWatermark (deprecated alias).
-			const resolvedWatermarkMode: 'none' | 'corners' | 'tiled' =
-				watermarkMode ?? (useWatermark === true ? 'corners' : 'none');
-
-			let watermarkUrl: string | null = null;
-			if (resolvedWatermarkMode !== 'none') {
-				const watermark =
-					await customerWatermarkRepository.findByCustomerId(customerId);
-				if (!watermark) {
-					throw new Error("Marca d'água não cadastrada");
-				}
-				watermarkUrl = watermark.imageUrl;
+		let watermarkUrl: string | null = null;
+		if (resolvedWatermarkMode !== 'none') {
+			const watermark =
+				await customerWatermarkRepository.findByCustomerId(customerId);
+			if (!watermark) {
+				throw new Error("Marca d'água não cadastrada");
 			}
-
-			// Material default do produto sobrescreve o laserSettings.material só se
-			// o customer não tiver passado nada útil (mantém preferência do customer).
-			const effectiveLaserSettings = {
-				...laserSettings,
-				material:
-					laserSettings.material && laserSettings.material.length > 0
-						? laserSettings.material
-						: (product.defaultMaterial ?? laserSettings.material),
-			};
-
-			// ── Validações de logo / texto (mantidas) ───────────────────────────
-			const isTextOnly =
-				personalizationType === 'text' ||
-				effectiveLaserSettings.apenasTexto === true;
-
-			if (!isTextOnly && !imagelogo_url) {
-				throw new Error('Imagem do logo é obrigatória');
-			}
-			if (isTextOnly && !modoLentes && !customName) {
-				throw new Error('Texto para gravação é obrigatório');
-			}
-			if (modoLentes && !textoLenteDireita && !textoLenteEsquerda) {
-				throw new Error('Texto para pelo menos uma lente é obrigatório');
-			}
-			if (!process.env.OPENROUTER_API_KEY) {
-				throw new Error('Chave da API não configurada');
-			}
-
-			// ── Converter imagens em paralelo (produto + logo + watermark opcionais) ──
-			const willSendLogo = !!(imagelogo_url && !isTextOnly);
-			const willSendWatermark = !!watermarkUrl;
-
-			const imagePromises: Promise<string>[] = [
-				imageUrlToBase64(imageproductUrl),
-			];
-			if (willSendLogo) imagePromises.push(imageUrlToBase64(imagelogo_url!));
-			if (willSendWatermark)
-				imagePromises.push(imageUrlToBase64(watermarkUrl as string));
-
-			const base64s = await Promise.all(imagePromises);
-			const imageproductB64 = base64s[0];
-			const imagelogoB64 = willSendLogo ? base64s[1] : null;
-			const watermarkB64 = willSendWatermark
-				? base64s[willSendLogo ? 2 : 1]
-				: null;
-
-			// ── Gerar prompt dinâmico (sem imagebase, com flag de watermark) ────
-			const prompt = generatePrompt(
-				productName,
-				{ ...effectiveLaserSettings, apenasTexto: isTextOnly },
-				effectiveLaserSettings.comNome === 'com' || isTextOnly,
-				customName ?? undefined,
-				instrucoesPersonalizadas ?? null,
-				modoLentes,
-				textoLenteDireita ?? undefined,
-				textoLenteEsquerda ?? undefined,
-				resolvedWatermarkMode,
-				productColor,
-			);
-
-			// ── Montar mensagem (produto + logo opcional + watermark opcional) ──
-			const messageContent: Array<
-				| { type: 'text'; text: string }
-				| { type: 'image_url'; image_url: { url: string } }
-			> = [
-				{ type: 'text', text: prompt },
-				{
-					type: 'image_url',
-					image_url: { url: `data:image/png;base64,${imageproductB64}` },
-				},
-			];
-			if (imagelogoB64) {
-				messageContent.push({
-					type: 'image_url',
-					image_url: { url: `data:image/png;base64,${imagelogoB64}` },
-				});
-			}
-			if (watermarkB64) {
-				messageContent.push({
-					type: 'image_url',
-					image_url: { url: `data:image/png;base64,${watermarkB64}` },
-				});
-			}
-
-			// ── Chamar OpenRouter/Gemini ─────────────────────────────────────────
-			const completion = await openrouter.chat.completions.create(
-				{
-					model: PREVIA_MODEL,
-					// biome-ignore lint/suspicious/noExplicitAny: OpenAI SDK types are stricter than what OpenRouter accepts
-					messages: [{ role: 'user', content: messageContent as any }],
-				},
-				{
-					headers: {
-						'HTTP-Referer':
-							process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-						'X-Title': `${process.env.NEXT_PUBLIC_COMPANY_SYSTEM ?? 'Profissão Laser'} - Sistema de Prévias`,
-					},
-				},
-			);
-
-			// ── Extrair imagem do retorno ────────────────────────────────────────
-			const message = completion.choices[0]?.message as
-				| GeminiImageMessage
-				| undefined;
-			let result: string | null = null;
-
-			if (message?.images && message.images.length > 0) {
-				const imageData = message.images[0];
-				if (imageData.image_url && typeof imageData.image_url === 'object') {
-					result = (imageData.image_url as { url: string }).url;
-				} else if (typeof imageData.image_url === 'string') {
-					result = imageData.image_url;
-				}
-			}
-			if (!result && message?.content) {
-				result = message.content;
-			}
-			if (!result) {
-				throw new Error('Nenhuma resposta da IA');
-			}
-
-			// ── Persistir imagem no Bunny CDN ───────────────────────────────────
-			const previewUrl = await this.persistImage(result, customerId);
-
-			// ── Salvar registro ─────────────────────────────────────────────────
-			// imagebaseUrl fica vazio pra registros novos (drop total da feature).
-			// imageproductUrl recebe a URL da variant escolhida.
-			const previa = await previaRepository.create({
-				id: crypto.randomUUID(),
-				customerId,
-				name: name ?? productName,
-				productName,
-				productColor,
-				imagebaseUrl: '',
-				imageproductUrl,
-				imagelogoUrl: imagelogo_url ?? null,
-				previewUrl,
-				personalizationType,
-				customName: customName ?? null,
-				instrucoesPersonalizadas: instrucoesPersonalizadas ?? null,
-				textoLenteDireita: textoLenteDireita ?? null,
-				textoLenteEsquerda: textoLenteEsquerda ?? null,
-				modoLentes: modoLentes ?? false,
-				laserSettings: effectiveLaserSettings,
-				notes: notes ?? null,
-				prompt,
-				aiModel: PREVIA_MODEL,
-			});
-			return previa;
-		} catch (err) {
-			throw err;
+			watermarkUrl = watermark.imageUrl;
 		}
+
+		// Material default do produto sobrescreve o laserSettings.material só se
+		// o customer não tiver passado nada útil (mantém preferência do customer).
+		const effectiveLaserSettings = {
+			...laserSettings,
+			material:
+				laserSettings.material && laserSettings.material.length > 0
+					? laserSettings.material
+					: (product.defaultMaterial ?? laserSettings.material),
+		};
+
+		// ── Validações de logo / texto (mantidas) ───────────────────────────
+		const isTextOnly =
+			personalizationType === 'text' ||
+			effectiveLaserSettings.apenasTexto === true;
+
+		if (!isTextOnly && !imagelogo_url) {
+			throw new Error('Imagem do logo é obrigatória');
+		}
+		if (isTextOnly && !modoLentes && !customName) {
+			throw new Error('Texto para gravação é obrigatório');
+		}
+		if (modoLentes && !textoLenteDireita && !textoLenteEsquerda) {
+			throw new Error('Texto para pelo menos uma lente é obrigatório');
+		}
+		if (!process.env.OPENROUTER_API_KEY) {
+			throw new Error('Chave da API não configurada');
+		}
+
+		// ── Converter imagens em paralelo (produto + logo + watermark opcionais) ──
+		const willSendLogo = !!(imagelogo_url && !isTextOnly);
+		const willSendWatermark = !!watermarkUrl;
+
+		const imagePromises: Promise<string>[] = [
+			imageUrlToBase64(imageproductUrl),
+		];
+		if (willSendLogo) imagePromises.push(imageUrlToBase64(imagelogo_url!));
+		if (willSendWatermark)
+			imagePromises.push(imageUrlToBase64(watermarkUrl as string));
+
+		const base64s = await Promise.all(imagePromises);
+		const imageproductB64 = base64s[0];
+		const imagelogoB64 = willSendLogo ? base64s[1] : null;
+		const watermarkB64 = willSendWatermark
+			? base64s[willSendLogo ? 2 : 1]
+			: null;
+
+		// ── Gerar prompt dinâmico (sem imagebase, com flag de watermark) ────
+		const prompt = generatePrompt(
+			productName,
+			{ ...effectiveLaserSettings, apenasTexto: isTextOnly },
+			effectiveLaserSettings.comNome === 'com' || isTextOnly,
+			customName ?? undefined,
+			instrucoesPersonalizadas ?? null,
+			modoLentes,
+			textoLenteDireita ?? undefined,
+			textoLenteEsquerda ?? undefined,
+			resolvedWatermarkMode,
+			productColor,
+		);
+
+		// ── Montar mensagem (produto + logo opcional + watermark opcional) ──
+		const messageContent: Array<
+			| { type: 'text'; text: string }
+			| { type: 'image_url'; image_url: { url: string } }
+		> = [
+			{ type: 'text', text: prompt },
+			{
+				type: 'image_url',
+				image_url: { url: `data:image/png;base64,${imageproductB64}` },
+			},
+		];
+		if (imagelogoB64) {
+			messageContent.push({
+				type: 'image_url',
+				image_url: { url: `data:image/png;base64,${imagelogoB64}` },
+			});
+		}
+		if (watermarkB64) {
+			messageContent.push({
+				type: 'image_url',
+				image_url: { url: `data:image/png;base64,${watermarkB64}` },
+			});
+		}
+
+		// ── Chamar OpenRouter/Gemini ─────────────────────────────────────────
+		const completion = await openrouter.chat.completions.create(
+			{
+				model: PREVIA_MODEL,
+				// biome-ignore lint/suspicious/noExplicitAny: OpenAI SDK types are stricter than what OpenRouter accepts
+				messages: [{ role: 'user', content: messageContent as any }],
+			},
+			{
+				headers: {
+					'HTTP-Referer':
+						process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+					'X-Title': `${process.env.NEXT_PUBLIC_COMPANY_SYSTEM ?? 'Profissão Laser'} - Sistema de Prévias`,
+				},
+			},
+		);
+
+		// ── Extrair imagem do retorno ────────────────────────────────────────
+		const message = completion.choices[0]?.message as
+			| GeminiImageMessage
+			| undefined;
+		let result: string | null = null;
+
+		if (message?.images && message.images.length > 0) {
+			const imageData = message.images[0];
+			if (imageData.image_url && typeof imageData.image_url === 'object') {
+				result = (imageData.image_url as { url: string }).url;
+			} else if (typeof imageData.image_url === 'string') {
+				result = imageData.image_url;
+			}
+		}
+		if (!result && message?.content) {
+			result = message.content;
+		}
+		if (!result) {
+			throw new Error('Nenhuma resposta da IA');
+		}
+
+		// ── Persistir imagem no Bunny CDN ───────────────────────────────────
+		const previewUrl = await this.persistImage(result, customerId);
+
+		// ── Salvar registro ─────────────────────────────────────────────────
+		// imagebaseUrl fica vazio pra registros novos (drop total da feature).
+		// imageproductUrl recebe a URL da variant escolhida.
+		const previa = await previaRepository.create({
+			id: crypto.randomUUID(),
+			customerId,
+			name: name ?? productName,
+			productName,
+			productColor,
+			imagebaseUrl: '',
+			imageproductUrl,
+			imagelogoUrl: imagelogo_url ?? null,
+			previewUrl,
+			personalizationType,
+			customName: customName ?? null,
+			instrucoesPersonalizadas: instrucoesPersonalizadas ?? null,
+			textoLenteDireita: textoLenteDireita ?? null,
+			textoLenteEsquerda: textoLenteEsquerda ?? null,
+			modoLentes: modoLentes ?? false,
+			laserSettings: effectiveLaserSettings,
+			notes: notes ?? null,
+			prompt,
+			aiModel: PREVIA_MODEL,
+		});
+		return previa;
 	}
 
 	private async persistImage(

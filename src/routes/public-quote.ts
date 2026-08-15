@@ -46,6 +46,20 @@ const infoResponseSchema = z.object({
 	titulo: z.string(),
 	logo_url: z.string(),
 	cor: z.string(),
+	/**
+	 * ⚠ ESTE SCHEMA É UMA SEGUNDA ALLOW-LIST, e ela é silenciosa.
+	 *
+	 * O Fastify SERIALIZA a resposta por ele: campo que o controller devolve e
+	 * não está declarado aqui some sem erro, sem log e sem 500 — o cliente
+	 * recebe o resto certo e o campo simplesmente não existe. Foi o que
+	 * aconteceu com `empresa` e `whatsapp`: controller certo, teste passando (a
+	 * app de teste monta a rota, mas a asserção olhava o objeto, não o
+	 * serializado) e a página em branco no navegador.
+	 *
+	 * Campo novo na resposta ⇒ campo novo AQUI. Não é opcional.
+	 */
+	empresa: z.string(),
+	whatsapp: z.string(),
 	materiais: z.array(materialSchema),
 	qtd_max: z.number().int(),
 	campos_lead: z.array(campoLeadSchema),
@@ -71,6 +85,13 @@ const estimateResponseSchema = z.object({
 	pecas: z.number().int().optional(),
 	resumo: z.string().optional(),
 	avisos: z.array(z.string()).optional(),
+	/** Velocidade de corte estimada, não medida. Ver `infoResponseSchema`. */
+	estimativa: z.boolean().optional(),
+	/**
+	 * Desconto por quantidade já embutido no total (0–100). Sem ele a proposta
+	 * imprimia "10 × R$ 13,00" ao lado de "R$ 123,50". Ver `RespostaEstimate`.
+	 */
+	desconto_pct: z.number().optional(),
 });
 
 export async function publicQuoteRoute(server: FastifyInstance) {

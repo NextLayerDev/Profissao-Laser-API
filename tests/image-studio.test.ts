@@ -1,5 +1,13 @@
 import sharp from 'sharp';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from 'vitest';
 
 /**
  * Testes do Estúdio de Imagens: o bloco-mãe `ai.image_studio`, a textura
@@ -150,22 +158,36 @@ async function adjacentCenterDiff(
 
 /* ───────────────────────── mock do OpenRouter ───────────────────────── */
 
+/**
+ * A IMAGEM QUE O PROVEDOR VAI DEVOLVER NESTE TESTE — registrada aqui porque o
+ * Estúdio agora sai por DUAS portas diferentes:
+ *   • geração (`texto_imagem`/`variacao`/`textura`/`vetorizavel`) → `fetch` no
+ *     `POST /v1/images`, desde que o formato passou a ser PARÂMETRO e não frase;
+ *   • `editar_mascara` → `editor-ai`, que continua no cliente `/chat/completions`.
+ * `replyWith` alimenta as duas com o MESMO PNG, então nenhum teste precisou
+ * saber por qual porta ele passou.
+ */
+let pngDoProvedor: Buffer | null = null;
+
 /** Resposta no formato Gemini via OpenRouter (`images[0].image_url.url`). */
-const replyWith = (png: Buffer) => ({
-	choices: [
-		{
-			message: {
-				images: [
-					{
-						image_url: {
-							url: `data:image/png;base64,${png.toString('base64')}`,
+const replyWith = (png: Buffer) => {
+	pngDoProvedor = png;
+	return {
+		choices: [
+			{
+				message: {
+					images: [
+						{
+							image_url: {
+								url: `data:image/png;base64,${png.toString('base64')}`,
+							},
 						},
-					},
-				],
+					],
+				},
 			},
-		},
-	],
-});
+		],
+	};
+};
 
 const run = (raw: unknown) =>
 	imageStudioBlock.run(
@@ -180,6 +202,33 @@ beforeAll(() => {
 
 beforeEach(() => {
 	create.mockReset();
+	pngDoProvedor = null;
+	// Dublê da `POST /v1/images`. Sem ele os testes de geração iriam à REDE de
+	// verdade (foi o que aconteceu quando o Estúdio mudou de rota: nove testes
+	// caíram com "Missing Authentication header" vindo do OpenRouter real).
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async (url: unknown) => {
+			const alvo = String(url);
+			if (!alvo.includes('/v1/images')) {
+				throw new Error(`fetch inesperado no teste: ${alvo}`);
+			}
+			if (!pngDoProvedor) {
+				throw new Error('o teste não registrou imagem de resposta (replyWith)');
+			}
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({
+					data: [{ b64_json: pngDoProvedor?.toString('base64') }],
+				}),
+			};
+		}),
+	);
+});
+
+afterEach(() => {
+	vi.unstubAllGlobals();
 });
 
 /* ═════════════════════════ image.make_tileable ═════════════════════════ */
@@ -378,6 +427,21 @@ describe('ai.image_studio — validação (falha ANTES de gastar a chamada)', ()
 });
 
 describe('ai.image_studio — modos de geração', () => {
+	/**
+	 * O corpo JSON que o Estúdio mandou ao `POST /v1/images`. Antes destes
+	 * testes lerem daqui, eles liam `create.mock.calls[0][0]` — o corpo do
+	 * `/chat/completions`. Mudou porque o formato deixou de ser frase no prompt
+	 * e virou parâmetro da requisição.
+	 */
+	function corpoEnviado(): Record<string, unknown> {
+		const chamadas = (
+			globalThis.fetch as unknown as {
+				mock: { calls: [string, { body: string }][] };
+			}
+		).mock.calls;
+		return JSON.parse(chamadas[0][1].body);
+	}
+
 	it('texto→imagem devolve o formato pedido e a meta do run', async () => {
 		create.mockResolvedValue(replyWith(await gradientPng(64, 64)));
 		const out = await run({
@@ -385,7 +449,11 @@ describe('ai.image_studio — modos de geração', () => {
 			prompt: 'uma coruja de traço',
 			aspect: '16:9',
 		});
-		expect(create).toHaveBeenCalledTimes(1);
+		expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+		// O 16:9 do seletor vira PARÂMETRO — este é o conserto do formato. Antes
+		// ele existia só como frase no fim do prompt, e o modelo obedecia quando
+		// queria (num GPT, nunca: voltava 1024×1024 e o `cover` comia 43,75%).
+		expect(corpoEnviado().aspect_ratio).toBe('16:9');
 		const meta = await sharp(out.png as Buffer).metadata();
 		expect([meta.width, meta.height]).toEqual([1536, 864]);
 		expect(out.mode).toBe('texto_imagem');
@@ -396,16 +464,21 @@ describe('ai.image_studio — modos de geração', () => {
 		expect(out.tileable).toBe(false);
 	});
 
-	it('variação manda a referência ANTES do texto (o texto é quem manda)', async () => {
+	it('variação leva a referência em input_references, com o texto autoritativo', async () => {
 		create.mockResolvedValue(replyWith(await gradientPng(64, 64)));
 		await run({
 			mode: 'variacao',
 			prompt: 'a mesma coruja, mas de perfil',
 			image: await organicPng(32, 32),
 		});
-		const content = create.mock.calls[0][0].messages.at(-1).content;
-		expect(content[0].type).toBe('image_url');
-		expect(content.at(-1).type).toBe('text');
+		const body = corpoEnviado();
+		// Na `/v1/images` as refs viajam num CAMPO PRÓPRIO — não são mais
+		// content-parts antes do texto. A intenção continua a mesma (o texto manda,
+		// a imagem é referência) e ela agora vive na frase do lead, não na ordem
+		// dos segmentos: por isso o teste mudou de "posição" para "campo + lead".
+		expect((body.input_references as unknown[]).length).toBe(1);
+		expect(body.prompt).toContain('O texto abaixo é autoritativo');
+		expect(body.prompt).toContain('a mesma coruja, mas de perfil');
 	});
 
 	it('a cauda do estilo entra no prompt e o system do estilo vence o da tool', async () => {
@@ -417,12 +490,13 @@ describe('ai.image_studio — modos de geração', () => {
 			style_system: 'Você é um xilogravurista.',
 			system_prompt: 'Você é um gerador genérico.',
 		});
-		const body = create.mock.calls[0][0];
-		expect(body.messages[0].role).toBe('system');
-		expect(body.messages[0].content).toBe('Você é um xilogravurista.');
-		expect(body.messages.at(-1).content.at(-1).text).toContain(
-			'em xilogravura de cordel',
-		);
+		// A `/v1/images` NÃO tem papel `system` — só um campo `prompt`. O system do
+		// estilo é dobrado no início dele; sem isso, a troca de rota teria apagado
+		// o `style_system` em silêncio (bug de formato trocado por bug de estilo).
+		const prompt = corpoEnviado().prompt as string;
+		expect(prompt.startsWith('Você é um xilogravurista.')).toBe(true);
+		expect(prompt).not.toContain('Você é um gerador genérico.');
+		expect(prompt).toContain('em xilogravura de cordel');
 	});
 
 	it('o modelo escolhido pelo admin chega ao OpenRouter', async () => {
@@ -432,7 +506,7 @@ describe('ai.image_studio — modos de geração', () => {
 			prompt: 'x',
 			model: 'google/gemini-3.1-flash-image',
 		});
-		expect(create.mock.calls[0][0].model).toBe('google/gemini-3.1-flash-image');
+		expect(corpoEnviado().model).toBe('google/gemini-3.1-flash-image');
 	});
 
 	it('vetorizável binariza mesmo quando o modelo devolve cinza', async () => {
@@ -458,7 +532,7 @@ describe('ai.image_studio — modos de geração', () => {
 	it('vetorizável manda a instrução de traço fechado no prompt', async () => {
 		create.mockResolvedValue(replyWith(await grayRampPng()));
 		await run({ mode: 'vetorizavel', prompt: 'um cavalo marinho' });
-		const texto = create.mock.calls[0][0].messages.at(-1).content.at(-1).text;
+		const texto = corpoEnviado().prompt as string;
 		expect(texto).toContain(VECTOR_LEAD);
 		expect(texto).toContain('um cavalo marinho');
 	});

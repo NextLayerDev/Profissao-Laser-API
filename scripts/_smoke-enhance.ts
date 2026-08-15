@@ -48,48 +48,74 @@ function fakeReply() {
 }
 
 async function main() {
+	const { aiTextBlock } = await import('../src/tool-blocks/blocks/ai-text.js');
+
+	/**
+	 * Guarda a saída CRUA do modelo antes de o controller filtrar. É a única
+	 * forma de responder à pergunta que importa: o modelo obedeceu à proibição,
+	 * ou foi o filtro que salvou?
+	 */
+	const bruto = { enhanced: '', suggestions: [] as string[] };
+
 	// `incr` fixo em 1: o teto de 30/h é do Redis de produção, não do smoke.
 	const { enhancePromptController } = makeImageStudioControllers({
 		incr: async () => 1,
-		loadDefinition: (async () => ({
-			definition: {},
-		})) as never,
-		runText: (await import('../src/tool-blocks/blocks/ai-text.js')).aiTextBlock
-			.run,
+		loadDefinition: (async () => ({ definition: {} })) as never,
+		runText: (async (ctx: never, params: never) => {
+			const out = await aiTextBlock.run(ctx, params);
+			const j = (out.json ?? {}) as {
+				enhanced?: string;
+				suggestions?: string[];
+			};
+			bruto.enhanced = j.enhanced ?? '';
+			bruto.suggestions = Array.isArray(j.suggestions) ? j.suggestions : [];
+			return out;
+		}) as never,
 	});
 
-	console.log('modo             ms     bruto?  final\n' + '─'.repeat(78));
+	let vetorizaveis = 0;
+	let desobedeceu = 0;
+	let sobrou = 0;
 
 	for (const caso of CASOS) {
 		const { reply, state } = fakeReply();
 		const t0 = Date.now();
 		await enhancePromptController(
-			{
-				currentCustomer: { id: 'smoke' },
-				headers: {},
-				body: caso,
-			} as never,
+			{ currentCustomer: { id: 'smoke' }, headers: {}, body: caso } as never,
 			reply as never,
 		);
 		const ms = Date.now() - t0;
-		const body = state.body as {
-			enhanced: string;
-			suggestions: string[];
-		};
+		const body = state.body as { enhanced: string; suggestions: string[] };
+		const vetor = caso.mode === 'vetorizavel';
+		const modeloSujo = temProibido(bruto.enhanced);
+		const finalSujo = temProibido(body.enhanced);
 
-		const sujo = temProibido(body.enhanced) ? 'SIM' : 'não';
+		if (vetor) {
+			vetorizaveis++;
+			if (modeloSujo) desobedeceu++;
+			if (finalSujo) sobrou++;
+		}
+
 		console.log(
-			`${caso.mode.padEnd(15)} ${String(ms).padStart(5)}  ${sujo.padEnd(6)} ${body.enhanced.slice(0, 90)}`,
+			`\n[${caso.mode}] "${caso.prompt}" — ${ms} ms${
+				vetor
+					? `  · modelo citou proibido: ${modeloSujo ? 'SIM' : 'não'}` +
+						`  · sobrou após filtro: ${finalSujo ? 'SIM' : 'não'}`
+					: ''
+			}`,
 		);
-		for (const s of body.suggestions) {
-			console.log(`${' '.repeat(30)}└─ ${s}`);
-		}
-		if (caso.mode === 'vetorizavel' && temProibido(body.enhanced)) {
-			console.log(
-				`${' '.repeat(30)}!! termo proibido SOBROU depois do filtro — investigar`,
-			);
-		}
+		if (vetor && modeloSujo) console.log(`  cru:   ${bruto.enhanced}`);
+		console.log(`  final: ${body.enhanced}`);
+		console.log(
+			`  ideias (${bruto.suggestions.length} → ${body.suggestions.length}): ${
+				body.suggestions.join(' | ') || '—'
+			}`,
+		);
 	}
+
+	console.log(
+		`\nvetorizável: ${vetorizaveis} casos · modelo desobedeceu em ${desobedeceu} · sobrou proibido em ${sobrou}`,
+	);
 }
 
 main().catch((e) => {

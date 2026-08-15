@@ -91,7 +91,33 @@ app.get('/test-sentry', () => {
 
 app.register(routes);
 
-app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
-	console.log('HTTP server running on http://localhost:3333!');
-	console.log('Docs available at http://localhost:3333/docs');
+/**
+ * Porta configurável, com 3333 de default — que é o que o api-gateway espera e
+ * o que estava chumbado aqui. O motivo de existir a env: sem ela não dá para
+ * subir uma segunda instância (script de seed, teste de fumaça, dois branches
+ * lado a lado) sem editar o código. `upvox` e `api-gateway` já leem a porta do
+ * ambiente; este era o único dos três que não lia.
+ */
+/**
+ * `Number('')` é 0 (porta efêmera aleatória) e `Number('abc')` é NaN — os dois
+ * sobem um servidor que ninguém encontra, e o `EXPOSE 3333` do Dockerfile
+ * continua apontando para o lugar certo enquanto o processo escuta no errado.
+ * Uma env vazia injetada pela plataforma é o caso realista. Valor inválido cai
+ * no default e AVISA, em vez de virar um deploy verde que não atende.
+ */
+function portaDoAmbiente(): number {
+	const bruto = process.env.PORT;
+	if (bruto === undefined || bruto.trim() === '') return 3333;
+	const n = Number(bruto);
+	if (!Number.isInteger(n) || n < 1 || n > 65535) {
+		console.error(`[server] PORT inválida ('${bruto}') — subindo em 3333.`);
+		return 3333;
+	}
+	return n;
+}
+const port = portaDoAmbiente();
+
+app.listen({ port, host: '0.0.0.0' }).then(() => {
+	console.log(`HTTP server running on http://localhost:${port}!`);
+	console.log(`Docs available at http://localhost:${port}/docs`);
 });

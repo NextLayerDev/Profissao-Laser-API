@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { cache } from './redis.js';
+import { isPreviewOnlyTool, isToolPreviewUser } from './tool-preview.js';
 
 /**
  * Loader das ToolDefinitions (Fábrica de Tools). A definition publicada mora no
@@ -124,6 +125,22 @@ export interface ToolDefinitionDoc {
 	schemaVersion?: number;
 	input?: Record<string, InputSpec>;
 	pipeline?: PipelineNode[];
+	/**
+	 * FLUXOS NOMEADOS — pipelines alternativos da MESMA tool, escolhidos por
+	 * `flow` na hora do run. Ver a caixa em `selecionarPipeline`
+	 * (`lib/tool-engine.ts`), que é onde a regra mora.
+	 *
+	 * Nasceu para o Ateliê: `criar` (o time de seis + geração) e `ajustar`
+	 * (pega a arte pronta e amplia/varia/limpa o fundo) são trabalhos
+	 * diferentes com o mesmo dono, a mesma galeria e — de propósito — a mesma
+	 * chave de cobrança.
+	 *
+	 * ARMADILHA CONHECIDA: o editor visual da Fábrica monta o doc a partir de
+	 * `pipeline` e não conhece `pipelines`. Salvar esta tool pela tela, hoje,
+	 * apaga os fluxos nomeados em silêncio — enquanto o catálogo de blocos do
+	 * front não souber deles, esta definition é mantida por script.
+	 */
+	pipelines?: Record<string, PipelineNode[]>;
 	/** Presente só em tools de sala (room_v1). Pipeline tools omitem. */
 	room?: RoomConfig;
 	/** Banco do admin (galeria de registros). Opcional. */
@@ -165,7 +182,12 @@ export interface ToolDefinitionDoc {
 	/**
 	 * Quantidades de variações oferecidas no Passo 3 (ex.: [1, 2, 4]).
 	 * O PRIMEIRO elemento é o default selecionado. Ausente = [1] (sem escolha).
-	 * 1 run = 1 billing independente de N — o admin oferece 2x/4x como benefício.
+	 *
+	 * A COBRANÇA ESCALA: o `/invoke` do upvox debita `vox_cost × N`
+	 * (`authorizeAndCharge`), e o motor confere o N pedido contra o que a
+	 * invocação pagou antes de rodar. Este comentário já disse o contrário
+	 * ("1 run = 1 billing independente de N"), e era exatamente a crença que
+	 * deixava o run gerar quatro imagens sobre uma invocação de uma.
 	 */
 	return_variations?: number[];
 	/**
@@ -240,9 +262,16 @@ export async function loadPublishedToolDefinition(
 	authHeader?: string,
 	includeDraft = false,
 ): Promise<ToolDefinitionRow> {
-	const cacheKey = includeDraft
-		? `tooldef:${key}:draft:v1`
-		: `tooldef:${key}:v1`;
+	// Preview de rascunho por allowlist: mesmo sem `includeDraft` explícito, o
+	// upvox serve o DRAFT para quem está em `TOOL_PREVIEW_USERS`. Se isso caísse
+	// na chave compartilhada, o rascunho de um testador viraria a definition que
+	// TODOS os alunos leem pelos próximos 60s. A chave passa a ser por usuário
+	// nesse caso — é o preço de deixar alguém ver rascunho.
+	const preview = isToolPreviewUser(customerId) && isPreviewOnlyTool(key);
+	const cacheKey =
+		includeDraft || preview
+			? `tooldef:${key}:draft:${preview && !includeDraft ? customerId : 'staff'}:v1`
+			: `tooldef:${key}:v1`;
 	return cache.cacheAside(cacheKey, 60, async () => {
 		const headers: Record<string, string> = {
 			'x-user-id': customerId,
@@ -272,22 +301,30 @@ export async function loadPublishedToolDefinition(
  * A definition publicada já é validada pelo upvox; a inline chega como JSON cru,
  * então validamos a forma aqui antes de rodar (o motor revalida cada bloco).
  */
+/** Um pipeline: lista de nós. Compartilhado pelo `pipeline` e por cada fluxo nomeado. */
+const nodeArraySchema = z.array(
+	z
+		.object({
+			id: z.string().min(1),
+			block: z.string().min(1),
+			params: z.record(z.string(), z.unknown()).optional(),
+		})
+		.passthrough(),
+);
+
 const inlineDocSchema = z
 	.object({
 		schemaVersion: z.number().optional(),
 		engine_runtime: z.string().optional(),
 		input: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
-		pipeline: z
-			.array(
-				z
-					.object({
-						id: z.string().min(1),
-						block: z.string().min(1),
-						params: z.record(z.string(), z.unknown()).optional(),
-					})
-					.passthrough(),
-			)
-			.optional(),
+		pipeline: nodeArraySchema.optional(),
+		/**
+		 * Declarado explicitamente mesmo com o `.passthrough()` lá embaixo: sem
+		 * isto os fluxos nomeados de um rascunho entrariam SEM validação de forma
+		 * nenhuma, e um `pipelines` que não fosse array de nós só falharia lá na
+		 * frente, com mensagem de motor em vez de mensagem de validação.
+		 */
+		pipelines: z.record(z.string(), nodeArraySchema).optional(),
 		output: z.record(z.string(), z.unknown()).optional(),
 		ui: z.record(z.string(), z.unknown()).optional(),
 		bank: z.record(z.string(), z.unknown()).optional(),

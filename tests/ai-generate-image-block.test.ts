@@ -155,7 +155,15 @@ describe('ai.generate_image', () => {
 			expect(body.prompt).toContain('2:1');
 			expect(body.prompt).not.toContain('autoritativo');
 			expect(body.aspect_ratio).toBe('16:9');
-			expect(body.resolution).toBe('4K');
+			/**
+			 * ERA '4K', E ERA DINHEIRO JOGADO FORA.
+			 *
+			 * 2000×1000 são 2,0 MP e cabem em `2K` (≈4,19 MP) com folga. Pedir `4K`
+			 * (≈16,8 MP) só entregava pixel para o `sharp.resize(2000, 1000)` do fim
+			 * do pipeline apagar — medido no provedor real: US$ 0,1527 contra
+			 * US$ 0,1024 no flash pela MESMA imagem final. Ver `bestResolution`.
+			 */
+			expect(body.resolution).toBe('2K');
 		});
 	});
 
