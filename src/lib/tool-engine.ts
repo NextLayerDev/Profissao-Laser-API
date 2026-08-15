@@ -1,6 +1,10 @@
 import { blockRegistry } from '../tool-blocks/index.js';
 import type { BlockRunContext } from '../tool-blocks/types.js';
-import type { InputSpec, ToolDefinitionDoc } from './tool-definitions.js';
+import type {
+	InputSpec,
+	PipelineNode,
+	ToolDefinitionDoc,
+} from './tool-definitions.js';
 import { ToolEngineError } from './tool-errors.js';
 
 export { ToolEngineError } from './tool-errors.js';
@@ -216,21 +220,103 @@ export function projectOutput(
 	return result;
 }
 
-/** Conjunto de "cabeças" válidas de ref: `input` + os ids dos nós (validados). */
+/**
+ * Conjunto de "cabeças" válidas de ref: `input` + os ids dos nós (validados).
+ *
+ * Percorre TODOS os fluxos, não só o que vai rodar. Não é zelo: `resolveValue`
+ * devolve a string LITERAL quando a cabeça é desconhecida, então uma chave de
+ * `output` que aponte para um nó do outro fluxo chegaria à tela como o texto
+ * `"time.titulo"` em vez de vir vazia. Conhecendo o id, a mesma referência
+ * resolve para `undefined` e a chave simplesmente não aparece — que é o que
+ * "aquele passo não rodou neste fluxo" significa.
+ */
 function buildHeads(def: ToolDefinitionDoc): Set<string> {
 	const heads = new Set<string>(['input']);
-	const seen = new Set<string>();
-	for (const node of def.pipeline ?? []) {
-		if (!NODE_ID_RE.test(node.id)) {
-			throw new ToolEngineError(400, `id de nó inválido: ${node.id}`);
+	for (const nos of todosOsFluxos(def)) {
+		// Duplicata é checada POR FLUXO: dois fluxos usarem o mesmo id (`arte` no
+		// de criar e no de ajustar) é o caso normal, e é o que faz uma única
+		// `output` servir aos dois.
+		const seen = new Set<string>();
+		for (const node of nos) {
+			if (!NODE_ID_RE.test(node.id)) {
+				throw new ToolEngineError(400, `id de nó inválido: ${node.id}`);
+			}
+			if (seen.has(node.id)) {
+				throw new ToolEngineError(400, `id de nó duplicado: ${node.id}`);
+			}
+			seen.add(node.id);
+			heads.add(node.id);
 		}
-		if (seen.has(node.id)) {
-			throw new ToolEngineError(400, `id de nó duplicado: ${node.id}`);
-		}
-		seen.add(node.id);
-		heads.add(node.id);
 	}
 	return heads;
+}
+
+/** Todos os pipelines declarados: o padrão mais os nomeados. */
+function todosOsFluxos(def: ToolDefinitionDoc): PipelineNode[][] {
+	const fluxos: PipelineNode[][] = [];
+	if (def.pipeline?.length) fluxos.push(def.pipeline);
+	for (const nos of Object.values(def.pipelines ?? {})) {
+		if (Array.isArray(nos)) fluxos.push(nos);
+	}
+	return fluxos;
+}
+
+/**
+ * ┌─ FLUXOS NOMEADOS: UMA TOOL, MAIS DE UM CAMINHO ─────────────────────────┐
+ * │ O motor continua LINEAR — não existe `if`, não existe ramo dentro de um  │
+ * │ pipeline. O que existe agora é a tool poder declarar MAIS DE UM pipeline │
+ * │ e o run escolher um pelo nome (`flow`).                                  │
+ * │                                                                          │
+ * │ POR QUE ISSO PRECISOU EXISTIR: o Ateliê tem dois caminhos com custo e    │
+ * │ trabalho completamente diferentes — CRIAR (seis especialistas lendo foto │
+ * │ e marca, depois a geração) e AJUSTAR (pega a arte pronta e amplia, ou    │
+ * │ remove fundo, ou varia). Com um pipeline só, ajustar rodaria o time      │
+ * │ inteiro de novo para produzir um prompt que ninguém usaria.              │
+ * │                                                                          │
+ * │ E POR QUE NÃO UMA SEGUNDA TOOL: chave de tool nova é COBRANÇA nova       │
+ * │ (funcionalidade, preço, cota) no upvox. O gate de billing é por          │
+ * │ `tool_key`; mantendo a mesma chave, o ajuste passa exatamente pelo mesmo │
+ * │ caminho de cobrança já provado — nada de invocation nova, nada de preço  │
+ * │ inventado aqui dentro.                                                   │
+ * │                                                                          │
+ * │ RETROCOMPATÍVEL POR CONSTRUÇÃO: tool sem `pipelines` roda o `pipeline`   │
+ * │ de sempre, e a única diferença de comportamento é a de `buildHeads`      │
+ * │ acima, que não muda nada quando só existe um fluxo.                      │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Lança 400 (e não cai no default em silêncio) quando o nome não existe: um
+ * `flow` errado significa que o cliente pediu "ajustar" e receberia "criar" —
+ * um run caro que ninguém pediu, cobrado.
+ */
+export function selecionarPipeline(
+	def: ToolDefinitionDoc,
+	flow?: string | null,
+): PipelineNode[] {
+	const nome = flow?.trim();
+	if (!nome) return def.pipeline ?? [];
+	const nomeado = def.pipelines?.[nome];
+	if (!Array.isArray(nomeado)) {
+		throw new ToolEngineError(
+			400,
+			`fluxo '${nome}' não existe nesta ferramenta`,
+		);
+	}
+	return nomeado;
+}
+
+/**
+ * Devolve uma cópia da definition com os nós do fluxo escolhido TROCADOS.
+ * Existe para o preview, que roda o mesmo fluxo com os nós de efeito colateral
+ * removidos — sem perder os outros fluxos de vista (ver `buildHeads`).
+ */
+export function comPipeline(
+	def: ToolDefinitionDoc,
+	flow: string | null | undefined,
+	nos: PipelineNode[],
+): ToolDefinitionDoc {
+	const nome = flow?.trim();
+	if (!nome) return { ...def, pipeline: nos };
+	return { ...def, pipelines: { ...(def.pipelines ?? {}), [nome]: nos } };
 }
 
 /**
@@ -241,8 +327,9 @@ export async function executeTool(
 	def: ToolDefinitionDoc,
 	bag: Bag,
 	ctx: BlockRunContext,
+	flow?: string | null,
 ): Promise<Record<string, unknown>> {
-	const pipeline = def.pipeline ?? [];
+	const pipeline = selecionarPipeline(def, flow);
 	if (pipeline.length === 0) {
 		throw new ToolEngineError(400, 'pipeline vazio');
 	}
@@ -256,6 +343,14 @@ export async function executeTool(
 	const heads = buildHeads(def);
 
 	for (const node of pipeline) {
+		/**
+		 * Checagem de aborto ENTRE nós. Um bloco individual pode não honrar o
+		 * signal (nem todos fazem I/O), mas nenhum pipeline abortado deve começar
+		 * o próximo passo — é o que impede um run estourado de continuar gastando
+		 * modelo depois do prazo.
+		 */
+		ctx.signal?.throwIfAborted();
+
 		const block = blockRegistry.get(node.block);
 		if (!block) {
 			throw new ToolEngineError(400, `bloco desconhecido: ${node.block}`);
@@ -272,10 +367,33 @@ export async function executeTool(
 				}: ${issue?.message ?? 'erro de validação'}`,
 			);
 		}
-		const outputs = await block.run(ctx, parsed.data);
+		/**
+		 * O bloco descreve o evento; o motor carimba de qual nó veio. Assim um
+		 * bloco não precisa conhecer o próprio id no pipeline, e o front consegue
+		 * ligar cada evento ao passo certo.
+		 *
+		 * O `try/catch` é deliberado: quem consome progresso é um socket, e um
+		 * socket que morreu no meio não pode derrubar um run já pago.
+		 */
+		const ctxNode: BlockRunContext = ctx.onProgress
+			? {
+					...ctx,
+					onProgress: (ev) => {
+						try {
+							ctx.onProgress?.({ ...ev, node: node.id });
+						} catch {
+							// progresso é cosmético; nunca quebra a execução
+						}
+					},
+				}
+			: ctx;
+
+		ctxNode.onProgress?.({ kind: 'node_start', block: node.block });
+		const outputs = await block.run(ctxNode, parsed.data);
 		for (const [k, val] of Object.entries(outputs)) {
 			bag[`${node.id}.${k}`] = val;
 		}
+		ctxNode.onProgress?.({ kind: 'node_done', block: node.block });
 	}
 
 	return projectOutput(def.output ?? {}, bag, heads);
