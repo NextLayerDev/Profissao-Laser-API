@@ -314,7 +314,8 @@ function injectModelOverrides(
 		!!toolSystemPrompt ||
 		hasSize ||
 		useRawPrompt ||
-		clientNative;
+		clientNative ||
+		variationCount > 1;
 	const hasTextOverride = !!toolTextModel || !!toolTextSystemPrompt;
 	if (
 		!hasImageOverride &&

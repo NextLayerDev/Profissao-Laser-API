@@ -46,6 +46,7 @@ import { textModelsRoute } from './routes/text-models.js';
 import { toolAgentRoute } from './routes/tool-agent.js';
 import { toolBankRoute } from './routes/tool-bank.js';
 import { toolBankSmartTemaRoute } from './routes/tool-bank-smart-tema.js';
+import { toolBankSummarizePromptRoute } from './routes/tool-bank-summarize-prompt.js';
 import { toolCollectionRoute } from './routes/tool-collection.js';
 import { toolRunRoute } from './routes/tool-run.js';
 import { userRoute } from './routes/user.js';
@@ -96,6 +97,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(toolBankRoute);
 	app.register(toolCollectionRoute);
 	app.register(toolBankSmartTemaRoute);
+	app.register(toolBankSummarizePromptRoute);
 	app.register(vectorLibraryRoute);
 	app.register(vectorSupportRoute);
 	app.register(faqRoute);
