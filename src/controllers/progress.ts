@@ -16,7 +16,12 @@ export const getCourseProgressController = async (
 			request.query,
 		);
 
-		const customerId = request.currentCustomer?.id ?? queryCustomerId;
+		// `currentCustomer` é null para staff (authenticateProgress deixa assim de
+		// propósito, p/ o admin ler o progresso de OUTRO aluno via query). O
+		// fallback final é a própria staff — é o que faz a Visão Aluno gravar
+		// progresso na linha dela em vez de responder 400.
+		const customerId =
+			request.currentCustomer?.id ?? queryCustomerId ?? request.currentUser?.id;
 
 		if (!customerId) {
 			return reply.status(400).send({ message: 'customerId is required' });
@@ -47,7 +52,9 @@ export const completeLessonController = async (
 			request.body,
 		);
 
-		const customerId = request.currentCustomer?.id ?? bodyCustomerId;
+		// Mesma cadeia do GET: staff sem customerId explícito marca a aula p/ si.
+		const customerId =
+			request.currentCustomer?.id ?? bodyCustomerId ?? request.currentUser?.id;
 
 		if (!customerId) {
 			return reply.status(400).send({ message: 'customerId is required' });

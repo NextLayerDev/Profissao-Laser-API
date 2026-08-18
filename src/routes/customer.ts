@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { customerController } from '../controllers/customer.js';
 import { profileController } from '../controllers/profile.js';
+import { fetchEntitlements } from '../lib/external-auth.js';
 import { authenticateCustomer, requireModule } from '../middleware/auth.js';
 import {
 	changeMyPasswordSchema,
@@ -180,7 +181,21 @@ export async function customerRoute(server: FastifyInstance) {
 				tags: ['Customer'],
 			},
 		},
-		async (request) => ({ unlimited: request.isUnlimitedCustomer === true }),
+		// `authenticateCustomer` nunca atribui `isUnlimitedCustomer` (só
+		// `authenticateCommunity` atribuía), então esta rota respondia `false`
+		// para TODO mundo — inclusive contas de teste reais. Resolvemos aqui, na
+		// fonte de verdade, sem trocar o guard: `authenticateCommunity` exigiria
+		// assinatura ativa, e o objetivo desta rota é justamente reportar quem
+		// não precisa de uma. Cobre também a staff em Visão Aluno.
+		async (request) => {
+			if (request.isUnlimitedCustomer === true) return { unlimited: true };
+			const token = (request.headers.authorization ?? '').replace(
+				/^Bearer\s+/i,
+				'',
+			);
+			const ent = token ? await fetchEntitlements(token) : null;
+			return { unlimited: ent?.is_test_unlimited === true };
+		},
 	);
 
 	server.get(
