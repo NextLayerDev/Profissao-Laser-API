@@ -36,6 +36,7 @@ import {
 	settleInvocation,
 } from '../lib/upvox-tools.js';
 import { imageSizePresetRepository } from '../repositories/image-size-preset.js';
+import { emitirLicenca } from '../repositories/licensed-art.js';
 import { toolBankRepository } from '../repositories/tool-bank.js';
 import { registerCoreBlocks } from '../tool-blocks/index.js';
 import type { ToolBankEntry } from '../types/tool-bank.js';
@@ -434,6 +435,59 @@ function injectModelOverrides(
  * settle/refund. Billing é AUTORITATIVO no upvox; o motor não dá run grátis a
  * tool cobrada sem invocation válida.
  */
+
+/** O que a resposta devolve ao front quando a arte é licenciada. */
+interface IssuedArtLicense {
+	code: string;
+	featureKey: string;
+	licensorName: string | null;
+	issuedAt: string;
+}
+
+/**
+ * Prompt licenciado é prompt que carrega `feature_key` no `data`.
+ *
+ * O gatilho é o DADO e não uma flag na definition: o staff amarra a marca ao
+ * prompt, e nenhuma configuração de tool pode desligar a emissão por engano.
+ */
+function licenseFeatureKeyOf(entry?: ToolBankEntry): string | null {
+	const bruto = (entry?.data as Record<string, unknown> | undefined)
+		?.feature_key;
+	if (typeof bruto !== 'string') return null;
+	const chave = bruto.trim().toLowerCase();
+	// Mesma gramática do resto da casa. Fora do formato é erro de cadastro, e
+	// tratamos como "não licenciado" — melhor não emitir do que emitir com marca
+	// inválida.
+	return /^[a-z0-9]+:[a-z0-9-]+$/.test(chave) ? chave : null;
+}
+
+/** Nome de gente da marca, para a tela pública não mostrar `clube:corinthians`. */
+function licensorNameOf(entry?: ToolBankEntry): string | null {
+	const bruto = (entry?.data as Record<string, unknown> | undefined)
+		?.licensor_name;
+	return typeof bruto === 'string' && bruto.trim() ? bruto.trim() : null;
+}
+
+/**
+ * A URL da arte dentro da saída do pipeline.
+ *
+ * O nome do campo de saída é escolhido na definition e varia por tool, então
+ * procuramos a primeira URL http(s) em vez de fixar uma chave — fixar quebraria
+ * em silêncio na primeira tool que nomeasse diferente.
+ */
+function firstUrlOf(output: Record<string, unknown>): string | null {
+	for (const valor of Object.values(output)) {
+		if (typeof valor === 'string' && /^https?:\/\//.test(valor)) return valor;
+		if (Array.isArray(valor)) {
+			const achado = valor.find(
+				(v) => typeof v === 'string' && /^https?:\/\//.test(v),
+			);
+			if (typeof achado === 'string') return achado;
+		}
+	}
+	return null;
+}
+
 /**
  * Um "respondedor": ou a resposta HTTP normal, ou frames SSE.
  *
@@ -864,10 +918,55 @@ async function executarRun(
 			return res.erro(500, message);
 		}
 
+		// ── arte licenciada: código de autenticidade ──
+		//
+		// A regra mora AQUI, no motor, e não num bloco do pipeline: se fosse
+		// bloco, um admin editando a definition poderia removê-lo e a arte da
+		// marca sairia sem código — indistinguível de uma pirata, que é
+		// exatamente a falha que este produto existe para evitar.
+		//
+		// O gatilho é o dado, não a configuração: prompt com `feature_key` é
+		// prompt licenciado.
+		const featureKey = licenseFeatureKeyOf(selectedBankEntry);
+		let license: IssuedArtLicense | undefined;
+		if (featureKey) {
+			try {
+				const emitida = await emitirLicenca({
+					customerId,
+					featureKey,
+					licensorName: licensorNameOf(selectedBankEntry),
+					toolKey: key,
+					// A rodada cobrada é a unidade de idempotência: reenvio devolve o
+					// mesmo código em vez de emitir um segundo.
+					invocationId: invocationId ?? null,
+					previewUrl: firstUrlOf(output),
+					promptTitle: selectedBankEntry?.title ?? null,
+				});
+				license = {
+					code: emitida.art.code,
+					featureKey: emitida.art.feature_key,
+					licensorName: emitida.art.licensor_name,
+					issuedAt: emitida.art.created_at,
+				};
+			} catch (err) {
+				// NUNCA entregar arte licenciada sem código. Custa uma chamada de
+				// modelo desperdiçada; entregar sem QR custaria a razão de ser do
+				// produto.
+				console.error('[tool-run] emissão de licença falhou:', err);
+				if (invocationId) {
+					await refundInvocation(customerId, invocationId, authHeader);
+				}
+				return res.erro(
+					503,
+					'Não foi possível emitir o código de autenticidade. Nada foi cobrado — tente de novo.',
+				);
+			}
+		}
+
 		if (invocationId) {
 			await settleInvocation(customerId, invocationId, authHeader);
 		}
-		return res.ok({ id: crypto.randomUUID(), output });
+		return res.ok({ id: crypto.randomUUID(), output, license });
 	} catch (err) {
 		/**
 		 * ┌─ ESTORNAR PELO RECIBO, NÃO PELO PORTÃO ─────────────────────────────┐
