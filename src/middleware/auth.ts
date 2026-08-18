@@ -236,9 +236,22 @@ export const authenticateCommunity = async (
 		request.isUnlimitedCustomer = unlimited;
 	};
 
-	// Staff: acesso irrestrito à comunidade.
+	// Staff: acesso irrestrito à comunidade — nunca barrada.
+	//
+	// Mas ainda lemos os entitlements: em Visão Aluno o upvox devolve
+	// `is_test_unlimited: true` + o plano sintético, e é daí que saem o saldo
+	// ilimitado e a `currentPlanKey` que gateiam salas (Mentoria) e eventos por
+	// plano. Sem isto a staff em prévia entrava, mas contava voxxys e ficava sem
+	// plano nenhum. Best-effort: sem Bearer repassado ou upvox fora, cai em
+	// `false`/`null` — o que é exatamente o comportamento antigo.
 	if (isStaffRole(request.currentRole)) {
-		grant(false);
+		const staffToken = (request.headers.authorization ?? '').replace(
+			/^Bearer\s+/i,
+			'',
+		);
+		const staffEnt = staffToken ? await fetchEntitlements(staffToken) : null;
+		grant(staffEnt?.is_test_unlimited === true);
+		request.currentPlanKey = staffEnt?.subscription?.plan?.key ?? null;
 		return;
 	}
 
