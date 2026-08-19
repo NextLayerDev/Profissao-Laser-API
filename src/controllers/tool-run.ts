@@ -4,7 +4,12 @@ import sharp from 'sharp';
 import { aiRodaDeGraca, nadaAPagarNesteRun } from '../lib/atelie/ajustes.js';
 import { isStaffRole } from '../lib/external-auth.js';
 import { IMAGE_MODELS_CATALOG } from '../lib/image-models-catalog.js';
-import { carimbarLote, MAX_TIRAGEM } from '../lib/licensed-piece.js';
+import {
+	carimbarLote,
+	lerDadosVariaveis,
+	MAX_TIRAGEM,
+	type PecaVariavel,
+} from '../lib/licensed-piece.js';
 import {
 	deleteByUrl,
 	fetchToolOutput,
@@ -45,6 +50,7 @@ import { imageSizePresetRepository } from '../repositories/image-size-preset.js'
 import {
 	anexarArtes,
 	anexarMaster,
+	apagarLoteSemArte,
 	atualizarTamanhoDoLote,
 	emitirLote,
 	listarLote,
@@ -533,6 +539,12 @@ async function executarRun(
 	 * a invocação é anterior à coluna — e aí a tiragem é de uma peça só.
 	 */
 	let gateLicenseUnits: number | null = null;
+	/**
+	 * Gerações que a invocação pagou. Num lote uniforme é sempre 1 (a arte é uma
+	 * só, copiada N vezes). Num lote com DADOS VARIÁVEIS é N, porque ali cada
+	 * peça é uma chamada de modelo própria.
+	 */
+	let gateUnits: number | null = null;
 	/** Recibo que ESTE run tomou (ver `reservarInvocacao`); devolvido no `finally`. */
 	let reservado: string | null = null;
 
@@ -797,6 +809,23 @@ async function executarRun(
 			return recusar(400, message);
 		}
 
+		/**
+		 * A LISTA DE DADOS VARIÁVEIS, se houver.
+		 *
+		 * Validada aqui, antes do portão, pelo mesmo motivo das outras: não faz
+		 * sentido consultar o upvox por um pedido que já sabemos malformado. Quem
+		 * chegou aqui já debitado é estornado pelo `recusar`.
+		 */
+		let dadosVariaveis: PecaVariavel[] | null = null;
+		try {
+			dadosVariaveis = lerDadosVariaveis(fields.pieces);
+		} catch (err) {
+			return recusar(
+				400,
+				err instanceof Error ? err.message : 'Lista de peças inválida.',
+			);
+		}
+
 		// ── billing (autoritativo no upvox) ──
 		if (billed) {
 			const gate = await resolveToolBilling(
@@ -816,6 +845,7 @@ async function executarRun(
 			}
 			invocationId = gate.mode === 'paid' ? gate.invocationId : null;
 			gateLicenseUnits = gate.mode === 'paid' ? gate.licenseUnits : null;
+			gateUnits = gate.mode === 'paid' ? gate.units : null;
 
 			/**
 			 * ┌─ PAGOU POR UMA, PEDIU QUATRO ───────────────────────────────────────┐
@@ -950,30 +980,127 @@ async function executarRun(
 		// O master não pode escapar cru: nem para o CDN, nem no JSON da resposta.
 		const docRun = featureKey ? semSaidaCrua(doc) : doc;
 
+		/**
+		 * LOTE COM DADOS VARIÁVEIS: só faz sentido licenciado.
+		 *
+		 * Fora de uma rodada licenciada não há lote nem peça — a lista não teria
+		 * onde pousar, e aceitá-la em silêncio faria o motor rodar o modelo N
+		 * vezes cobrando por uma.
+		 */
+		if (dadosVariaveis && !featureKey) {
+			return recusar(
+				400,
+				'Lista de peças só existe em arte licenciada — esta ferramenta não emite peças.',
+			);
+		}
+
+		/**
+		 * A LISTA ENTREGUE É A QUE FOI PAGA, nunca a que foi pedida.
+		 *
+		 * Cada linha da lista é uma chamada de modelo própria: é a diferença entre
+		 * copiar uma arte 30 vezes e gerar 30 artes. Então a conta que vale aqui é
+		 * `gate.units` (gerações compradas), não `licenseUnits`.
+		 *
+		 * "Não sei" (invocação anterior à coluna) entrega UMA peça, pela mesma
+		 * razão já escrita para a tiragem: código a mais é dívida com um terceiro.
+		 * O run não é recusado — o aluno recebe arte e recebe código, só recebe
+		 * menos peças do que pediu.
+		 */
+		if (dadosVariaveis) {
+			const pagas = gateUnits === null ? 1 : Math.max(1, gateUnits);
+			if (dadosVariaveis.length > pagas) {
+				dadosVariaveis = dadosVariaveis.slice(0, pagas);
+			}
+		}
+
 		// ── executa o pipeline ──
 		let output: Record<string, unknown>;
 		// A bag do run: o buffer da arte mora aqui e NUNCA é projetado no output
 		// de uma tool licenciada. É por ela que o carimbo pega o master.
 		let bag: Record<string, unknown> = {};
+		/**
+		 * A arte PRÓPRIA de cada peça do lote com dados variáveis, por
+		 * `piece_index` (base 1). Vazio no lote uniforme, onde a arte é uma só.
+		 */
+		const artesDaPeca = new Map<number, Buffer>();
 		try {
-			const entrada = coerceInputs(
-				doc.input ?? {},
-				fields,
-				files,
-				buildFileMeta(fileMimes, fileNames),
-			);
-			const rodada = await executeTool(
-				docRun,
-				entrada,
-				{
-					customerId,
-					authHeader,
-					onProgress: res.progresso,
-				},
-				flow,
-			);
-			output = rodada.output;
-			bag = rodada.bag;
+			const meta = buildFileMeta(fileMimes, fileNames);
+			if (dadosVariaveis) {
+				/**
+				 * UMA RODADA POR LINHA. Não há atalho possível: um nome diferente é
+				 * um prompt diferente, e um prompt diferente é uma arte diferente.
+				 *
+				 * Serial de propósito. Paralelizar aqui multiplicaria por N a
+				 * concorrência que o fornecedor vê vinda de um cliente só, e o ganho
+				 * de relógio não paga o risco de 429 no meio de um lote pago. O
+				 * progresso ao vivo é o que torna a espera legível.
+				 */
+				const chave = doc.licensing?.master;
+				if (!chave) {
+					return recusar(
+						503,
+						'Esta ferramenta não está configurada para emitir peças.',
+					);
+				}
+				for (let i = 0; i < dadosVariaveis.length; i++) {
+					const linha = dadosVariaveis[i];
+					res.progresso?.({
+						etapa: 'peca',
+						atual: i + 1,
+						total: dadosVariaveis.length,
+						rotulo: linha.tema,
+					});
+
+					// Os campos da peça: o texto da linha manda no `tema`; o resto do
+					// formulário continua valendo para todas.
+					const camposDaPeca = { ...fields };
+					if (linha.tema) camposDaPeca.tema = linha.tema;
+
+					// A foto da linha entra como `referencia`. As fotos das OUTRAS
+					// linhas ficam de fora — senão o fallback de imagem única do
+					// `coerceInputs` teria N candidatas e a peça sairia com a foto
+					// de outra pessoa.
+					const arquivosDaPeca: Record<string, Buffer> = {};
+					for (const [nome, buf] of Object.entries(files)) {
+						if (!nome.startsWith('piece_image_')) arquivosDaPeca[nome] = buf;
+					}
+					const propria = files[`piece_image_${i}`];
+					if (propria) {
+						arquivosDaPeca.referencia = propria;
+						meta.referencia = meta[`piece_image_${i}`] ?? {};
+					}
+
+					const rodada = await executeTool(
+						docRun,
+						coerceInputs(doc.input ?? {}, camposDaPeca, arquivosDaPeca, meta),
+						{ customerId, authHeader, onProgress: res.progresso },
+						flow,
+					);
+					const arte = rodada.bag[chave];
+					if (!Buffer.isBuffer(arte)) {
+						throw new Error(
+							`a peça ${i + 1} não produziu imagem em '${chave}'`,
+						);
+					}
+					artesDaPeca.set(i + 1, arte);
+					output = rodada.output;
+					bag = rodada.bag;
+				}
+			} else {
+				const entrada = coerceInputs(doc.input ?? {}, fields, files, meta);
+				const rodada = await executeTool(
+					docRun,
+					entrada,
+					{
+						customerId,
+						authHeader,
+						onProgress: res.progresso,
+					},
+					flow,
+				);
+				output = rodada.output;
+				bag = rodada.bag;
+			}
 		} catch (err) {
 			if (invocationId) {
 				await refundInvocation(customerId, invocationId, authHeader);
@@ -1013,9 +1140,17 @@ async function executarRun(
 			 */
 			const compradas =
 				gateLicenseUnits === null ? 0 : Math.max(0, gateLicenseUnits);
-			const tiragem = Math.min(1 + compradas, MAX_TIRAGEM);
+			/**
+			 * Num lote com dados variáveis a tiragem É a lista: cada linha virou
+			 * uma arte, e uma arte sem código seria justamente a peça sem licença.
+			 * O `licenseUnits` da invocação continua sendo `N − 1`, mas quem manda
+			 * aqui é o que de fato foi gerado.
+			 */
+			const tiragem = dadosVariaveis
+				? dadosVariaveis.length
+				: Math.min(1 + compradas, MAX_TIRAGEM);
 			const batchId = crypto.randomUUID();
-			let subidas: string[] = [];
+			const subidas: string[] = [];
 
 			try {
 				const pecas = await emitirLote({
@@ -1029,11 +1164,13 @@ async function executarRun(
 					promptTitle: selectedBankEntry?.title ?? null,
 					batchId,
 					tamanho: tiragem,
+					rotulos: dadosVariaveis?.map((l) => l.tema) ?? undefined,
 				});
 
 				const lote = await carimbarLote({
 					doc,
 					bag,
+					artes: dadosVariaveis ? artesDaPeca : undefined,
 					customerId,
 					batchId: pecas[0]?.batch_id ?? batchId,
 					pecas: pecas.map((a) => ({
@@ -1041,8 +1178,11 @@ async function executarRun(
 						code: a.code,
 						piece_index: a.piece_index,
 					})),
+					// O diário é preenchido DURANTE o carimbo. Esperar o retorno para
+					// saber o que apagar só funciona quando dá certo — e é justamente
+					// quando dá errado que a limpeza precisa da lista.
+					subidas,
 				});
-				subidas = lote.entregues.map((e) => e.url);
 				await anexarArtes(
 					lote.entregues.map((e) => ({ id: e.id, previewUrl: e.url })),
 				);
@@ -1057,16 +1197,23 @@ async function executarRun(
 				 * Best-effort: falhar aqui custa a possibilidade de ampliar, não o
 				 * lote que o aluno acabou de pagar.
 				 */
-				try {
-					const masterUrl = await uploadToolOutput(
-						`arte-licenciada-master/${customerId}`,
-						lote.master,
-						`${batchId}.png`,
-						'image/png',
-					);
-					await anexarMaster(pecas[0]?.batch_id ?? batchId, masterUrl);
-				} catch (err) {
-					console.error('[tool-run] arte-mãe não pôde ser guardada:', err);
+				//
+				// LOTE COM DADOS VARIÁVEIS NÃO TEM ARTE-MÃE, e por isso não pode ser
+				// ampliado: "mais 20 iguais a estas" não quer dizer nada quando cada
+				// peça leva o nome de uma pessoa. Sem `master_path`, a biblioteca já
+				// esconde o botão sozinha.
+				if (lote.master) {
+					try {
+						const masterUrl = await uploadToolOutput(
+							`arte-licenciada-master/${customerId}`,
+							lote.master,
+							`${batchId}.png`,
+							'image/png',
+						);
+						await anexarMaster(pecas[0]?.batch_id ?? batchId, masterUrl);
+					} catch (err) {
+						console.error('[tool-run] arte-mãe não pôde ser guardada:', err);
+					}
 				}
 
 				// O output projetado é DESCARTADO: numa rodada licenciada quem manda
@@ -1079,6 +1226,9 @@ async function executarRun(
 						index: e.index,
 						code: e.code,
 						url: e.url,
+						...(dadosVariaveis?.[e.index - 1]?.tema
+							? { label: dadosVariaveis[e.index - 1].tema }
+							: {}),
 					})),
 					count: lote.entregues.length,
 					...(lote.aviso ? { stamp_warning: lote.aviso } : {}),
@@ -1103,6 +1253,17 @@ async function executarRun(
 				 */
 				console.error('[tool-run] lote licenciado falhou:', err);
 				await Promise.all(subidas.map((u) => deleteByUrl(u).catch(() => {})));
+				/**
+				 * E AS LINHAS TAMBÉM SOMEM. `emitirLote` grava ANTES do carimbo, então
+				 * um erro no meio deixava peças com código, sem arquivo e sem dono —
+				 * estornadas para o aluno, mas contadas na volumetria da marca.
+				 *
+				 * `apagarLoteSemArte` não toca em peça que já tem `preview_url`: essa
+				 * foi entregue, e o QR dela pode estar gravado em acrílico.
+				 */
+				await apagarLoteSemArte(batchId, customerId).catch((e) =>
+					console.error('[tool-run] lote falho não pôde ser limpo:', e),
+				);
 				if (invocationId) {
 					await refundInvocation(customerId, invocationId, authHeader);
 				}

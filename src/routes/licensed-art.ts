@@ -42,6 +42,12 @@ const minhaArteSchema = z.object({
 	batchId: z.string().nullable(),
 	pieceIndex: z.number(),
 	batchSize: z.number(),
+	/**
+	 * O dado variável desta peça — o nome, a frase — quando o lote é
+	 * personalizado. É o que deixa o aluno achar "a caneca da Marina" sem abrir
+	 * trinta arquivos. Nulo em lote uniforme.
+	 */
+	pieceLabel: z.string().nullable(),
 	/** A tiragem deste lote pode crescer? (só se a arte-mãe foi guardada) */
 	canGrow: z.boolean(),
 	issuedAt: z.string(),
@@ -171,6 +177,7 @@ export async function licensedArtRoute(server: FastifyInstance) {
 					batchId: a.batch_id,
 					pieceIndex: a.piece_index,
 					batchSize: a.batch_size,
+					pieceLabel: a.piece_label,
 					canGrow: Boolean(a.batch_id && a.master_path),
 					issuedAt: a.created_at,
 				})),
@@ -236,6 +243,7 @@ export async function licensedArtRoute(server: FastifyInstance) {
 					batchId: art.batch_id,
 					pieceIndex: art.piece_index,
 					batchSize: art.batch_size,
+					pieceLabel: art.piece_label,
 					canGrow: Boolean(art.batch_id && art.master_path),
 					issuedAt: art.created_at,
 				});

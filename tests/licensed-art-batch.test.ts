@@ -182,6 +182,35 @@ describe('emissão em lote', () => {
 		expect(banco).toHaveLength(5);
 	});
 
+	it('grava o dado variável de cada peça, na ordem da lista', async () => {
+		const pecas = await emitirLote({
+			...base,
+			tamanho: 3,
+			rotulos: ['Marina', null, 'João'],
+		});
+		expect(pecas.map((p) => p.piece_label)).toEqual(['Marina', null, 'João']);
+	});
+
+	it('sem lista, toda peça fica com rótulo nulo — é o lote uniforme', async () => {
+		const pecas = await emitirLote({ ...base, tamanho: 3 });
+		expect(pecas.every((p) => p.piece_label === null)).toBe(true);
+	});
+
+	it('AMPLIAR alinha o rótulo pelo índice de início, não pelo 1', async () => {
+		await emitirLote({ ...base, tamanho: 2 });
+		const novas = await emitirLote({
+			...base,
+			invocationId: 'inv-2',
+			tamanho: 2,
+			inicio: 3,
+			rotulos: ['terceira', 'quarta'],
+		});
+		expect(novas.map((p) => [p.piece_index, p.piece_label])).toEqual([
+			[3, 'terceira'],
+			[4, 'quarta'],
+		]);
+	});
+
 	it('lote de uma peça é o caso de sempre, sem nada de especial', async () => {
 		const pecas = await emitirLote({ ...base, tamanho: 1 });
 		expect(pecas).toHaveLength(1);

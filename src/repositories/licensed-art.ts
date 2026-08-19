@@ -26,6 +26,11 @@ export interface LicensedArt {
 	batch_size: number;
 	/** Caminho da arte-mãe sem carimbo. NUNCA sai para o cliente. */
 	master_path: string | null;
+	/**
+	 * O dado variável desta peça — o nome, a frase — quando o lote é
+	 * personalizado. Nulo em lote uniforme, que é a maioria.
+	 */
+	piece_label: string | null;
 	created_at: string;
 }
 
@@ -115,6 +120,11 @@ export async function emitirLote(
 		 */
 		inicio?: number;
 		masterPath?: string | null;
+		/**
+		 * O dado variável de cada peça, na ordem do lote (o índice 0 é a peça
+		 * `inicio`). Ausente = lote uniforme, e toda peça fica com rótulo nulo.
+		 */
+		rotulos?: (string | null)[];
 	},
 ): Promise<LicensedArt[]> {
 	const existentes = input.invocationId
@@ -142,6 +152,7 @@ export async function emitirLote(
 			piece_index: i,
 			batch_size: fim,
 			master_path: input.masterPath ?? null,
+			piece_label: input.rotulos?.[i - inicio] ?? null,
 		});
 	}
 
@@ -161,6 +172,32 @@ export async function emitirLote(
 	throw new Error(
 		`emitirLote: esperava ${input.tamanho} peças, encontrei ${todas.length}`,
 	);
+}
+
+/**
+ * APAGA as peças de um lote que nunca chegou a existir.
+ *
+ * O único chamador é o desfecho de erro da emissão. A ordem no motor é emitir →
+ * carimbar → subir → anexar, e um erro no meio deixava linhas com código e sem
+ * arquivo: peças que o aluno nunca recebeu, não pagou (a invocação é estornada)
+ * e que ainda assim contavam na volumetria da marca — dívida com um terceiro
+ * por causa de um timeout.
+ *
+ * Só apaga o que AINDA NÃO TEM ARQUIVO. É a salvaguarda que importa: peça com
+ * `preview_url` já foi entregue, e o QR dela pode estar gravado em acrílico.
+ * Apagar essa linha transformaria um chaveiro legítimo em pirata.
+ */
+export async function apagarLoteSemArte(
+	batchId: string,
+	customerId: string,
+): Promise<void> {
+	const { error } = await supabase
+		.from(TABELA)
+		.delete()
+		.eq('batch_id', batchId)
+		.eq('customer_id', customerId)
+		.is('preview_url', null);
+	if (error) throw new Error(`apagarLoteSemArte: ${error.message}`);
 }
 
 /**

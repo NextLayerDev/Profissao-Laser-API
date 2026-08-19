@@ -93,6 +93,7 @@ const peca = (over: Record<string, unknown> = {}) => ({
 	piece_index: 1,
 	batch_size: 1,
 	master_path: null,
+	piece_label: null,
 	created_at: '2026-08-18T00:00:00.000Z',
 	...over,
 });

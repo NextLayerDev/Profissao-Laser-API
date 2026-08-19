@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import {
 	anexarArtes,
+	apagarLoteSemArte,
 	atualizarTamanhoDoLote,
 	emitirLote,
 	listarLote,
@@ -33,6 +34,64 @@ const upvox = () => import('./upvox-tools.js');
  */
 export const MAX_TIRAGEM = Number(process.env.TOOL_MAX_PRINT_RUN) || 50;
 
+/** Uma linha da lista de dados variáveis. */
+export interface PecaVariavel {
+	/** O que muda nesta peça: o nome, a frase. Vazio = só a foto muda. */
+	tema: string | null;
+}
+
+/** Limite do rótulo. Nome de pessoa não passa disso; prompt inteiro, sim. */
+const MAX_ROTULO = 120;
+
+/**
+ * Lê a lista de DADOS VARIÁVEIS do corpo do run.
+ *
+ * Formato: `[{"tema": "Marina"}, {"tema": "João"}]` — uma linha por peça, na
+ * ordem em que as peças serão numeradas. A foto de cada linha, quando existe,
+ * vem como arquivo `piece_image_<i>` (i base 0), fora do JSON.
+ *
+ * Ausente devolve `null`, e `null` é o lote uniforme de sempre: N cópias da
+ * mesma arte. Só quem manda a lista muda de caminho.
+ *
+ * Lança em vez de devolver erro estruturado porque o único chamador é o
+ * controller, que já traduz exceção em 400 com estorno.
+ */
+export function lerDadosVariaveis(
+	bruto: string | undefined | null,
+): PecaVariavel[] | null {
+	if (!bruto || !bruto.trim()) return null;
+
+	let cru: unknown;
+	try {
+		cru = JSON.parse(bruto);
+	} catch {
+		throw new Error('A lista de peças não é um JSON válido.');
+	}
+	if (!Array.isArray(cru) || cru.length === 0) {
+		throw new Error('A lista de peças está vazia.');
+	}
+	if (cru.length > MAX_TIRAGEM) {
+		throw new Error(`A tiragem de um lote vai até ${MAX_TIRAGEM} peças.`);
+	}
+
+	return cru.map((linha, i) => {
+		if (typeof linha !== 'object' || linha === null) {
+			throw new Error(`A peça ${i + 1} da lista não é um objeto.`);
+		}
+		const tema = (linha as { tema?: unknown }).tema;
+		if (tema !== undefined && tema !== null && typeof tema !== 'string') {
+			throw new Error(`O texto da peça ${i + 1} não é um texto.`);
+		}
+		const limpo = typeof tema === 'string' ? tema.trim() : '';
+		if (limpo.length > MAX_ROTULO) {
+			throw new Error(
+				`O texto da peça ${i + 1} passa de ${MAX_ROTULO} caracteres.`,
+			);
+		}
+		return { tema: limpo || null };
+	});
+}
+
 /**
  * Carimba a arte e sobe a peça. É o ponto onde a licença deixa de ser um dado
  * ao lado do arquivo e passa a ser parte dele.
@@ -44,47 +103,80 @@ export const MAX_TIRAGEM = Number(process.env.TOOL_MAX_PRINT_RUN) || 50;
  * vazamento silencioso.
  */
 export async function carimbarLote(args: {
-	doc: ToolDefinitionDoc;
-	bag: Record<string, unknown>;
+	/** Lote UNIFORME: a arte-mãe sai daqui, da bag do run. */
+	doc?: ToolDefinitionDoc;
+	bag?: Record<string, unknown>;
+	/**
+	 * Lote com DADOS VARIÁVEIS: a arte própria de cada peça, por `piece_index`.
+	 *
+	 * Quando vem, `doc`/`bag` nem são olhados e não existe arte-mãe — não há o
+	 * que clonar, porque nenhuma peça é cópia de outra. É a diferença entre 50
+	 * copos iguais e 50 canecas com 50 nomes.
+	 */
+	artes?: Map<number, Buffer>;
 	customerId: string;
 	batchId: string;
 	pecas: { id: string; code: string; piece_index: number }[];
+	/**
+	 * Diário das URLs já subidas, preenchido À MEDIDA que cada peça sobe.
+	 *
+	 * Existe porque a limpeza precisa saber o que apagar QUANDO DÁ ERRADO — e aí
+	 * não há valor de retorno. Uma peça que falha no meio derruba o lote, mas as
+	 * que já subiram continuam no CDN: sem este diário elas viravam órfãs, com
+	 * código gravado e ninguém dono. Com dados variáveis o risco deixa de ser
+	 * teórico: são N chamadas ao modelo, não uma.
+	 */
+	subidas?: string[];
 }): Promise<{
 	entregues: { id: string; index: number; code: string; url: string }[];
 	thumb: string;
-	/** A arte-mãe SEM carimbo, para o lote poder crescer depois. */
-	master: Buffer;
+	/**
+	 * A arte-mãe SEM carimbo, para o lote poder crescer depois. NULA no lote com
+	 * dados variáveis: ampliar ali significaria repetir o nome de alguém.
+	 */
+	master: Buffer | null;
 	aviso?: string;
 }> {
-	const chave = args.doc.licensing?.master;
-	if (!chave) {
-		throw new Error(
-			'definition licenciada sem `licensing.master` — o motor não sabe qual buffer carimbar',
-		);
-	}
-	const master = args.bag[chave];
-	if (!Buffer.isBuffer(master)) {
-		throw new Error(
-			`\`licensing.master\` aponta para '${chave}', que não é um buffer de imagem`,
-		);
-	}
+	let master: Buffer | null = null;
+	let base: () => Promise<Buffer>;
 
-	// Decodifica o PNG UMA vez e reusa os pixels crus em todas as peças. Sem
-	// isto, um lote de 50 paga 50 decodificações do mesmo master — segundos de
-	// CPU jogados fora, e o master é grande.
-	const cru = await sharp(master).ensureAlpha().raw().toBuffer({
-		resolveWithObject: true,
-	});
-	const base = () =>
-		sharp(cru.data, {
-			raw: {
-				width: cru.info.width,
-				height: cru.info.height,
-				channels: cru.info.channels,
-			},
-		})
-			.png()
-			.toBuffer();
+	if (args.artes) {
+		// Cada peça traz a sua — nada a decodificar em comum, nada a reusar.
+		base = async () => {
+			throw new Error('lote com dados variáveis não tem arte-mãe');
+		};
+	} else {
+		const chave = args.doc?.licensing?.master;
+		if (!chave) {
+			throw new Error(
+				'definition licenciada sem `licensing.master` — o motor não sabe qual buffer carimbar',
+			);
+		}
+		const daBag = args.bag?.[chave];
+		if (!Buffer.isBuffer(daBag)) {
+			throw new Error(
+				`\`licensing.master\` aponta para '${chave}', que não é um buffer de imagem`,
+			);
+		}
+		master = daBag;
+
+		// Decodifica o PNG UMA vez e reusa os pixels crus em todas as peças. Sem
+		// isto, um lote de 50 paga 50 decodificações do mesmo master — segundos de
+		// CPU jogados fora, e o master é grande.
+		const cru = await sharp(master).ensureAlpha().raw().toBuffer({
+			resolveWithObject: true,
+		});
+		base = () =>
+			sharp(cru.data, {
+				raw: {
+					width: cru.info.width,
+					height: cru.info.height,
+					channels: cru.info.channels,
+				},
+			})
+				.png()
+				.toBuffer();
+	}
 
 	const entregues: {
 		id: string;
@@ -93,23 +185,42 @@ export async function carimbarLote(args: {
 		url: string;
 	}[] = [];
 	let aviso: string | undefined;
+	// A miniatura é a da MENOR peça deste lote — não necessariamente a de índice
+	// 1. Numa ampliação que começa na peça 11, exigir a peça 1 deixava a
+	// miniatura cair na arte-mãe SEM carimbo; num lote com dados variáveis, cair
+	// na arte-mãe é impossível, porque não existe nenhuma.
 	let primeiroPng: Buffer | undefined;
+	let primeiroIndex = Number.POSITIVE_INFINITY;
 
 	// Quatro em voo: o suficiente para o lote não ficar serial, longe o bastante
 	// do pico de RAM que o encoder de vídeo já mostrou ser real neste processo.
 	const FILA = 4;
 	let proxima = 0;
+	// Uma peça que falha derruba o lote inteiro, então as outras param de pegar
+	// trabalho novo — mas a que já está na mão termina. É o que torna o diário
+	// de subidas COMPLETO no momento do erro; ver `Promise.allSettled` abaixo.
+	let abortada = false;
 	async function trabalhador() {
 		for (;;) {
+			if (abortada) return;
 			const i = proxima++;
 			if (i >= args.pecas.length) return;
 			const peca = args.pecas[i];
-			const { png, aviso: a } = await carimbarPeca(await base(), {
+			const propria = args.artes?.get(peca.piece_index);
+			if (args.artes && !propria) {
+				throw new Error(
+					`lote com dados variáveis sem arte para a peça ${peca.piece_index}`,
+				);
+			}
+			const { png, aviso: a } = await carimbarPeca(propria ?? (await base()), {
 				code: peca.code,
 				url: urlPublicaDaPeca(peca.code),
 			});
 			if (a && !aviso) aviso = a;
-			if (peca.piece_index === 1) primeiroPng = png;
+			if (peca.piece_index < primeiroIndex) {
+				primeiroIndex = peca.piece_index;
+				primeiroPng = png;
+			}
 			// O NOME DO ARQUIVO É O CÓDIGO, e o lote vive numa pasta só: é o que o
 			// operador precisa no chão de fábrica para achar a peça 23 de 50 e
 			// conferir o código gravado sem abrir o arquivo.
@@ -130,6 +241,7 @@ export async function carimbarLote(args: {
 				`${args.batchId}/${String(peca.piece_index).padStart(3, '0')}-${peca.code}.png`,
 				'image/png',
 			);
+			args.subidas?.push(url);
 			entregues.push({
 				id: peca.id,
 				index: peca.piece_index,
@@ -138,9 +250,27 @@ export async function carimbarLote(args: {
 			});
 		}
 	}
-	await Promise.all(
-		Array.from({ length: Math.min(FILA, args.pecas.length) }, trabalhador),
+	/**
+	 * `allSettled`, NÃO `all`.
+	 *
+	 * `Promise.all` rejeita no primeiro erro e devolve o controle enquanto os
+	 * outros trabalhadores ainda estão subindo arquivo. A limpeza do chamador
+	 * então lia um diário incompleto, e a subida atrasada virava órfã no CDN —
+	 * peça com código gravado e sem dono. Esperar todos assentarem custa um
+	 * upload e fecha o buraco.
+	 */
+	const desfechos = await Promise.allSettled(
+		Array.from({ length: Math.min(FILA, args.pecas.length) }, async () => {
+			try {
+				await trabalhador();
+			} catch (err) {
+				abortada = true;
+				throw err;
+			}
+		}),
 	);
+	const falhou = desfechos.find((d) => d.status === 'rejected');
+	if (falhou && falhou.status === 'rejected') throw falhou.reason;
 	entregues.sort((a, b) => a.index - b.index);
 
 	// A prévia da tela é reduzida e é da peça JÁ CARIMBADA. Devolver o master em
@@ -252,7 +382,9 @@ export async function ampliarLoteLicenciado(args: {
 		};
 	}
 
-	let subidas: string[] = [];
+	// Ver `carimbarLote.subidas`: o diário é preenchido durante o carimbo, porque
+	// é no erro — quando não há valor de retorno — que a limpeza precisa dele.
+	const subidas: string[] = [];
 	try {
 		const master = await fetchToolOutput(masterUrl);
 		const novas = await emitirLote({
@@ -280,8 +412,8 @@ export async function ampliarLoteLicenciado(args: {
 				code: a.code,
 				piece_index: a.piece_index,
 			})),
+			subidas,
 		});
-		subidas = carimbadas.entregues.map((e) => e.url);
 		await anexarArtes(
 			carimbadas.entregues.map((e) => ({ id: e.id, previewUrl: e.url })),
 		);
@@ -299,6 +431,11 @@ export async function ampliarLoteLicenciado(args: {
 	} catch (err) {
 		console.error('[tool-run] ampliação de lote falhou:', err);
 		await Promise.all(subidas.map((u) => deleteByUrl(u).catch(() => {})));
+		// As peças NOVAS somem; as antigas ficam, porque já têm arquivo — e o QR
+		// delas pode estar gravado numa peça que já foi vendida.
+		await apagarLoteSemArte(args.batchId, args.customerId).catch((e) =>
+			console.error('[tool-run] ampliação falha não pôde ser limpa:', e),
+		);
 		await refundInvocation(args.customerId, args.invocationId, args.authHeader);
 		return {
 			ok: false,
