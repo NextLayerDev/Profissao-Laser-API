@@ -5,6 +5,7 @@ import { aiRodaDeGraca, nadaAPagarNesteRun } from '../lib/atelie/ajustes.js';
 import { isStaffRole } from '../lib/external-auth.js';
 import { IMAGE_MODELS_CATALOG } from '../lib/image-models-catalog.js';
 import {
+	camposDaPeca,
 	carimbarLote,
 	lerDadosVariaveis,
 	MAX_TIRAGEM,
@@ -675,6 +676,19 @@ async function executarRun(
 		// ── banco do admin (opcional): injeta o registro escolhido nos inputs ──
 		const bank = doc.bank;
 		let selectedBankEntry: ToolBankEntry | undefined;
+		/**
+		 * OS MOLDES CRUS DOS CAMPOS COM `{variável}`, guardados ANTES de trocar.
+		 *
+		 * A injeção do banco roda UMA vez, aqui, e depois `fields.prompt` já é
+		 * texto pronto — o `{tema}` deixou de existir. Num lote com dados
+		 * variáveis isso significava que as 30 peças herdavam o mesmo prompt e
+		 * saíam sem o nome de ninguém: a lista era lida, era cobrada, era gravada
+		 * no rótulo de cada peça, e não chegava na arte. Medido em produção com
+		 * duas peças, MARINA e JOAO — as duas saíram só com o escudo.
+		 *
+		 * Guardando o molde, a rodada de cada peça refaz a troca com o texto DELA.
+		 */
+		const moldesComVariavel: Record<string, string> = {};
 		if (bank?.enabled) {
 			const bankEntryId = fields.bank_entry_id;
 			if (!bankEntryId) {
@@ -698,10 +712,13 @@ async function executarRun(
 					const value = resolveBankPath(entry, rule.from);
 					if (value === undefined || value === null) continue;
 					let str = typeof value === 'string' ? value : JSON.stringify(value);
-					if (rule.substitute) str = substituteVars(str, fields);
 					const name = inputName.startsWith('input.')
 						? inputName.slice('input.'.length)
 						: inputName;
+					if (rule.substitute) {
+						moldesComVariavel[name] = str;
+						str = substituteVars(str, fields);
+					}
 					fields[name] = str;
 				}
 			}
@@ -1051,10 +1068,9 @@ async function executarRun(
 						rotulo: linha.tema,
 					});
 
-					// Os campos da peça: o texto da linha manda no `tema`; o resto do
-					// formulário continua valendo para todas.
-					const camposDaPeca = { ...fields };
-					if (linha.tema) camposDaPeca.tema = linha.tema;
+					// O texto da linha manda no `tema` E refaz o prompt a partir do
+					// molde cru — sem a segunda metade, a peça sai sem o nome dela.
+					const campos = camposDaPeca(fields, moldesComVariavel, linha);
 
 					// A foto da linha entra como `referencia`. As fotos das OUTRAS
 					// linhas ficam de fora — senão o fallback de imagem única do
@@ -1072,7 +1088,7 @@ async function executarRun(
 
 					const rodada = await executeTool(
 						docRun,
-						coerceInputs(doc.input ?? {}, camposDaPeca, arquivosDaPeca, meta),
+						coerceInputs(doc.input ?? {}, campos, arquivosDaPeca, meta),
 						{ customerId, authHeader, onProgress: res.progresso },
 						flow,
 					);

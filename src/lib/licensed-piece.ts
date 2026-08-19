@@ -7,7 +7,7 @@ import {
 	listarLote,
 } from '../repositories/licensed-art.js';
 import { urlPublicaDaPeca } from './license-code.js';
-import { carimbarPeca } from './license-stamp.js';
+import { cantoMaisQuieto, carimbarPeca } from './license-stamp.js';
 import { deleteByUrl, fetchToolOutput, uploadToolOutput } from './storage.js';
 import type { ToolDefinitionDoc } from './tool-definitions.js';
 
@@ -90,6 +90,44 @@ export function lerDadosVariaveis(
 		}
 		return { tema: limpo || null };
 	});
+}
+
+/** Troca `{var}` pelos campos; deixa o placeholder quando a var não existe. */
+function trocarVariaveis(molde: string, ctx: Record<string, string>): string {
+	return molde.replace(/\{(\w+)\}/g, (_m, k: string) =>
+		ctx[k] !== undefined ? ctx[k] : `{${k}}`,
+	);
+}
+
+/**
+ * OS CAMPOS DE UMA PEÇA do lote com dados variáveis.
+ *
+ * ┌─ O BUG QUE ESTA FUNÇÃO EXISTE PARA IMPEDIR ─────────────────────────────┐
+ * │ A injeção do banco troca `{tema}` UMA vez, no começo do run, e depois    │
+ * │ `fields.prompt` já é texto pronto. Mudar `fields.tema` por peça, dali em │
+ * │ diante, não muda mais nada — o `{tema}` não existe mais no prompt.       │
+ * │                                                                          │
+ * │ O resultado era silencioso e caro: a lista era lida, cobrada como N      │
+ * │ gerações, gravada no rótulo de cada peça… e as N artes saíam sem o nome  │
+ * │ de ninguém. Medido em produção com MARINA e JOAO: duas peças, dois       │
+ * │ códigos, dois arquivos diferentes e nenhum nome.                         │
+ * │                                                                          │
+ * │ Por isso o MOLDE cru é guardado antes da troca, e a peça refaz a troca   │
+ * │ com o texto dela.                                                        │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+export function camposDaPeca(
+	fields: Record<string, string>,
+	/** Os campos injetados com `substitute: true`, ainda com `{var}` dentro. */
+	moldes: Record<string, string>,
+	linha: PecaVariavel,
+): Record<string, string> {
+	const campos = { ...fields };
+	if (linha.tema) campos.tema = linha.tema;
+	for (const [nome, molde] of Object.entries(moldes)) {
+		campos[nome] = trocarVariaveis(molde, campos);
+	}
+	return campos;
 }
 
 /**
@@ -178,6 +216,23 @@ export async function carimbarLote(args: {
 				.toBuffer();
 	}
 
+	/**
+	 * O CANTO É DECIDIDO UMA VEZ, PARA O LOTE INTEIRO.
+	 *
+	 * `carimbarPeca` sabe achar o canto mais quieto de uma arte sozinha, mas
+	 * deixá-la escolher peça a peça faria o selo pular de lado no meio de um
+	 * pedido de trinta canecas — cada uma é uma geração diferente, e o "canto
+	 * mais quieto" de cada uma pode ser outro. Quem grava precisa que o lote
+	 * seja uniforme.
+	 *
+	 * A referência é a arte-mãe no lote uniforme, e a primeira peça no lote com
+	 * dados variáveis: a composição é a mesma em todas, o que muda é o nome.
+	 */
+	const referencia =
+		master ??
+		args.artes?.get(Math.min(...args.pecas.map((p) => p.piece_index)));
+	const canto = referencia ? await cantoMaisQuieto(referencia) : undefined;
+
 	const entregues: {
 		id: string;
 		index: number;
@@ -215,6 +270,7 @@ export async function carimbarLote(args: {
 			const { png, aviso: a } = await carimbarPeca(propria ?? (await base()), {
 				code: peca.code,
 				url: urlPublicaDaPeca(peca.code),
+				canto,
 			});
 			if (a && !aviso) aviso = a;
 			if (peca.piece_index < primeiroIndex) {

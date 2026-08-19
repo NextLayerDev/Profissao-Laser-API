@@ -32,9 +32,8 @@ vi.mock('@/lib/storage.js', () => ({
 	deleteByUrl: async () => {},
 }));
 
-const { carimbarLote, lerDadosVariaveis, MAX_TIRAGEM } = await import(
-	'@/lib/licensed-piece.js'
-);
+const { camposDaPeca, carimbarLote, lerDadosVariaveis, MAX_TIRAGEM } =
+	await import('@/lib/licensed-piece.js');
 
 /** Arte chapada numa cor — a cor É a identidade da peça neste teste. */
 const arte = (cor: string) =>
@@ -171,5 +170,59 @@ describe('carimbo de lote com dados variáveis', () => {
 			doLote('lote-4').map((s) => corDoMiolo(s.buf)),
 		);
 		expect(new Set(mioloDeCada).size).toBe(1);
+	});
+});
+
+describe('os campos de cada peça', () => {
+	/**
+	 * O TESTE QUE MAIS IMPORTA DESTE ARQUIVO.
+	 *
+	 * A injeção do banco troca `{tema}` UMA vez, no começo do run. Sem refazer a
+	 * troca a partir do molde cru, mudar o `tema` da peça não muda mais nada — e
+	 * o lote sai cobrado como N gerações com N artes que não têm o nome de
+	 * ninguém. Foi exatamente o que aconteceu em produção com MARINA e JOAO.
+	 */
+	const MOLDES = {
+		prompt: 'chaveiro do corinthians com o nome {tema} em relevo',
+	};
+
+	it('refaz o prompt com o texto DA PEÇA, não com o do formulário', () => {
+		const fields = {
+			tema: '',
+			prompt: 'chaveiro do corinthians com o nome  em relevo',
+		};
+		const marina = camposDaPeca(fields, MOLDES, { tema: 'MARINA' });
+		const joao = camposDaPeca(fields, MOLDES, { tema: 'JOAO' });
+
+		expect(marina.prompt).toContain('MARINA');
+		expect(joao.prompt).toContain('JOAO');
+		expect(marina.prompt).not.toBe(joao.prompt);
+		// E o `fields` original não é tocado: a peça seguinte parte do mesmo lugar.
+		expect(fields.prompt).not.toContain('MARINA');
+	});
+
+	it('linha sem texto cai no tema do formulário, que vale para todas', () => {
+		const fields = { tema: 'escudo grande', prompt: 'ignorado' };
+		const campos = camposDaPeca(fields, MOLDES, { tema: null });
+		expect(campos.prompt).toContain('escudo grande');
+	});
+
+	it('sem moldes, os campos passam intactos — é o lote uniforme', () => {
+		const fields = { tema: 'x', prompt: 'já pronto' };
+		expect(camposDaPeca(fields, {}, { tema: 'MARINA' })).toEqual({
+			tema: 'MARINA',
+			prompt: 'já pronto',
+		});
+	});
+
+	it('variável que ninguém preencheu fica visível, não vira vazio', () => {
+		const campos = camposDaPeca(
+			{},
+			{ prompt: 'grave {tema} em {material}' },
+			{
+				tema: 'MARINA',
+			},
+		);
+		expect(campos.prompt).toBe('grave MARINA em {material}');
 	});
 });

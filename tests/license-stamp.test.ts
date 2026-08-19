@@ -1,7 +1,7 @@
 import QRCode from 'qrcode';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
-import { carimbarPeca } from '@/lib/license-stamp.js';
+import { cantoMaisQuieto, carimbarPeca } from '@/lib/license-stamp.js';
 
 /**
  * O carimbo é a peça central do controle de volumetria: enquanto o código não
@@ -227,5 +227,83 @@ describe('carimbo de autenticidade', () => {
 		expect(naChapa.filter((_v, i) => i % 4 === 3).every((a) => a === 255)).toBe(
 			true,
 		);
+	});
+});
+
+describe('em que canto o carimbo pousa', () => {
+	/**
+	 * O CANTO DEIXOU DE SER FIXO porque o modelo mais usado — o chaveiro "escudo
+	 * e nome" — põe o nome ocupando a base inteira, e o selo caía em cima da
+	 * última letra. Medido em produção: "JOAO" saiu com o "O" coberto.
+	 *
+	 * Estes testes descrevem a regra pedida, nesta ordem: embaixo sempre que der;
+	 * o mais vazio dos dois de baixo; e só sobe quando os dois estão ocupados.
+	 */
+	const W = 1200;
+	const H = 1200;
+
+	/** Arte branca com um bloco preto onde for pedido — o "desenho" ocupa ali. */
+	async function arteCom(blocos: sharp.Region[]): Promise<Buffer> {
+		return sharp({
+			create: { width: W, height: H, channels: 3, background: '#ffffff' },
+		})
+			.composite(
+				blocos.map((b) => ({
+					input: {
+						create: {
+							width: b.width,
+							height: b.height,
+							channels: 3,
+							background: '#000000',
+						},
+					},
+					left: b.left,
+					top: b.top,
+				})),
+			)
+			.png()
+			.toBuffer();
+	}
+
+	/** A faixa inteira de baixo, como o nome do chaveiro. */
+	const BASE_TODA = { left: 0, top: 950, width: W, height: 250 };
+	/** Só a metade direita de baixo. */
+	const BASE_DIREITA = { left: 600, top: 950, width: 600, height: 250 };
+
+	it('arte com o miolo livre embaixo fica embaixo, à direita', async () => {
+		const canto = await cantoMaisQuieto(
+			await arteCom([{ left: 300, top: 300, width: 600, height: 400 }]),
+		);
+		expect(canto).toBe('baixo-direita');
+	});
+
+	it('base ocupada só à direita empurra para a esquerda, SEM subir', async () => {
+		expect(await cantoMaisQuieto(await arteCom([BASE_DIREITA]))).toBe(
+			'baixo-esquerda',
+		);
+	});
+
+	it('base inteira ocupada — aí sim ele sobe (o caso do "JOAO")', async () => {
+		const canto = await cantoMaisQuieto(await arteCom([BASE_TODA]));
+		expect(canto.startsWith('alto')).toBe(true);
+	});
+
+	it('com tudo ocupado ele volta para baixo: na dúvida, embaixo', async () => {
+		const canto = await cantoMaisQuieto(
+			await arteCom([{ left: 0, top: 0, width: W, height: H }]),
+		);
+		expect(canto.startsWith('baixo')).toBe(true);
+	});
+
+	it('o canto pedido é OBEDECIDO — é assim que o lote sai uniforme', async () => {
+		// A arte pede o alto (base cheia), mas o lote já decidiu embaixo.
+		const base = await arteCom([BASE_TODA]);
+		const { area } = await carimbarPeca(base, {
+			code: CODE,
+			url: URL,
+			canto: 'baixo-esquerda',
+		});
+		expect(area.top).toBeGreaterThan(H / 2);
+		expect(area.left).toBeLessThan(W / 2);
 	});
 });

@@ -66,6 +66,15 @@ export interface CarimboOpts {
 	code: string;
 	/** A URL pública que o QR carrega (a página `/a/:code`). */
 	url: string;
+	/**
+	 * Em qual canto pousar. Ausente = a função mede a arte e escolhe o mais
+	 * quieto.
+	 *
+	 * `carimbarLote` SEMPRE passa este campo, decidido uma vez para o lote todo:
+	 * é o que mantém as trinta peças de um pedido com o selo no mesmo lugar,
+	 * mesmo quando cada peça é uma geração diferente.
+	 */
+	canto?: Canto;
 }
 
 /** Onde o carimbo caiu, em pixels da arte. */
@@ -156,17 +165,157 @@ function textoComoPaths(
 	return { paths, largura: f.getAdvanceWidth(texto, tamanho) };
 }
 
+/** Os quatro cantos onde o selo pode morar. */
+export type Canto =
+	| 'baixo-direita'
+	| 'baixo-esquerda'
+	| 'alto-direita'
+	| 'alto-esquerda';
+
+/**
+ * Quanta TINTA há num retângulo da arte, de 0 a 1.
+ *
+ * "Tinta" é pixel opaco E escuro — que é literalmente o que a máquina vai
+ * queimar. Transparente não conta (na peça significa "não queime aqui") e claro
+ * não conta (é o vazio da composição). Serve igual para os dois fundos que a
+ * ferramenta produz: PNG com alfa e PNG achatado no branco.
+ */
+async function tinta(
+	master: Buffer,
+	box: { left: number; top: number; width: number; height: number },
+): Promise<number> {
+	if (box.width <= 0 || box.height <= 0) return 1;
+	const { data, info } = await sharp(master)
+		.extract(box)
+		.ensureAlpha()
+		// Reduz antes de contar: a decisão é grosseira ("tem desenho aqui?") e ler
+		// duzentos mil pixels por canto seria pagar caro por uma resposta que cabe
+		// em 64×64.
+		.resize(64, 64, { fit: 'fill' })
+		.raw()
+		.toBuffer({ resolveWithObject: true });
+	const canais = info.channels;
+	const total = info.width * info.height;
+	let marcados = 0;
+	for (let i = 0; i < total; i++) {
+		const p = i * canais;
+		if (canais === 4 && data[p + 3] < 32) continue;
+		const luz = (data[p] * 299 + data[p + 1] * 587 + data[p + 2] * 114) / 1000;
+		if (luz < 200) marcados++;
+	}
+	return marcados / total;
+}
+
+/**
+ * As medidas do selo para uma arte deste tamanho.
+ *
+ * A largura da chapa depende do código desenhado, que só existe dentro de
+ * `carimbarPeca`. Aqui ela é ESTIMADA por cima de propósito: a única usuária é
+ * a escolha do canto, e superestimar torna a medida mais exigente — que é o
+ * lado seguro de errar quando a pergunta é "cabe sem atrapalhar?".
+ */
+function geometriaDoSelo(
+	W: number,
+	H: number,
+): { chapaL: number; chapaA: number; margemX: number; margemY: number } {
+	const menor = Math.min(W, H);
+	const qr = Math.max(130, Math.min(220, Math.round(menor * 0.085)));
+	const respiro = Math.round(qr * 0.11);
+	return {
+		chapaL: Math.round(respiro * 2 + qr * 2.8),
+		chapaA: respiro * 2 + qr,
+		// No wrap 360° os 8% externos de cada lado são zona de emenda.
+		margemX: W / H >= 2 ? Math.round(W * 0.1) : Math.round(menor * 0.025),
+		margemY: Math.round(menor * 0.025),
+	};
+}
+
+/** A caixa do selo num canto, já presa dentro da arte. */
+function caixaDoCanto(
+	canto: Canto,
+	m: {
+		W: number;
+		H: number;
+		chapaL: number;
+		chapaA: number;
+		margemX: number;
+		margemY: number;
+	},
+): { left: number; top: number; width: number; height: number } {
+	const maxL = Math.max(0, m.W - m.chapaL);
+	const maxT = Math.max(0, m.H - m.chapaA);
+	const direita = canto.endsWith('direita');
+	const embaixo = canto.startsWith('baixo');
+	return {
+		left: Math.max(0, Math.min(maxL, direita ? maxL - m.margemX : m.margemX)),
+		top: Math.max(0, Math.min(maxT, embaixo ? maxT - m.margemY : m.margemY)),
+		width: Math.min(m.chapaL, m.W),
+		height: Math.min(m.chapaA, m.H),
+	};
+}
+
+/**
+ * Acima disto o canto tem DESENHO, não respingo: traço de contorno, letra,
+ * escudo. Abaixo, a chapa (que é opaca) pousa ali sem tirar nada de ninguém.
+ */
+const CANTO_OCUPADO = 0.08;
+
+/**
+ * O CANTO MAIS QUIETO, com preferência forte por embaixo.
+ *
+ * A ordem é a que foi pedida: embaixo sempre que der; dos dois de baixo, o mais
+ * vazio; e só sobe quando os dois estão ocupados E o alto é mesmo bem mais
+ * limpo. Empate vai para a direita, onde o olho já procura assinatura.
+ *
+ * Exportada porque `carimbarLote` a chama UMA vez por lote: é isso que mantém
+ * as trinta peças de um pedido com o selo no mesmo lugar.
+ */
+export async function cantoMaisQuieto(master: Buffer): Promise<Canto> {
+	const meta = await sharp(master).metadata();
+	const W = meta.width ?? 0;
+	const H = meta.height ?? 0;
+	if (!W || !H) return 'baixo-direita';
+	const m = { ...geometriaDoSelo(W, H), W, H };
+
+	const medir = async (c: Canto) => tinta(master, caixaDoCanto(c, m));
+	const [bd, be] = await Promise.all([
+		medir('baixo-direita'),
+		medir('baixo-esquerda'),
+	]);
+	const baixo: Canto = be < bd - 0.01 ? 'baixo-esquerda' : 'baixo-direita';
+	const tintaBaixo = Math.min(bd, be);
+	if (tintaBaixo <= CANTO_OCUPADO) return baixo;
+
+	const [ad, ae] = await Promise.all([
+		medir('alto-direita'),
+		medir('alto-esquerda'),
+	]);
+	const alto: Canto = ae < ad - 0.01 ? 'alto-esquerda' : 'alto-direita';
+	// Na dúvida, embaixo — como foi pedido. Só sobe com folga clara.
+	return Math.min(ad, ae) < tintaBaixo - 0.05 ? alto : baixo;
+}
+
 /**
  * Aplica o carimbo e devolve o PNG da peça.
  *
- * A posição é fixa — canto inferior direito, recuado 10% da largura. O recuo
- * não é estético: os modelos de wrap 360° reservam os 8% externos de cada lado
- * como zona de emenda, e um carimbo ali quebraria a costura da caneca. Uma
- * regra só, que serve tanto para a arte quadrada quanto para a panorâmica.
+ * O recuo lateral não é estético: os modelos de wrap 360° reservam os 8%
+ * externos de cada lado como zona de emenda, e um carimbo ali quebraria a
+ * costura da caneca.
  *
- * Posição FIXA e não "o canto mais quieto": quem grava precisa saber onde o
- * código vai cair para posicionar a peça, e um carimbo que anda de lugar a cada
- * geração é um carimbo que atrapalha a produção.
+ * ┌─ POR QUE O CANTO DEIXOU DE SER FIXO ────────────────────────────────────┐
+ * │ Era sempre o inferior direito, e o argumento escrito aqui era bom: quem  │
+ * │ grava precisa saber onde o código cai, e carimbo que anda de lugar       │
+ * │ atrapalha a produção.                                                    │
+ * │                                                                          │
+ * │ Só que o chaveiro "escudo e nome" — o carro-chefe da ferramenta — põe o  │
+ * │ nome ocupando a base inteira. Medido em produção: "JOAO" saiu com o      │
+ * │ último "O" coberto pela chapa. Um carimbo que come a peça é pior que um  │
+ * │ carimbo que muda de canto.                                               │
+ * │                                                                          │
+ * │ A produção continua atendida, porque a estabilidade que ela precisa é    │
+ * │ POR LOTE, não universal: `carimbarLote` decide o canto uma vez e passa o │
+ * │ mesmo para todas as peças. As 30 canecas de um pedido saem iguais.       │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
 export async function carimbarPeca(
 	master: Buffer,
@@ -265,8 +414,16 @@ export async function carimbarPeca(
 	const panoramica = W / H >= 2;
 	const margemX = panoramica ? Math.round(W * 0.1) : Math.round(menor * 0.025);
 	const margemY = Math.round(menor * 0.025);
-	const left = Math.max(0, W - chapaL - margemX);
-	const top = Math.max(0, H - chapaA - margemY);
+	// O canto do LOTE, quando veio; senão mede esta arte e escolhe.
+	const canto = opts.canto ?? (await cantoMaisQuieto(master));
+	const { left, top } = caixaDoCanto(canto, {
+		W,
+		H,
+		chapaL,
+		chapaA,
+		margemX,
+		margemY,
+	});
 
 	const png = await sharp(master)
 		.ensureAlpha()
