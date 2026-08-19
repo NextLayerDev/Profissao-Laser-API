@@ -1,11 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import opentype from 'opentype.js';
 import QRCode from 'qrcode';
 import sharp from 'sharp';
 
 /**
- * O carimbo de autenticidade — o código e o QR gravados DENTRO do pixel da arte.
+ * O carimbo de autenticidade — o QR gravado DENTRO do pixel da arte.
  *
  * Por que dentro e não ao lado: o arquivo que a plataforma entrega vai parar num
  * pendrive, num grupo de WhatsApp, na pasta compartilhada da oficina. O código
@@ -14,67 +11,63 @@ import sharp from 'sharp';
  * resolução" deixa de existir como coisa baixável, que é o buraco inteiro do
  * controle de volumetria.
  *
- * ┌─ POR QUE NENHUM `<text>` APARECE AQUI ──────────────────────────────────┐
- * │ O sharp compõe SVG pelo resvg, que procura fonte no fontconfig do        │
- * │ SISTEMA — ele não carrega fonte de buffer. Num contêiner sem fonte       │
- * │ instalada, `<text>` não dá erro: some. O repositório já tem isso medido  │
- * │ e documentado (`tool-blocks/lib/video.ts`, `temFontes`).                 │
+ * ┌─ O QUE SAIU DAQUI, E O QUE ISSO CUSTOU ─────────────────────────────────┐
+ * │ Havia uma chapa branca com o código escrito por extenso ao lado do QR.   │
+ * │ Ocupava 349×158 px num canto da arte e, no chaveiro "escudo e nome" —    │
+ * │ o modelo mais usado —, brigava com o desenho.                            │
  * │                                                                          │
- * │ Um carimbo que some em silêncio é pior que carimbo nenhum, porque a peça │
- * │ sai parecendo licenciada. Então a fonte vira GEOMETRIA antes do SVG: o   │
- * │ `opentype.js` devolve `<path>`, e o renderizador nunca precisa saber o   │
- * │ que é uma fonte. O risco deixa de existir por construção, em vez de ser  │
- * │ testado por sonda.                                                       │
+ * │ Agora é só o QR, sem fundo. A área caiu ~72% e o carimbo some no canto.  │
+ * │                                                                          │
+ * │ O preço: quem tem a peça física com o QR riscado não lê mais o código a  │
+ * │ olho. Ele continua no nome do arquivo e na biblioteca do aluno, mas o    │
+ * │ objeto sozinho deixa de ser identificável sem leitor. Foi uma escolha.   │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 
-const require_ = createRequire(import.meta.url);
+/** A cor do QR sobre arte clara. */
+const TINTA = '#111111';
+/** A cor do QR sobre arte escura — ver `escolherSelo`. */
+const TINTA_INVERSA = '#ffffff';
 
 /**
- * JetBrains Mono Bold, a mesma monoespaçada que a interface usa nos fatos de
- * registro — o código na peça sai igual ao código na tela. Vem do pacote
- * `@fontsource` (OFL) em vez de um `.ttf` solto no repositório: assim é
- * dependência declarada, versionada e com licença rastreável.
+ * Abaixo desta luminância média (0–255) o canto é escuro e o QR inverte.
+ *
+ * 128 é o meio da escala de propósito: a pergunta é literalmente "este pedaço é
+ * mais claro ou mais escuro?", e qualquer limiar mais esperto seria calibrado
+ * numa arte e errado na seguinte.
  */
-const CAMINHO_FONTE = require_.resolve(
-	'@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-normal.woff',
-);
+const LIMIAR_ESCURO = 128;
 
-let fonteCache: opentype.Font | null = null;
-
-function fonte(): opentype.Font {
-	if (fonteCache) return fonteCache;
-	const buf = readFileSync(CAMINHO_FONTE);
-	fonteCache = opentype.parse(
-		buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
-	);
-	return fonteCache;
+/** A decisão do selo para uma arte: onde pousa e de que cor sai. */
+export interface Selo {
+	/** Canto superior esquerdo do selo, em pixels da arte. */
+	left: number;
+	top: number;
+	/**
+	 * O canto é escuro? Então o QR sai BRANCO.
+	 *
+	 * Sem chapa, o contraste tem de vir da própria arte. Sobre um campo
+	 * queimado, módulos claros em fundo escuro leem tão bem quanto o contrário —
+	 * leitor de celular moderno lê QR invertido. E na peça gravada isso é
+	 * coerente por construção: branco é "não queime aqui", então o QR aparece
+	 * como o material cru dentro do campo queimado.
+	 */
+	escuro: boolean;
 }
 
-/** Tinta e chapa do carimbo. */
-const TINTA = '#111111';
-const CHAPA = '#ffffff';
-
-/**
- * Chapa clara e tinta escura, sempre, e isso não é preguiça de medir contraste:
- * câmera só lê QR escuro sobre claro. Fixar as duas cores garante a leitura em
- * qualquer arte — e, na peça gravada, uma chapa branca é exatamente "não queime
- * aqui", que é o que a máquina precisa saber.
- */
 export interface CarimboOpts {
 	/** O código em claro, como sai de `gerarCodigoLicenca`. */
 	code: string;
 	/** A URL pública que o QR carrega (a página `/a/:code`). */
 	url: string;
 	/**
-	 * Em qual canto pousar. Ausente = a função mede a arte e escolhe o mais
-	 * quieto.
+	 * O selo já decidido. Ausente = a função mede esta arte e decide sozinha.
 	 *
-	 * `carimbarLote` SEMPRE passa este campo, decidido uma vez para o lote todo:
-	 * é o que mantém as trinta peças de um pedido com o selo no mesmo lugar,
-	 * mesmo quando cada peça é uma geração diferente.
+	 * `carimbarLote` SEMPRE passa este campo, resolvido uma vez para o lote
+	 * todo: é o que mantém as trinta peças de um pedido com o mesmo selo, no
+	 * mesmo canto, mesmo quando cada peça é uma geração diferente.
 	 */
-	canto?: Canto;
+	selo?: Selo;
 }
 
 /** Onde o carimbo caiu, em pixels da arte. */
@@ -83,7 +76,7 @@ export interface AreaDoCarimbo {
 	top: number;
 	width: number;
 	height: number;
-	/** O quadrado do QR dentro da chapa. */
+	/** O QR ocupa a área inteira agora — repetido para quem lia este campo. */
 	qr: { left: number; top: number; size: number };
 }
 
@@ -95,227 +88,307 @@ export interface CarimboResult {
 	 * e um teste que recalcula a conta à mão testa a cópia, não o carimbo.
 	 */
 	area: AreaDoCarimbo;
-	/** Preenchido quando o código saiu sem a linha de texto — ver o catch abaixo. */
-	aviso?: string;
+	/** A cor em que o QR saiu — o lote inteiro usa a mesma. */
+	selo: Selo;
 }
 
-/** Quebra o código em duas linhas nos grupos, para a chapa não ficar comprida. */
-function duasLinhas(code: string): [string, string] {
-	const partes = code.split('-');
-	if (partes.length < 4) return [code, ''];
-	const meio = Math.ceil(partes.length / 2);
-	return [partes.slice(0, meio).join('-'), partes.slice(meio).join('-')];
-}
+/** Lado da grade em que a arte é lida para escolher o lugar do selo. */
+const GRADE = 96;
 
-/** Duas casas, como texto — sem notação científica e sem `-0`. */
-const num = (v: number): string => {
-	const r = Math.round(v * 100) / 100;
-	return Object.is(r, -0) ? '0' : String(r);
-};
+interface MapaDaArte {
+	/** `true` onde há tinta (pixel opaco e escuro) — o que a máquina queima. */
+	tinta: boolean[];
+	/** Luminância média de cada célula, 0–255. Transparente conta como claro. */
+	luz: number[];
+	/**
+	 * `true` onde a célula está DENTRO da peça.
+	 *
+	 * Dentro quer dizer cercada: existe tinta acima, abaixo, à esquerda e à
+	 * direita dela. É um teste barato e surpreendentemente certeiro para
+	 * silhueta recortada — e é o que separa o vazio de dentro do chaveiro do
+	 * vazio que vira sucata depois do corte.
+	 */
+	dentro: boolean[];
+}
 
 /**
- * Serializa o contorno de um glifo à mão, com ESPAÇO entre todo número.
+ * Lê a arte inteira numa grade pequena, de uma vez.
  *
- * ┌─ POR QUE NÃO `path.toPathData()` ────────────────────────────────────────┐
- * │ O serializador do opentype junta os números do jeito compacto que o SVG   │
- * │ permite (`L278.73-24.82`, onde o menos faz as vezes de separador). É      │
- * │ válido — e o renderizador do sharp engole errado: glifos somem do         │
- * │ desenho, e QUAIS somem depende da string.                                 │
- * │                                                                           │
- * │ Medido com a mesma fonte e o mesmo tamanho: "1Z8V6-ERKV0" perdia o "0"    │
- * │ final; "PL-WXQ8W-4Z6NH" saía com o "N" deformado. Não é limite de         │
- * │ tamanho do `d`, não é `fill-rule` (nonzero e evenodd dão o mesmo) e não   │
- * │ é precisão (2 ou 5 casas dão o mesmo). É a formatação.                    │
- * │                                                                           │
- * │ E some SEM ERRO NENHUM — que num código de autenticidade é o pior         │
- * │ desfecho possível: a peça sai gravada e vendida com o código incompleto,  │
- * │ e o defeito só aparece quando alguém tenta digitar aquele código meses    │
- * │ depois.                                                                   │
- * └───────────────────────────────────────────────────────────────────────────┘
+ * `GRADE × GRADE` é grosseiro de propósito: a pergunta é "cabe aqui?", e ler
+ * milhões de pixels para respondê-la seria pagar caro por uma resposta que cabe
+ * em nove mil células. Transparente conta como CLARO porque, na arte de laser,
+ * transparente é o material cru — e material cru é claro.
  */
-function glifoComoPath(p: opentype.Path): string {
-	const partes: string[] = [];
-	for (const c of p.commands) {
-		if (c.type === 'M') partes.push(`M ${num(c.x)} ${num(c.y)}`);
-		else if (c.type === 'L') partes.push(`L ${num(c.x)} ${num(c.y)}`);
-		else if (c.type === 'C')
-			partes.push(
-				`C ${num(c.x1)} ${num(c.y1)} ${num(c.x2)} ${num(c.y2)} ${num(c.x)} ${num(c.y)}`,
-			);
-		else if (c.type === 'Q')
-			partes.push(`Q ${num(c.x1)} ${num(c.y1)} ${num(c.x)} ${num(c.y)}`);
-		else partes.push('Z');
+async function lerArte(master: Buffer): Promise<MapaDaArte> {
+	const { data, info } = await sharp(master)
+		.ensureAlpha()
+		.resize(GRADE, GRADE, { fit: 'fill' })
+		.raw()
+		.toBuffer({ resolveWithObject: true });
+
+	const n = GRADE * GRADE;
+	const tinta: boolean[] = new Array(n);
+	const luz: number[] = new Array(n);
+	for (let i = 0; i < n; i++) {
+		const p = i * info.channels;
+		const alfa = info.channels === 4 ? data[p + 3] : 255;
+		const l = (data[p] * 299 + data[p + 1] * 587 + data[p + 2] * 114) / 1000;
+		if (alfa < 32) {
+			tinta[i] = false;
+			luz[i] = 255;
+		} else {
+			tinta[i] = l < 200;
+			luz[i] = l;
+		}
 	}
-	return partes.join(' ');
+
+	// Para cada linha e coluna, onde começa e termina a tinta. Com isso, "cercada
+	// nas quatro direções" sai em O(1) por célula.
+	const primeiroNaLinha = new Array(GRADE).fill(-1);
+	const ultimoNaLinha = new Array(GRADE).fill(-1);
+	const primeiroNaColuna = new Array(GRADE).fill(-1);
+	const ultimoNaColuna = new Array(GRADE).fill(-1);
+	for (let y = 0; y < GRADE; y++) {
+		for (let x = 0; x < GRADE; x++) {
+			if (!tinta[y * GRADE + x]) continue;
+			if (primeiroNaLinha[y] < 0) primeiroNaLinha[y] = x;
+			ultimoNaLinha[y] = x;
+			if (primeiroNaColuna[x] < 0) primeiroNaColuna[x] = y;
+			ultimoNaColuna[x] = y;
+		}
+	}
+
+	const dentro: boolean[] = new Array(n);
+	for (let y = 0; y < GRADE; y++) {
+		for (let x = 0; x < GRADE; x++) {
+			dentro[y * GRADE + x] =
+				primeiroNaLinha[y] >= 0 &&
+				primeiroNaColuna[x] >= 0 &&
+				x > primeiroNaLinha[y] &&
+				x < ultimoNaLinha[y] &&
+				y > primeiroNaColuna[x] &&
+				y < ultimoNaColuna[x];
+		}
+	}
+
+	return { tinta, luz, dentro };
 }
 
 /**
- * O texto do código como `<path>` — geometria, nunca `<text>`. Um path por
- * glifo, para que um contorno problemático nunca leve os vizinhos junto.
- */
-function textoComoPaths(
-	texto: string,
-	tamanho: number,
-): { paths: string; largura: number } {
-	const f = fonte();
-	const paths = f
-		.getPaths(texto, 0, 0, tamanho)
-		.map((g) => `<path d="${glifoComoPath(g)}"/>`)
-		.join('');
-	return { paths, largura: f.getAdvanceWidth(texto, tamanho) };
-}
-
-/** Os quatro cantos onde o selo pode morar. */
-export type Canto =
-	| 'baixo-direita'
-	| 'baixo-esquerda'
-	| 'alto-direita'
-	| 'alto-esquerda';
-
-/**
- * Quanta TINTA há num retângulo da arte, de 0 a 1.
+ * A luminância média de um recorte, no pixel real.
  *
- * "Tinta" é pixel opaco E escuro — que é literalmente o que a máquina vai
- * queimar. Transparente não conta (na peça significa "não queime aqui") e claro
- * não conta (é o vazio da composição). Serve igual para os dois fundos que a
- * ferramenta produz: PNG com alfa e PNG achatado no branco.
+ * Serve só para decidir a COR do QR, e por isso não passa pela grade: uma
+ * célula da grade da caneca tem 30 px de largura, e a vizinhança contaminaria a
+ * polaridade do selo.
  */
-async function tinta(
+async function medirRegiao(
 	master: Buffer,
 	box: { left: number; top: number; width: number; height: number },
-): Promise<number> {
-	if (box.width <= 0 || box.height <= 0) return 1;
+): Promise<{ luz: number }> {
+	if (box.width <= 0 || box.height <= 0) return { luz: 255 };
 	const { data, info } = await sharp(master)
 		.extract(box)
 		.ensureAlpha()
-		// Reduz antes de contar: a decisão é grosseira ("tem desenho aqui?") e ler
-		// duzentos mil pixels por canto seria pagar caro por uma resposta que cabe
-		// em 64×64.
-		.resize(64, 64, { fit: 'fill' })
+		.resize(48, 48, { fit: 'fill' })
 		.raw()
 		.toBuffer({ resolveWithObject: true });
-	const canais = info.channels;
 	const total = info.width * info.height;
-	let marcados = 0;
+	let soma = 0;
 	for (let i = 0; i < total; i++) {
-		const p = i * canais;
-		if (canais === 4 && data[p + 3] < 32) continue;
-		const luz = (data[p] * 299 + data[p + 1] * 587 + data[p + 2] * 114) / 1000;
-		if (luz < 200) marcados++;
+		const p = i * info.channels;
+		const alfa = info.channels === 4 ? data[p + 3] : 255;
+		// Transparente é o material cru da peça, que é CLARO.
+		soma +=
+			alfa < 32
+				? 255
+				: (data[p] * 299 + data[p + 1] * 587 + data[p + 2] * 114) / 1000;
 	}
-	return marcados / total;
+	return { luz: soma / total };
 }
 
 /**
  * As medidas do selo para uma arte deste tamanho.
  *
- * A largura da chapa depende do código desenhado, que só existe dentro de
- * `carimbarPeca`. Aqui ela é ESTIMADA por cima de propósito: a única usuária é
- * a escolha do canto, e superestimar torna a medida mais exigente — que é o
- * lado seguro de errar quando a pergunta é "cabe sem atrapalhar?".
+ * Sem a chapa e sem o texto, o selo é o QUADRADO do QR e nada mais.
  */
 function geometriaDoSelo(
 	W: number,
 	H: number,
-): { chapaL: number; chapaA: number; margemX: number; margemY: number } {
+): { lado: number; margemX: number; margemY: number } {
 	const menor = Math.min(W, H);
-	const qr = Math.max(130, Math.min(220, Math.round(menor * 0.085)));
-	const respiro = Math.round(qr * 0.11);
+	/**
+	 * O piso de 120 px é FÍSICO, não estético: abaixo dele os módulos do QR
+	 * fecham no queimado e o código para de escanear. Num chaveiro de 60 mm,
+	 * 120 px numa arte de 1200 já são ~0,18 mm por módulo. Encolher mais exigiria
+	 * encurtar a URL — e o endereço fica queimado no acrílico, então mudá-lo
+	 * invalidaria todo QR já gravado.
+	 */
+	const lado = Math.max(120, Math.min(200, Math.round(menor * 0.07)));
 	return {
-		chapaL: Math.round(respiro * 2 + qr * 2.8),
-		chapaA: respiro * 2 + qr,
-		// No wrap 360° os 8% externos de cada lado são zona de emenda.
-		margemX: W / H >= 2 ? Math.round(W * 0.1) : Math.round(menor * 0.025),
-		margemY: Math.round(menor * 0.025),
-	};
-}
-
-/** A caixa do selo num canto, já presa dentro da arte. */
-function caixaDoCanto(
-	canto: Canto,
-	m: {
-		W: number;
-		H: number;
-		chapaL: number;
-		chapaA: number;
-		margemX: number;
-		margemY: number;
-	},
-): { left: number; top: number; width: number; height: number } {
-	const maxL = Math.max(0, m.W - m.chapaL);
-	const maxT = Math.max(0, m.H - m.chapaA);
-	const direita = canto.endsWith('direita');
-	const embaixo = canto.startsWith('baixo');
-	return {
-		left: Math.max(0, Math.min(maxL, direita ? maxL - m.margemX : m.margemX)),
-		top: Math.max(0, Math.min(maxT, embaixo ? maxT - m.margemY : m.margemY)),
-		width: Math.min(m.chapaL, m.W),
-		height: Math.min(m.chapaA, m.H),
+		lado,
+		// No wrap 360° os 8% externos de cada lado são zona de emenda da caneca.
+		margemX: W / H >= 2 ? Math.round(W * 0.1) : Math.round(menor * 0.012),
+		margemY: Math.round(menor * 0.012),
 	};
 }
 
 /**
- * Acima disto o canto tem DESENHO, não respingo: traço de contorno, letra,
- * escudo. Abaixo, a chapa (que é opaca) pousa ali sem tirar nada de ninguém.
- */
-const CANTO_OCUPADO = 0.08;
-
-/**
- * O CANTO MAIS QUIETO, com preferência forte por embaixo.
+ * O SELO DO LOTE: ONDE o QR pousa e de que COR ele sai.
  *
- * A ordem é a que foi pedida: embaixo sempre que der; dos dois de baixo, o mais
- * vazio; e só sobe quando os dois estão ocupados E o alto é mesmo bem mais
- * limpo. Empate vai para a direita, onde o olho já procura assinatura.
+ * ┌─ POR QUE NÃO É "UM DOS QUATRO CANTOS" ──────────────────────────────────┐
+ * │ Era. O canto mais vazio do ARQUIVO, o que funcionava bem na caneca, que  │
+ * │ é um retângulo cheio. No chaveiro quebrou de um jeito pior que cobrir o  │
+ * │ desenho: o canto mais vazio de um recorte é o lado de FORA da silhueta,  │
+ * │ e ali o QR ia parar na sucata do corte. Código que não fica na peça é    │
+ * │ pior que código em cima do nome.                                         │
+ * │                                                                          │
+ * │ Agora a busca é por posição, não por canto, e só valem posições DENTRO   │
+ * │ da peça (`MapaDaArte.dentro`). Entre as válidas, ganha a mais baixa e    │
+ * │ mais à direita — que é o "mais no canto" que foi pedido, medido no canto │
+ * │ da PEÇA e não no do arquivo.                                             │
+ * └──────────────────────────────────────────────────────────────────────────┘
  *
  * Exportada porque `carimbarLote` a chama UMA vez por lote: é isso que mantém
- * as trinta peças de um pedido com o selo no mesmo lugar.
+ * as trinta peças de um pedido com o selo idêntico.
  */
-export async function cantoMaisQuieto(master: Buffer): Promise<Canto> {
+export async function escolherSelo(master: Buffer): Promise<Selo> {
 	const meta = await sharp(master).metadata();
 	const W = meta.width ?? 0;
 	const H = meta.height ?? 0;
-	if (!W || !H) return 'baixo-direita';
-	const m = { ...geometriaDoSelo(W, H), W, H };
+	const g = geometriaDoSelo(W, H);
+	/** O canto de baixo à direita do arquivo — o desfecho quando nada serve. */
+	const ultimoRecurso = (): Selo => ({
+		left: Math.max(0, W - g.lado - g.margemX),
+		top: Math.max(0, H - g.lado - g.margemY),
+		escuro: false,
+	});
+	if (!W || !H) return { left: 0, top: 0, escuro: false };
 
-	const medir = async (c: Canto) => tinta(master, caixaDoCanto(c, m));
-	const [bd, be] = await Promise.all([
-		medir('baixo-direita'),
-		medir('baixo-esquerda'),
-	]);
-	const baixo: Canto = be < bd - 0.01 ? 'baixo-esquerda' : 'baixo-direita';
-	const tintaBaixo = Math.min(bd, be);
-	if (tintaBaixo <= CANTO_OCUPADO) return baixo;
+	const mapa = await lerArte(master);
+	const porX = GRADE / W;
+	const porY = GRADE / H;
+	// O selo em células da grade, arredondado para cima: melhor exigir espaço a
+	// mais do que descobrir na peça que faltou.
+	const larguraEmCelulas = Math.max(1, Math.ceil(g.lado * porX));
+	const alturaEmCelulas = Math.max(1, Math.ceil(g.lado * porY));
 
-	const [ad, ae] = await Promise.all([
-		medir('alto-direita'),
-		medir('alto-esquerda'),
-	]);
-	const alto: Canto = ae < ad - 0.01 ? 'alto-esquerda' : 'alto-direita';
-	// Na dúvida, embaixo — como foi pedido. Só sobe com folga clara.
-	return Math.min(ad, ae) < tintaBaixo - 0.05 ? alto : baixo;
+	const minX = Math.floor(g.margemX * porX);
+	const maxX = Math.floor((W - g.lado - g.margemX) * porX);
+	const minY = Math.floor(g.margemY * porY);
+	const maxY = Math.floor((H - g.lado - g.margemY) * porY);
+	if (maxX < minX || maxY < minY) return ultimoRecurso();
+
+	/** Fração de tinta de um bloco, ou `null` se ele sai da peça. */
+	const tintaDoBloco = (x: number, y: number): number | null => {
+		if (x < minX || y < minY || x > maxX || y > maxY) return null;
+		let comTinta = 0;
+		let celulas = 0;
+		for (let dy = 0; dy < alturaEmCelulas; dy++) {
+			for (let dx = 0; dx < larguraEmCelulas; dx++) {
+				const i = (y + dy) * GRADE + (x + dx);
+				if (!mapa.dentro[i]) return null;
+				if (mapa.tinta[i]) comTinta++;
+				celulas++;
+			}
+		}
+		return celulas === 0 ? null : comTinta / celulas;
+	};
+
+	/**
+	 * O RETÂNGULO DA PEÇA, que não é o do arquivo.
+	 *
+	 * Numa arte recortada — o chaveiro — a silhueta ocupa o meio e sobra papel
+	 * em volta. O canto do ARQUIVO ali é o lado de fora do corte. O canto que
+	 * interessa é o da tinta.
+	 */
+	let pMinX = GRADE;
+	let pMinY = GRADE;
+	let pMaxX = -1;
+	let pMaxY = -1;
+	for (let y = 0; y < GRADE; y++) {
+		for (let x = 0; x < GRADE; x++) {
+			if (!mapa.tinta[y * GRADE + x]) continue;
+			if (x < pMinX) pMinX = x;
+			if (x > pMaxX) pMaxX = x;
+			if (y < pMinY) pMinY = y;
+			if (y > pMaxY) pMaxY = y;
+		}
+	}
+	if (pMaxX < 0) return ultimoRecurso();
+
+	/**
+	 * De um canto da peça, ANDA PARA DENTRO até caber.
+	 *
+	 * Num recorte arredondado o canto exato é sempre sucata; a diagonal é o
+	 * caminho mais curto para o primeiro lugar que fica na peça depois do corte.
+	 */
+	const encostar = (
+		cantoX: number,
+		cantoY: number,
+		passoX: number,
+		passoY: number,
+	): { x: number; y: number; tinta: number } | null => {
+		for (let k = 0; k < GRADE; k++) {
+			const x = cantoX + passoX * k;
+			const y = cantoY + passoY * k;
+			const t = tintaDoBloco(x, y);
+			if (t !== null) return { x, y, tinta: t };
+		}
+		return null;
+	};
+
+	const dir = pMaxX - larguraEmCelulas + 1;
+	const baixo = pMaxY - alturaEmCelulas + 1;
+	// Ordem = desempate: embaixo antes de em cima, direita antes de esquerda.
+	const candidatos = [
+		encostar(dir, baixo, -1, -1),
+		encostar(pMinX, baixo, 1, -1),
+		encostar(dir, pMinY, -1, 1),
+		encostar(pMinX, pMinY, 1, 1),
+	].filter((c): c is { x: number; y: number; tinta: number } => c !== null);
+
+	if (candidatos.length === 0) return ultimoRecurso();
+
+	/**
+	 * Trocar de canto exige ser MESMO mais quieto, não quieto por um fio.
+	 *
+	 * Sem esta folga, uma diferença de meio por cento de tinta mandava o selo do
+	 * canto de baixo para o de cima — e a preferência declarada é embaixo, o
+	 * mais no canto possível. A ordem dos candidatos é o desempate; a folga é o
+	 * que faz o desempate valer na prática.
+	 */
+	const FOLGA = 0.04;
+	let escolhido = candidatos[0];
+	for (const c of candidatos) {
+		if (c.tinta < escolhido.tinta - FOLGA) escolhido = c;
+	}
+
+	const left = Math.max(
+		0,
+		Math.min(W - g.lado, Math.round(escolhido.x / porX)),
+	);
+	const top = Math.max(0, Math.min(H - g.lado, Math.round(escolhido.y / porY)));
+	// A COR se mede no recorte exato, não na grade: a grade é grossa demais (uma
+	// célula da caneca tem 30 px de largura) e erraria a polaridade do QR por
+	// causa da vizinhança.
+	const { luz } = await medirRegiao(master, {
+		left,
+		top,
+		width: g.lado,
+		height: g.lado,
+	});
+	return { left, top, escuro: luz < LIMIAR_ESCURO };
 }
 
 /**
  * Aplica o carimbo e devolve o PNG da peça.
  *
- * O recuo lateral não é estético: os modelos de wrap 360° reservam os 8%
- * externos de cada lado como zona de emenda, e um carimbo ali quebraria a
- * costura da caneca.
+ * O QR é composto como PNG, não por SVG: pixel exato, sem passar por
+ * renderizador. Nível H (30% de redundância) porque ele vai gravado em acrílico
+ * ou metal e fotografado de lado, com risco e reflexo.
  *
- * ┌─ POR QUE O CANTO DEIXOU DE SER FIXO ────────────────────────────────────┐
- * │ Era sempre o inferior direito, e o argumento escrito aqui era bom: quem  │
- * │ grava precisa saber onde o código cai, e carimbo que anda de lugar       │
- * │ atrapalha a produção.                                                    │
- * │                                                                          │
- * │ Só que o chaveiro "escudo e nome" — o carro-chefe da ferramenta — põe o  │
- * │ nome ocupando a base inteira. Medido em produção: "JOAO" saiu com o      │
- * │ último "O" coberto pela chapa. Um carimbo que come a peça é pior que um  │
- * │ carimbo que muda de canto.                                               │
- * │                                                                          │
- * │ A produção continua atendida, porque a estabilidade que ela precisa é    │
- * │ POR LOTE, não universal: `carimbarLote` decide o canto uma vez e passa o │
- * │ mesmo para todas as peças. As 30 canecas de um pedido saem iguais.       │
- * └──────────────────────────────────────────────────────────────────────────┘
+ * Os módulos claros saem TRANSPARENTES — é isso que quer dizer "sem fundo". O
+ * contraste vem da própria arte, e por isso `escolherSelo` decide a cor.
  */
 export async function carimbarPeca(
 	master: Buffer,
@@ -326,123 +399,41 @@ export async function carimbarPeca(
 	const H = meta.height ?? 0;
 	if (!W || !H) throw new Error('carimbarPeca: master sem dimensões');
 
-	// O carimbo é obrigatório, então tem de ser DISCRETO: o menor que ainda
-	// sobrevive à gravação a laser e à foto de celular. Abaixo de ~130px na arte
-	// os módulos do QR fecham no queimado e ele deixa de ler.
-	const menor = Math.min(W, H);
-	const qr = Math.max(130, Math.min(220, Math.round(menor * 0.085)));
-	const respiro = Math.round(qr * 0.11);
-	const alturaTexto = Math.round(qr * 0.16);
+	const selo = opts.selo ?? (await escolherSelo(master));
+	const g = geometriaDoSelo(W, H);
+	const caixa = {
+		left: Math.max(0, Math.min(W - g.lado, selo.left)),
+		top: Math.max(0, Math.min(H - g.lado, selo.top)),
+		width: Math.min(g.lado, W),
+		height: Math.min(g.lado, H),
+	};
 
-	let paths = '';
-	let larguraTexto = 0;
-	let aviso: string | undefined;
-	try {
-		const [a, b] = duasLinhas(opts.code);
-		const l1 = textoComoPaths(a, alturaTexto);
-		const l2 = b ? textoComoPaths(b, alturaTexto) : { paths: '', largura: 0 };
-		larguraTexto = Math.ceil(Math.max(l1.largura, l2.largura));
-		const baseX = qr + respiro;
-		const baseY = Math.round(qr * 0.42);
-		paths =
-			`<g fill="${TINTA}">` +
-			`<g transform="translate(${baseX} ${baseY})">${l1.paths}</g>` +
-			(l2.paths
-				? `<g transform="translate(${baseX} ${baseY + Math.round(alturaTexto * 1.4)})">${l2.paths}</g>`
-				: '') +
-			`</g>`;
-	} catch (err) {
-		// O QR é o que o consumidor escaneia; a linha de texto é o atalho humano.
-		// Perder a segunda NUNCA pode custar a peça inteira — sai o carimbo com
-		// QR e um aviso, em vez de uma arte licenciada sem marca nenhuma.
-		aviso = `código não pôde ser desenhado: ${err instanceof Error ? err.message : 'erro'}`;
-		larguraTexto = 0;
-		paths = '';
-	}
-
-	const selo = qr + (larguraTexto ? respiro + larguraTexto : 0);
-	const chapaL = respiro + selo + respiro;
-	const chapaA = respiro + qr + respiro;
-	const raio = Math.round(respiro * 0.9);
-
-	/**
-	 * A CHAPA existe porque o QR precisa de zona quieta clara para a câmera ler
-	 * — sobre uma foto escura, módulos escuros não leem. É o único jeito de o
-	 * carimbo morar DENTRO da arte e continuar escaneável.
-	 *
-	 * O fio de contorno é para a arte de laser, que é branca: sem ele a chapa
-	 * branca some no fundo e o QR parece flutuar solto sobre o desenho.
-	 */
-	const fio = Math.max(1, Math.round(qr * 0.012));
-	const chapa = Buffer.from(
-		`<svg xmlns="http://www.w3.org/2000/svg" width="${chapaL}" height="${chapaA}" viewBox="0 0 ${chapaL} ${chapaA}">` +
-			`<rect x="${fio / 2}" y="${fio / 2}" width="${chapaL - fio}" height="${chapaA - fio}" rx="${raio}" ry="${raio}" fill="${CHAPA}" stroke="${TINTA}" stroke-width="${fio}"/>` +
-			`<g transform="translate(${respiro} ${respiro})">${paths}</g>` +
-			`</svg>`,
-	);
-
-	/**
-	 * O CARIMBO É PARTE DA ARTE, não um campo colado nela.
-	 *
-	 * A tela NÃO cresce: o selo mora no canto inferior direito da própria arte.
-	 * Uma faixa acrescentada embaixo mudava a proporção da peça e parecia um
-	 * apêndice — na caneca 360° chegava a quebrar o formato do wrap.
-	 *
-	 * O preço disso é honesto e escolhido: o selo cobre um pedaço do canto. Por
-	 * isso ele é o menor que ainda escaneia, e por isso os modelos deveriam
-	 * reservar esse canto na composição.
-	 *
-	 * O recuo da direita só cresce na arte PANORÂMICA: no wrap 360° os 8%
-	 * externos de cada lado são zona de emenda, e selo ali quebraria a costura
-	 * da caneca.
-	 */
-	// O QR sai como PNG e é composto por cima: pixel exato, sem passar por
-	// renderizador de SVG. Nível H (30% de redundância) porque ele vai gravado
-	// em acrílico ou metal e fotografado de lado, com risco e reflexo.
-	//
-	// Fundo transparente aqui porque quem dá a zona quieta é a CHAPA: assim o
-	// selo é uma peça só, de canto arredondado, em vez de um quadrado branco do
-	// QR encostado num retângulo do texto.
 	const qrPng = await QRCode.toBuffer(opts.url, {
 		errorCorrectionLevel: 'H',
 		type: 'png',
-		width: qr,
+		width: caixa.width,
 		margin: 0,
-		color: { dark: TINTA, light: '#00000000' },
-	});
-
-	const panoramica = W / H >= 2;
-	const margemX = panoramica ? Math.round(W * 0.1) : Math.round(menor * 0.025);
-	const margemY = Math.round(menor * 0.025);
-	// O canto do LOTE, quando veio; senão mede esta arte e escolhe.
-	const canto = opts.canto ?? (await cantoMaisQuieto(master));
-	const { left, top } = caixaDoCanto(canto, {
-		W,
-		H,
-		chapaL,
-		chapaA,
-		margemX,
-		margemY,
+		color: {
+			dark: selo.escuro ? TINTA_INVERSA : TINTA,
+			light: '#00000000',
+		},
 	});
 
 	const png = await sharp(master)
 		.ensureAlpha()
-		.composite([
-			{ input: chapa, left, top },
-			{ input: qrPng, left: left + respiro, top: top + respiro },
-		])
+		.composite([{ input: qrPng, left: caixa.left, top: caixa.top }])
 		.png()
 		.toBuffer();
 
 	return {
 		png,
 		area: {
-			left,
-			top,
-			width: chapaL,
-			height: chapaA,
-			qr: { left: left + respiro, top: top + respiro, size: qr },
+			left: caixa.left,
+			top: caixa.top,
+			width: caixa.width,
+			height: caixa.height,
+			qr: { left: caixa.left, top: caixa.top, size: caixa.width },
 		},
-		aviso,
+		selo,
 	};
 }

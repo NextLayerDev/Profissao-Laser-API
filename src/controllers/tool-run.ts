@@ -56,6 +56,10 @@ import {
 	emitirLote,
 	listarLote,
 } from '../repositories/licensed-art.js';
+import {
+	declaracaoEmDia,
+	type StatusDaDeclaracao,
+} from '../repositories/licensed-seller.js';
 import { toolBankRepository } from '../repositories/tool-bank.js';
 import { registerCoreBlocks } from '../tool-blocks/index.js';
 import type { ToolBankEntry } from '../types/tool-bank.js';
@@ -469,6 +473,24 @@ interface IssuedArtLicense {
  * O gatilho é o DADO e não uma flag na definition: o staff amarra a marca ao
  * prompt, e nenhuma configuração de tool pode desligar a emissão por engano.
  */
+/**
+ * O QUE FALTA, em uma frase — porque a tela precisa instruir, não só barrar.
+ *
+ * As quatro razões são de fato diferentes, e mandar "declaração pendente" para
+ * todas deixaria o aluno adivinhando qual botão apertar.
+ */
+const MOTIVO_DO_PORTAO: Record<StatusDaDeclaracao, string> = {
+	sem_canal:
+		'Antes de gerar arte de marca, cadastre os canais onde você vende.',
+	termo_pendente:
+		'Antes de gerar arte de marca, leia e aceite o termo de uso do licenciamento.',
+	lista_mudou:
+		'Sua lista de canais mudou depois do último aceite. Confirme o termo de novo para continuar.',
+	termo_mudou:
+		'O termo de uso do licenciamento foi atualizado. Leia e aceite a nova versão para continuar.',
+	ok: 'Declaração em dia.',
+};
+
 function licenseFeatureKeyOf(entry?: ToolBankEntry): string | null {
 	const bruto = (entry?.data as Record<string, unknown> | undefined)
 		?.feature_key;
@@ -994,6 +1016,29 @@ async function executarRun(
 				'Arte licenciada precisa de uma rodada cobrada — o código de autenticidade nasce dela.',
 			);
 		}
+		/**
+		 * ┌─ O PORTÃO DO VENDEDOR ──────────────────────────────────────────────┐
+		 * │ Quem gera arte de marca declara ONDE vende, e assina que não faz    │
+		 * │ produto sem licenciamento. É a outra metade do relatório que vai    │
+		 * │ para a mesa do clube: a volumetria diz quantas peças saíram, a      │
+		 * │ declaração diz onde elas aparecem.                                  │
+		 * │                                                                     │
+		 * │ A checagem é AQUI, no motor, pelo mesmo motivo que a emissão é: se  │
+		 * │ vivesse só na tela, bastaria falar direto com a rota.               │
+		 * │                                                                     │
+		 * │ E é ANTES do `executeTool` — declaração vencida não pode custar uma │
+		 * │ chamada de modelo. Sai por `recusar`, nunca por `res.erro`: o voxxy │
+		 * │ já foi debitado no `/invoke` antes deste request existir, e         │
+		 * │ `recusar` é quem estorna.                                           │
+		 * └─────────────────────────────────────────────────────────────────────┘
+		 */
+		if (featureKey) {
+			const declaracao = await declaracaoEmDia(customerId);
+			if (!declaracao.ok) {
+				return recusar(403, MOTIVO_DO_PORTAO[declaracao.status]);
+			}
+		}
+
 		// O master não pode escapar cru: nem para o CDN, nem no JSON da resposta.
 		const docRun = featureKey ? semSaidaCrua(doc) : doc;
 
@@ -1247,7 +1292,6 @@ async function executarRun(
 							: {}),
 					})),
 					count: lote.entregues.length,
-					...(lote.aviso ? { stamp_warning: lote.aviso } : {}),
 				};
 
 				const primeira = pecas[0];

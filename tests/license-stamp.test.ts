@@ -1,7 +1,7 @@
 import QRCode from 'qrcode';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
-import { cantoMaisQuieto, carimbarPeca } from '@/lib/license-stamp.js';
+import { carimbarPeca, escolherSelo } from '@/lib/license-stamp.js';
 
 /**
  * O carimbo é a peça central do controle de volumetria: enquanto o código não
@@ -13,12 +13,6 @@ import { cantoMaisQuieto, carimbarPeca } from '@/lib/license-stamp.js';
  * aqui testaria a cópia da conta, não o carimbo.
  */
 
-/**
- * Este código não é qualquer um: é o que EXPÔS a perda de glifos no desenho
- * concatenado. Com um `<path>` só, a segunda linha ("1Z8V6-ERKV0") desenhava
- * um quinto da tinta. Trocar por um código "bonitinho" faria o teste passar
- * com o bug de volta.
- */
 const CODE = 'PL-WXQ8W-4Z6NH-1Z8V6-ERKV0';
 const URL = 'https://profissaolaser.com.br/a/PL-WXQ8W-4Z6NH-1Z8V6-ERKV0';
 
@@ -27,25 +21,23 @@ const arte = (w: number, h: number, cor: string) =>
 		.png()
 		.toBuffer();
 
-const cinzas = (png: Buffer, box: sharp.Region) =>
-	sharp(png).extract(box).greyscale().raw().toBuffer();
+/** O recorte do carimbo no PNG entregue, achatado sobre uma cor conhecida. */
+const recorteDoSelo = (
+	png: Buffer,
+	area: { left: number; top: number; width: number; height: number },
+	fundo: string,
+) => sharp(png).extract(area).flatten({ background: fundo }).raw().toBuffer();
 
 describe('carimbo de autenticidade', () => {
 	it('devolve a arte do mesmo tamanho, com o carimbo por cima', async () => {
 		const base = await arte(1200, 1200, '#ffffff');
-		const { png, aviso, area } = await carimbarPeca(base, {
-			code: CODE,
-			url: URL,
-		});
+		const { png, area } = await carimbarPeca(base, { code: CODE, url: URL });
 
 		const meta = await sharp(png).metadata();
-		// A TELA NÃO CRESCE: o carimbo é parte da arte, não um campo colado nela.
-		// Uma faixa acrescentada mudava a proporção da peça — na caneca 360°
-		// chegava a quebrar o formato do wrap.
 		expect(meta.width).toBe(1200);
 		expect(meta.height).toBe(1200);
-		expect(aviso).toBeUndefined();
-		expect(area.width).toBeGreaterThan(area.qr.size);
+		expect(area.width).toBeGreaterThan(0);
+		expect(area.width).toBe(area.height); // o selo é o quadrado do QR
 	});
 
 	it('o QR gravado é EXATAMENTE o da URL da peça', async () => {
@@ -60,23 +52,18 @@ describe('carimbo de autenticidade', () => {
 			type: 'png',
 			width: area.qr.size,
 			margin: 0,
-			// Claro BRANCO: na peça o QR pousa sobre a chapa, e é assim que ele
-			// fica no pixel final.
-			color: { dark: '#111111', light: '#ffffff' },
+			// Claro transparente, como sai na peça; achatado no branco da arte
+			// para comparar contra o mesmo fundo do recorte.
+			color: { dark: '#111111', light: '#00000000' },
 		});
-		const esperadoRaw = await sharp(esperado).removeAlpha().raw().toBuffer();
-		const recorte = await sharp(png)
-			.extract({
-				left: area.qr.left,
-				top: area.qr.top,
-				width: area.qr.size,
-				height: area.qr.size,
-			})
-			.removeAlpha()
+		const esperadoRaw = await sharp(esperado)
+			.flatten({ background: '#ffffff' })
 			.raw()
 			.toBuffer();
 
-		expect(recorte.equals(esperadoRaw)).toBe(true);
+		expect(
+			(await recorteDoSelo(png, area, '#ffffff')).equals(esperadoRaw),
+		).toBe(true);
 	});
 
 	it('um QR de OUTRA peça não passaria neste teste', async () => {
@@ -91,72 +78,16 @@ describe('carimbo de autenticidade', () => {
 			type: 'png',
 			width: area.qr.size,
 			margin: 0,
-			color: { dark: '#111111', light: '#ffffff' },
+			color: { dark: '#111111', light: '#00000000' },
 		});
-		const outroRaw = await sharp(outro).removeAlpha().raw().toBuffer();
-		const recorte = await sharp(png)
-			.extract({
-				left: area.qr.left,
-				top: area.qr.top,
-				width: area.qr.size,
-				height: area.qr.size,
-			})
-			.removeAlpha()
+		const outroRaw = await sharp(outro)
+			.flatten({ background: '#ffffff' })
 			.raw()
 			.toBuffer();
 
-		expect(recorte.equals(outroRaw)).toBe(false);
-	});
-
-	it('o código sai DESENHADO, não como texto de fonte do sistema', async () => {
-		// A prova é tinta no pixel. O sharp compõe SVG pelo resvg, que procura
-		// fonte no fontconfig do SISTEMA: se isto virasse `<text>`, num contêiner
-		// sem fonte instalada a linha do código sumiria SEM ERRO NENHUM. O teste
-		// quebra se o pacote da fonte sumir ou se alguém "simplificar" o desenho.
-		const base = await arte(1200, 1200, '#ffffff');
-		const { png, area } = await carimbarPeca(base, { code: CODE, url: URL });
-
-		// A faixa à DIREITA do QR, dentro da chapa: só o código mora ali.
-		const inicio = area.qr.left + area.qr.size;
-		const faixa = await cinzas(png, {
-			left: inicio,
-			top: area.top,
-			width: area.left + area.width - inicio,
-			height: area.height,
-		});
-
-		const escuros = faixa.filter((v) => v < 100).length;
-		expect(escuros).toBeGreaterThan(200);
-	});
-
-	it('o código sai INTEIRO — não pela metade', async () => {
-		/*
-		 * ┌─ O BUG QUE ESTE TESTE EXISTE PARA PEGAR ───────────────────────────┐
-		 * │ Com a linha inteira num `<path>` só, o renderizador do sharp        │
-		 * │ TRUNCAVA o desenho pela metade: "PL-WXQ8W-4Z6NH" saía "PL-WXQ8".    │
-		 * │ Sem erro e sem log — o código ia cortado para dentro da peça        │
-		 * │ gravada, e ninguém descobriria antes de alguém tentar digitar o     │
-		 * │ código de uma peça já vendida.                                      │
-		 * │                                                                     │
-		 * │ "Tem tinta na faixa do texto" não pega isso: metade do código ainda │
-		 * │ é bastante tinta. A medida é ATÉ ONDE a tinta chega — o fim da      │
-		 * │ última linha tem de encostar no fim da chapa.                       │
-		 * └─────────────────────────────────────────────────────────────────────┘
-		 */
-		const base = await arte(1200, 1200, '#ffffff');
-		const { png, area } = await carimbarPeca(base, { code: CODE, url: URL });
-
-		// O último quinto da chapa, por dentro do fio de contorno.
-		const borda = Math.ceil(area.width * 0.02) + 2;
-		const largura = Math.round(area.width * 0.2) - borda;
-		const fim = await cinzas(png, {
-			left: area.left + area.width - largura - borda,
-			top: area.top + borda,
-			width: largura,
-			height: area.height - borda * 2,
-		});
-
-		expect(fim.filter((v) => v < 100).length).toBeGreaterThan(80);
+		expect((await recorteDoSelo(png, area, '#ffffff')).equals(outroRaw)).toBe(
+			false,
+		);
 	});
 
 	it('respeita a zona de emenda do wrap 360°', async () => {
@@ -183,17 +114,56 @@ describe('carimbo de autenticidade', () => {
 		const { area } = await carimbarPeca(base, { code: CODE, url: URL });
 
 		const fracao = (area.width * area.height) / (W * H);
-		expect(fracao).toBeLessThan(0.06);
+		expect(fracao).toBeLessThan(0.015);
 
-		// E fica NO CANTO: encostado nas bordas de baixo e da direita.
-		expect(area.left + area.width).toBeGreaterThan(W * 0.7);
-		expect(area.top + area.height).toBeGreaterThan(H * 0.9);
+		// E fica NO CANTO, colado nas bordas — a margem é ~1% do menor lado.
+		expect(W - (area.left + area.width)).toBeLessThan(W * 0.02);
+		expect(H - (area.top + area.height)).toBeLessThan(H * 0.02);
+	});
+});
+
+describe('sem fundo', () => {
+	/**
+	 * "Sem fundo" é o pedido, e ele tem consequência: o contraste do QR deixa de
+	 * vir de uma chapa e passa a vir da própria arte. É por isso que a cor do QR
+	 * é decidida medindo o canto.
+	 */
+	it('NÃO existe chapa: o claro do QR deixa o pixel da arte passar', async () => {
+		/*
+		 * Amarelo, e não vermelho: `#cc0000` tem luminância 61 e a arte contaria
+		 * como ESCURA, o QR inverteria para branco e os "brancos" contados abaixo
+		 * seriam os módulos, não uma chapa. Amarelo é claro (luminância ~196),
+		 * então o QR sai escuro e sobra a cor da arte para procurar.
+		 */
+		const base = await arte(1000, 1000, '#ffcc00');
+		const { png, area, selo } = await carimbarPeca(base, {
+			code: CODE,
+			url: URL,
+		});
+		expect(selo.escuro).toBe(false);
+
+		const { data, info } = await sharp(png)
+			.extract(area)
+			.raw()
+			.toBuffer({ resolveWithObject: true });
+
+		let daArte = 0;
+		let brancos = 0;
+		for (let i = 0; i < info.width * info.height; i++) {
+			const p = i * info.channels;
+			if (data[p] > 240 && data[p + 1] > 180 && data[p + 2] < 60) daArte++;
+			if (data[p] > 240 && data[p + 1] > 240 && data[p + 2] > 240) brancos++;
+		}
+		// O amarelo da arte aparece DENTRO do selo: é ele que faz o claro do QR.
+		expect(daArte).toBeGreaterThan(0);
+		// E não há um pixel de chapa branca.
+		expect(brancos).toBe(0);
 	});
 
-	it('a arte transparente continua transparente', async () => {
+	it('a arte transparente continua transparente, inclusive no selo', async () => {
 		// A arte de laser vem com fundo transparente ("não queime aqui"), e o
 		// carimbo não pode achatá-la em branco — isso mandaria a máquina queimar
-		// a peça inteira.
+		// a peça inteira. Sem chapa, nem o próprio selo achata.
 		const base = await sharp({
 			create: {
 				width: 900,
@@ -206,43 +176,124 @@ describe('carimbo de autenticidade', () => {
 			.toBuffer();
 		const { png, area } = await carimbarPeca(base, { code: CODE, url: URL });
 
-		const canto = await sharp(png)
+		const foraDoSelo = await sharp(png)
 			.extract({ left: 0, top: 0, width: 60, height: 60 })
 			.ensureAlpha()
 			.raw()
 			.toBuffer();
-		const alfas = canto.filter((_v, i) => i % 4 === 3);
-		expect(alfas.every((a) => a === 0)).toBe(true);
-		// Mas a chapa do selo é OPACA: é ela que dá a zona quieta do QR.
-		const naChapa = await sharp(png)
-			.extract({
-				left: area.qr.left,
-				top: area.qr.top,
-				width: area.qr.size,
-				height: area.qr.size,
-			})
+		expect(
+			foraDoSelo.filter((_v, i) => i % 4 === 3).every((a) => a === 0),
+		).toBe(true);
+
+		// Dentro do selo há pixel opaco (os módulos escuros) E pixel transparente
+		// (o claro do QR, que continua sendo "não queime aqui").
+		const noSelo = await sharp(png)
+			.extract(area)
 			.ensureAlpha()
 			.raw()
 			.toBuffer();
-		expect(naChapa.filter((_v, i) => i % 4 === 3).every((a) => a === 255)).toBe(
-			true,
-		);
+		const alfas = noSelo.filter((_v, i) => i % 4 === 3);
+		expect(alfas.some((a) => a === 255)).toBe(true);
+		expect(alfas.some((a) => a === 0)).toBe(true);
 	});
 });
 
-describe('em que canto o carimbo pousa', () => {
+describe('a cor do QR acompanha a arte', () => {
 	/**
-	 * O CANTO DEIXOU DE SER FIXO porque o modelo mais usado — o chaveiro "escudo
-	 * e nome" — põe o nome ocupando a base inteira, e o selo caía em cima da
-	 * última letra. Medido em produção: "JOAO" saiu com o "O" coberto.
-	 *
-	 * Estes testes descrevem a regra pedida, nesta ordem: embaixo sempre que der;
-	 * o mais vazio dos dois de baixo; e só sobe quando os dois estão ocupados.
+	 * Sem chapa, um QR escuro sobre arte escura não escaneia — nem na tela nem
+	 * gravado. A resposta escolhida foi inverter: sobre campo escuro o QR sai
+	 * branco, que na peça gravada é o material cru dentro do queimado.
+	 */
+	const corDosModulos = async (png: Buffer, area: sharp.Region) => {
+		const { data, info } = await sharp(png)
+			.extract(area)
+			.ensureAlpha()
+			.raw()
+			.toBuffer({ resolveWithObject: true });
+		let claros = 0;
+		let escuros = 0;
+		for (let i = 0; i < info.width * info.height; i++) {
+			const p = i * info.channels;
+			if (data[p + 3] < 32) continue; // transparente = o claro do QR
+			const luz =
+				(data[p] * 299 + data[p + 1] * 587 + data[p + 2] * 114) / 1000;
+			if (luz > 200) claros++;
+			else if (luz < 60) escuros++;
+		}
+		return { claros, escuros };
+	};
+
+	it('sobre arte CLARA o QR sai escuro', async () => {
+		const base = await arte(1000, 1000, '#ffffff');
+		const { png, area, selo } = await carimbarPeca(base, {
+			code: CODE,
+			url: URL,
+		});
+		expect(selo.escuro).toBe(false);
+		const { escuros } = await corDosModulos(png, area);
+		expect(escuros).toBeGreaterThan(0);
+	});
+
+	it('sobre arte ESCURA o QR inverte para branco', async () => {
+		const base = await arte(1000, 1000, '#101010');
+		const { png, area, selo } = await carimbarPeca(base, {
+			code: CODE,
+			url: URL,
+		});
+		expect(selo.escuro).toBe(true);
+		const { claros } = await corDosModulos(png, area);
+		expect(claros).toBeGreaterThan(0);
+	});
+
+	it('arte TRANSPARENTE conta como clara — o material cru é claro', async () => {
+		// Tratar transparente como escuro faria todo chaveiro de laser sair com
+		// QR branco sobre nada, que é invisível na máquina e na tela.
+		const base = await sharp({
+			create: {
+				width: 900,
+				height: 900,
+				channels: 4,
+				background: { r: 0, g: 0, b: 0, alpha: 0 },
+			},
+		})
+			.png()
+			.toBuffer();
+		expect((await escolherSelo(base)).escuro).toBe(false);
+	});
+
+	it('o selo pedido é OBEDECIDO — é assim que o lote sai uniforme', async () => {
+		// A arte é clara e pediria QR escuro; o lote já decidiu o contrário.
+		const base = await arte(1000, 1000, '#ffffff');
+		const { png, area, selo } = await carimbarPeca(base, {
+			code: CODE,
+			url: URL,
+			selo: { left: 40, top: 60, escuro: true },
+		});
+		expect(selo).toEqual({ left: 40, top: 60, escuro: true });
+		expect(area.left).toBe(40);
+		expect(area.top).toBe(60);
+		const { claros } = await corDosModulos(png, area);
+		expect(claros).toBeGreaterThan(0);
+	});
+});
+
+describe('onde o carimbo pousa', () => {
+	/**
+	 * ┌─ O QUE ESTES TESTES EXISTEM PARA IMPEDIR ───────────────────────────────┐
+	 * │ O selo já foi fixo no canto inferior direito do ARQUIVO. Na caneca, que  │
+	 * │ é um retângulo cheio, funcionava. No chaveiro quebrou de dois jeitos, e  │
+	 * │ o segundo é pior que o primeiro:                                         │
+	 * │                                                                          │
+	 * │  ① cobria o nome — "JOAO" saiu com o "O" tapado pelo selo;               │
+	 * │  ② ao procurar "o canto mais vazio", ia parar FORA da silhueta, porque   │
+	 * │    o vazio de verdade num recorte é o papel em volta — e ali o QR é      │
+	 * │    cortado fora e some da peça.                                          │
+	 * └──────────────────────────────────────────────────────────────────────────┘
 	 */
 	const W = 1200;
 	const H = 1200;
 
-	/** Arte branca com um bloco preto onde for pedido — o "desenho" ocupa ali. */
+	/** Arte branca com blocos pretos onde for pedido. */
 	async function arteCom(blocos: sharp.Region[]): Promise<Buffer> {
 		return sharp({
 			create: { width: W, height: H, channels: 3, background: '#ffffff' },
@@ -265,45 +316,133 @@ describe('em que canto o carimbo pousa', () => {
 			.toBuffer();
 	}
 
-	/** A faixa inteira de baixo, como o nome do chaveiro. */
-	const BASE_TODA = { left: 0, top: 950, width: W, height: 250 };
-	/** Só a metade direita de baixo. */
-	const BASE_DIREITA = { left: 600, top: 950, width: 600, height: 250 };
+	/** Uma silhueta recortada: moldura de contorno com papel sobrando em volta. */
+	async function pecaRecortada(extra: sharp.Region[] = []): Promise<Buffer> {
+		const m = 300; // o papel que sobra e vira sucata depois do corte
+		const esp = 12;
+		return arteCom([
+			{ left: m, top: m, width: W - 2 * m, height: esp },
+			{ left: m, top: H - m - esp, width: W - 2 * m, height: esp },
+			{ left: m, top: m, width: esp, height: H - 2 * m },
+			{ left: W - m - esp, top: m, width: esp, height: H - 2 * m },
+			...extra,
+		]);
+	}
 
-	it('arte com o miolo livre embaixo fica embaixo, à direita', async () => {
-		const canto = await cantoMaisQuieto(
-			await arteCom([{ left: 300, top: 300, width: 600, height: 400 }]),
+	/**
+	 * Um LOSANGO — a peça cujos cantos da caixa ficam FORA dela.
+	 *
+	 * É o formato que separa "restringi à caixa do desenho" de "fiquei dentro da
+	 * peça". Numa peça retangular as duas coisas coincidem e o teste não prova
+	 * nada; aqui, o canto da caixa é papel que o corte leva embora.
+	 */
+	async function losango(): Promise<Buffer> {
+		const lados: sharp.Region[] = [];
+		const passos = 240;
+		const meio = W / 2;
+		const raio = 520;
+		for (let i = 0; i <= passos; i++) {
+			const t = i / passos;
+			const dx = Math.round(raio * (1 - Math.abs(2 * t - 1)));
+			const y = Math.round(t * 2 * raio);
+			for (const x of [meio - dx, meio + dx - 14]) {
+				lados.push({
+					left: Math.round(x),
+					top: Math.round(meio - raio + y),
+					width: 14,
+					height: 14,
+				});
+			}
+		}
+		return arteCom(lados);
+	}
+
+	/** O ponto está dentro do losango desenhado acima? */
+	const dentroDoLosango = (x: number, y: number) =>
+		Math.abs(x - W / 2) + Math.abs(y - W / 2) <= 520;
+
+	it('numa arte cheia, o selo vai para um CANTO do arquivo', async () => {
+		// Sangria total (o caso da caneca): a peça É o arquivo, então o canto da
+		// peça e o canto do arquivo são o mesmo lugar.
+		const base = await sharp({
+			create: { width: W, height: H, channels: 3, background: '#3a3a3a' },
+		})
+			.png()
+			.toBuffer();
+		const { left, top } = await escolherSelo(base);
+		expect(left < W * 0.15 || left + 120 > W * 0.85).toBe(true);
+		expect(top < H * 0.15 || top + 120 > H * 0.85).toBe(true);
+	});
+
+	it('numa arte recortada, o canto é o da PEÇA, não o do arquivo', async () => {
+		// A silhueta ocupa o miolo e sobra papel em volta. O selo encosta no
+		// contorno da peça, não na borda do arquivo.
+		const m = 300;
+		const { left, top } = await escolherSelo(await pecaRecortada());
+		const perto = 120 + (W - 2 * m) * 0.25;
+		const noCantoDaPeca =
+			(left < m + perto || left + 120 > W - m - perto + 120) &&
+			(top < m + perto || top + 120 > H - m - perto + 120);
+		expect(noCantoDaPeca).toBe(true);
+	});
+
+	it('NUNCA cai fora da peça: os quatro vértices do selo ficam dentro dela', async () => {
+		/*
+		 * O TESTE QUE MAIS IMPORTA DESTE ARQUIVO.
+		 *
+		 * Num losango, os cantos da caixa do desenho são papel — e papel é o
+		 * lugar mais vazio da arte inteira, então qualquer busca por "vazio" vai
+		 * parar lá. Ali o QR é cortado fora e some da peça vendida, que é pior
+		 * do que ele cobrir o desenho.
+		 */
+		const { left, top } = await escolherSelo(await losango());
+		const lado = 120;
+		const vertices = [
+			[left, top],
+			[left + lado, top],
+			[left, top + lado],
+			[left + lado, top + lado],
+		];
+		for (const [x, y] of vertices) {
+			expect(dentroDoLosango(x, y)).toBe(true);
+		}
+	});
+
+	it('numa peça retangular, também não escapa para o papel em volta', async () => {
+		/*
+		 * O teste que mais importa deste arquivo. O papel em volta da silhueta é
+		 * o lugar mais vazio da arte inteira; qualquer busca ingênua por "vazio"
+		 * vai parar lá, e o QR sai na sucata.
+		 */
+		const { left, top } = await escolherSelo(await pecaRecortada());
+		const m = 300;
+		expect(left).toBeGreaterThanOrEqual(m);
+		expect(top).toBeGreaterThanOrEqual(m);
+		expect(left + 120).toBeLessThanOrEqual(W - m);
+		expect(top + 120).toBeLessThanOrEqual(H - m);
+	});
+
+	it('dentro da peça, foge de onde tem desenho', async () => {
+		// Metade de baixo da peça tomada: o selo tem de ir para a metade de cima.
+		const m = 300;
+		const { top } = await escolherSelo(
+			await pecaRecortada([
+				{ left: m + 20, top: H / 2, width: W - 2 * m - 40, height: H / 2 - m },
+			]),
 		);
-		expect(canto).toBe('baixo-direita');
+		expect(top + 120).toBeLessThanOrEqual(H / 2);
 	});
 
-	it('base ocupada só à direita empurra para a esquerda, SEM subir', async () => {
-		expect(await cantoMaisQuieto(await arteCom([BASE_DIREITA]))).toBe(
-			'baixo-esquerda',
-		);
-	});
-
-	it('base inteira ocupada — aí sim ele sobe (o caso do "JOAO")', async () => {
-		const canto = await cantoMaisQuieto(await arteCom([BASE_TODA]));
-		expect(canto.startsWith('alto')).toBe(true);
-	});
-
-	it('com tudo ocupado ele volta para baixo: na dúvida, embaixo', async () => {
-		const canto = await cantoMaisQuieto(
-			await arteCom([{ left: 0, top: 0, width: W, height: H }]),
-		);
-		expect(canto.startsWith('baixo')).toBe(true);
-	});
-
-	it('o canto pedido é OBEDECIDO — é assim que o lote sai uniforme', async () => {
-		// A arte pede o alto (base cheia), mas o lote já decidiu embaixo.
-		const base = await arteCom([BASE_TODA]);
-		const { area } = await carimbarPeca(base, {
-			code: CODE,
-			url: URL,
-			canto: 'baixo-esquerda',
-		});
-		expect(area.top).toBeGreaterThan(H / 2);
-		expect(area.left).toBeLessThan(W / 2);
+	it('respeita a zona de emenda mesmo escolhendo o canto', async () => {
+		const Wp = 2905;
+		const Hp = 1122;
+		const base = await sharp({
+			create: { width: Wp, height: Hp, channels: 3, background: '#12212e' },
+		})
+			.png()
+			.toBuffer();
+		const { left } = await escolherSelo(base);
+		expect(left + 120).toBeLessThanOrEqual(Math.ceil(Wp * 0.92));
+		expect(left).toBeGreaterThanOrEqual(Math.floor(Wp * 0.08));
 	});
 });

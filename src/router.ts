@@ -25,6 +25,7 @@ import { laserProductRoute } from './routes/laser-product.js';
 import { lessonRoute } from './routes/lesson.js';
 import { licensedArtRoute } from './routes/licensed-art.js';
 import { licensedBrandRoute } from './routes/licensed-brand.js';
+import { licensedSellerRoute } from './routes/licensed-seller.js';
 import { machineRoute } from './routes/machine.js';
 import { mentorshipRoute } from './routes/mentorship.js';
 import { mercadoLivreOAuthRoute } from './routes/mercado-livre-oauth.js';
@@ -100,6 +101,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(toolBankRoute);
 	app.register(licensedArtRoute);
 	app.register(licensedBrandRoute);
+	app.register(licensedSellerRoute);
 	app.register(toolCollectionRoute);
 	app.register(toolBankSmartTemaRoute);
 	app.register(toolBankSummarizePromptRoute);

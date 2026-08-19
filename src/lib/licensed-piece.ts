@@ -7,7 +7,7 @@ import {
 	listarLote,
 } from '../repositories/licensed-art.js';
 import { urlPublicaDaPeca } from './license-code.js';
-import { cantoMaisQuieto, carimbarPeca } from './license-stamp.js';
+import { carimbarPeca, escolherSelo } from './license-stamp.js';
 import { deleteByUrl, fetchToolOutput, uploadToolOutput } from './storage.js';
 import type { ToolDefinitionDoc } from './tool-definitions.js';
 
@@ -173,7 +173,6 @@ export async function carimbarLote(args: {
 	 * dados variáveis: ampliar ali significaria repetir o nome de alguém.
 	 */
 	master: Buffer | null;
-	aviso?: string;
 }> {
 	let master: Buffer | null = null;
 	let base: () => Promise<Buffer>;
@@ -217,7 +216,7 @@ export async function carimbarLote(args: {
 	}
 
 	/**
-	 * O CANTO É DECIDIDO UMA VEZ, PARA O LOTE INTEIRO.
+	 * O SELO É DECIDIDO UMA VEZ, PARA O LOTE INTEIRO — canto E cor.
 	 *
 	 * `carimbarPeca` sabe achar o canto mais quieto de uma arte sozinha, mas
 	 * deixá-la escolher peça a peça faria o selo pular de lado no meio de um
@@ -231,7 +230,7 @@ export async function carimbarLote(args: {
 	const referencia =
 		master ??
 		args.artes?.get(Math.min(...args.pecas.map((p) => p.piece_index)));
-	const canto = referencia ? await cantoMaisQuieto(referencia) : undefined;
+	const selo = referencia ? await escolherSelo(referencia) : undefined;
 
 	const entregues: {
 		id: string;
@@ -239,7 +238,6 @@ export async function carimbarLote(args: {
 		code: string;
 		url: string;
 	}[] = [];
-	let aviso: string | undefined;
 	// A miniatura é a da MENOR peça deste lote — não necessariamente a de índice
 	// 1. Numa ampliação que começa na peça 11, exigir a peça 1 deixava a
 	// miniatura cair na arte-mãe SEM carimbo; num lote com dados variáveis, cair
@@ -267,12 +265,11 @@ export async function carimbarLote(args: {
 					`lote com dados variáveis sem arte para a peça ${peca.piece_index}`,
 				);
 			}
-			const { png, aviso: a } = await carimbarPeca(propria ?? (await base()), {
+			const { png } = await carimbarPeca(propria ?? (await base()), {
 				code: peca.code,
 				url: urlPublicaDaPeca(peca.code),
-				canto,
+				selo,
 			});
-			if (a && !aviso) aviso = a;
 			if (peca.piece_index < primeiroIndex) {
 				primeiroIndex = peca.piece_index;
 				primeiroPng = png;
@@ -346,7 +343,6 @@ export async function carimbarLote(args: {
 		entregues,
 		thumb: `data:image/webp;base64,${thumbBuf.toString('base64')}`,
 		master,
-		aviso,
 	};
 }
 
