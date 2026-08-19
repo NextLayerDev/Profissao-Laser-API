@@ -350,3 +350,41 @@ export async function revogar(
 		.maybeSingle();
 	return (data as LicensedArt) ?? null;
 }
+
+/** Uma linha do relatório de volumetria: uma marca, um mês. */
+export interface VolumeDaMarca {
+	feature_key: string;
+	display_name: string | null;
+	marca_ativa: boolean | null;
+	mes: string;
+	pecas: number;
+	pecas_validas: number;
+	pecas_revogadas: number;
+	rodadas: number;
+	lotes: number;
+	alunos: number;
+	primeira: string;
+	ultima: string;
+}
+
+/**
+ * A volumetria por marca e por mês — a prestação de contas ao licenciante.
+ *
+ * Sai de uma VIEW (`pl_licensed_art_volume`) e não de uma consulta montada
+ * aqui: a regra do que conta (arquivada conta, revogada conta à parte) é do
+ * negócio e tem de valer igual para quem ler o banco por fora.
+ */
+export async function volumePorMarca(opts: {
+	featureKey?: string;
+	desde?: string;
+}): Promise<VolumeDaMarca[]> {
+	let q = supabase
+		.from('pl_licensed_art_volume')
+		.select('*')
+		.order('mes', { ascending: false });
+	if (opts.featureKey) q = q.eq('feature_key', opts.featureKey);
+	if (opts.desde) q = q.gte('mes', opts.desde);
+	const { data, error } = await q;
+	if (error) throw new Error(`volumePorMarca: ${error.message}`);
+	return (data as VolumeDaMarca[]) ?? [];
+}

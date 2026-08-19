@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { isStaffRole } from '../lib/external-auth.js';
 import { uploadToolOutput } from '../lib/storage.js';
 import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
+import { volumePorMarca } from '../repositories/licensed-art.js';
 import { licensedBrandRepository } from '../repositories/licensed-brand.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -73,6 +74,54 @@ export async function licensedBrandRoute(server: FastifyInstance) {
 			// `notes` é anotação interna do contrato (valor, prazo, contato). Não
 			// vai para o aluno.
 			return reply.send(marcas.map((m) => ({ ...m, notes: null })));
+		},
+	);
+
+	/**
+	 * VOLUMETRIA por marca e por mês — quantas peças o escudo de cada clube
+	 * gerou. É o número que se leva para a mesa do licenciante.
+	 *
+	 * Staff-only: é o consumo de todos os alunos junto, e não é assunto de
+	 * aluno nenhum.
+	 */
+	server.get(
+		'/api/licensed-brands/volume',
+		{
+			preHandler: [authenticateAdmin],
+			schema: {
+				description: 'Peças licenciadas por marca e por mês (staff).',
+				querystring: z.object({
+					featureKey: z.string().optional(),
+					/** `YYYY-MM-01` — o primeiro mês a contar. */
+					desde: z.string().optional(),
+				}),
+				response: {
+					200: z.array(
+						z.object({
+							feature_key: z.string(),
+							display_name: z.string().nullable(),
+							marca_ativa: z.boolean().nullable(),
+							mes: z.string(),
+							pecas: z.number(),
+							pecas_validas: z.number(),
+							pecas_revogadas: z.number(),
+							rodadas: z.number(),
+							lotes: z.number(),
+							alunos: z.number(),
+							primeira: z.string(),
+							ultima: z.string(),
+						}),
+					),
+					500: ErrorSchema,
+				},
+				tags: ['Licensed Brands'],
+			},
+		},
+		async (request, reply) => {
+			const q = request.query as { featureKey?: string; desde?: string };
+			return reply.send(
+				await volumePorMarca({ featureKey: q.featureKey, desde: q.desde }),
+			);
 		},
 	);
 
