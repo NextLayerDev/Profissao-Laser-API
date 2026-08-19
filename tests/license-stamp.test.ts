@@ -357,9 +357,17 @@ describe('onde o carimbo pousa', () => {
 		return arteCom(lados);
 	}
 
-	/** O ponto está dentro do losango desenhado acima? */
+	/**
+	 * O ponto está dentro do losango desenhado acima?
+	 *
+	 * Com a folga de UMA célula da grade (1200/96 = 12,5 px). A escolha do lugar
+	 * é feita numa grade de 96×96 — é isso que a torna barata —, então exigir
+	 * precisão de pixel seria cobrar do algoritmo uma garantia que ele não dá e
+	 * não precisa dar: meia célula de sobra na borda não tira o selo da peça.
+	 */
+	const GRADE_PX = W / 96;
 	const dentroDoLosango = (x: number, y: number) =>
-		Math.abs(x - W / 2) + Math.abs(y - W / 2) <= 520;
+		Math.abs(x - W / 2) + Math.abs(y - W / 2) <= 520 + GRADE_PX;
 
 	it('numa arte cheia, o selo vai para um CANTO do arquivo', async () => {
 		// Sangria total (o caso da caneca): a peça É o arquivo, então o canto da

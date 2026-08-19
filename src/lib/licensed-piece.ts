@@ -6,6 +6,7 @@ import {
 	emitirLote,
 	listarLote,
 } from '../repositories/licensed-art.js';
+import { declaracaoEmDia } from '../repositories/licensed-seller.js';
 import { urlPublicaDaPeca } from './license-code.js';
 import { carimbarPeca, escolherSelo } from './license-stamp.js';
 import { deleteByUrl, fetchToolOutput, uploadToolOutput } from './storage.js';
@@ -356,7 +357,7 @@ export async function carimbarLote(args: {
 export interface AmpliacaoResult {
 	ok: boolean;
 	/** Os mesmos códigos declarados no schema da rota. */
-	status?: 400 | 401 | 402 | 404 | 409 | 503;
+	status?: 400 | 401 | 402 | 403 | 404 | 409 | 503;
 	message?: string;
 	pecas?: { index: number; code: string; url: string }[];
 }
@@ -382,6 +383,28 @@ export async function ampliarLoteLicenciado(args: {
 }): Promise<AmpliacaoResult> {
 	const { resolveToolBilling, refundInvocation, settleInvocation } =
 		await upvox();
+	/**
+	 * O PORTÃO DO VENDEDOR VALE AQUI TAMBÉM.
+	 *
+	 * Ampliar emite licenças NOVAS — são peças a mais no mundo, contadas na
+	 * volumetria da marca e vendidas em algum lugar. Deixar este caminho de fora
+	 * seria uma porta lateral para quem não declarou nada: bastaria gerar um
+	 * lote antes do portão existir e crescer por aqui para sempre.
+	 *
+	 * Antes do gate de billing, porque aqui ainda não há nada a estornar.
+	 */
+	const declaracao = await declaracaoEmDia(args.customerId);
+	if (!declaracao.ok) {
+		return {
+			ok: false,
+			status: 403,
+			message:
+				declaracao.status === 'sem_canal'
+					? 'Para emitir peças, informe onde você vende na tela da ferramenta.'
+					: 'Confirme o termo de uso do licenciamento na tela da ferramenta para emitir peças.',
+		};
+	}
+
 	const gate = await resolveToolBilling(
 		args.customerId,
 		args.toolKey,

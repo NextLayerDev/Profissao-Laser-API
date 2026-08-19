@@ -317,34 +317,85 @@ export async function escolherSelo(master: Buffer): Promise<Selo> {
 	if (pMaxX < 0) return ultimoRecurso();
 
 	/**
-	 * De um canto da peça, ANDA PARA DENTRO até caber.
+	 * DE UM CANTO DA PEÇA, O MELHOR LUGAR PERTO DELE.
 	 *
-	 * Num recorte arredondado o canto exato é sempre sucata; a diagonal é o
-	 * caminho mais curto para o primeiro lugar que fica na peça depois do corte.
+	 * A caminhada é pela diagonal para dentro e CURTA — um quinto da peça. É o
+	 * que concilia as duas metades do pedido:
+	 *
+	 *  · "mais no canto" — a busca nunca se afasta muito da quina, então o selo
+	 *    não vai parar no meio da arte;
+	 *  · "sem atrapalhar" — entre os poucos lugares dessa caminhada, ganha o
+	 *    mais vazio, então ele desvia do nome em vez de pousar em cima dele.
+	 *
+	 * Parar no PRIMEIRO ponto que cabe seria o defeito de volta: no chaveiro, o
+	 * primeiro ponto dentro da peça vindo de baixo é exatamente onde o nome
+	 * está. E varrer o quadrante inteiro seria o outro extremo — na caneca, que
+	 * é foto e não tem vazio nenhum, o "mais quieto" fica no meio da arte.
 	 */
-	const encostar = (
-		cantoX: number,
-		cantoY: number,
+	const perto = (
+		quinaX: number,
+		quinaY: number,
 		passoX: number,
 		passoY: number,
 	): { x: number; y: number; tinta: number } | null => {
-		for (let k = 0; k < GRADE; k++) {
-			const x = cantoX + passoX * k;
-			const y = cantoY + passoY * k;
-			const t = tintaDoBloco(x, y);
-			if (t !== null) return { x, y, tinta: t };
+		const alcance = Math.max(
+			2,
+			Math.round(Math.min(pMaxX - pMinX, pMaxY - pMinY) * 0.2),
+		);
+		let melhor: { x: number; y: number; tinta: number } | null = null;
+		/*
+		 * Três caminhos a partir da quina, não um: a diagonal e as DUAS BORDAS.
+		 *
+		 * Só a diagonal não bastava. No chaveiro, a diagonal do canto de baixo
+		 * atravessa o nome inteiro antes de achar branco, e o selo pousava em
+		 * cima das letras. Subindo pela borda direita, ele acha o vão ao lado da
+		 * âncora em dois passos — que é onde uma pessoa poria.
+		 */
+		for (const [px, py] of [
+			[passoX, passoY],
+			[passoX, 0],
+			[0, passoY],
+		]) {
+			/*
+			 * Duas fases, e a ordem importa.
+			 *
+			 * ENTRAR não tem limite de passos: num losango — ou em qualquer
+			 * silhueta bem recortada — a quina da caixa fica longe da peça, e
+			 * parar cedo devolveria "não achei" e mandaria o selo para o canto do
+			 * arquivo, que é sucata depois do corte.
+			 *
+			 * ESCOLHER, sim, é curto: uma vez dentro, só os próximos passos
+			 * contam. É o que segura o selo perto da quina em vez de deixá-lo
+			 * passear até o meio da arte atrás do ponto mais vazio.
+			 */
+			let entrou = -1;
+			for (let k = 0; k < GRADE; k++) {
+				if (tintaDoBloco(quinaX + px * k, quinaY + py * k) !== null) {
+					entrou = k;
+					break;
+				}
+			}
+			if (entrou < 0) continue;
+			for (let k = entrou; k <= entrou + alcance; k++) {
+				const x = quinaX + px * k;
+				const y = quinaY + py * k;
+				const t = tintaDoBloco(x, y);
+				if (t === null) continue;
+				// `<` e não `<=`: empate fica com o mais perto da quina, que veio antes.
+				if (!melhor || t < melhor.tinta) melhor = { x, y, tinta: t };
+			}
 		}
-		return null;
+		return melhor;
 	};
 
 	const dir = pMaxX - larguraEmCelulas + 1;
 	const baixo = pMaxY - alturaEmCelulas + 1;
 	// Ordem = desempate: embaixo antes de em cima, direita antes de esquerda.
 	const candidatos = [
-		encostar(dir, baixo, -1, -1),
-		encostar(pMinX, baixo, 1, -1),
-		encostar(dir, pMinY, -1, 1),
-		encostar(pMinX, pMinY, 1, 1),
+		perto(dir, baixo, -1, -1),
+		perto(pMinX, baixo, 1, -1),
+		perto(dir, pMinY, -1, 1),
+		perto(pMinX, pMinY, 1, 1),
 	].filter((c): c is { x: number; y: number; tinta: number } => c !== null);
 
 	if (candidatos.length === 0) return ultimoRecurso();
@@ -352,10 +403,10 @@ export async function escolherSelo(master: Buffer): Promise<Selo> {
 	/**
 	 * Trocar de canto exige ser MESMO mais quieto, não quieto por um fio.
 	 *
-	 * Sem esta folga, uma diferença de meio por cento de tinta mandava o selo do
-	 * canto de baixo para o de cima — e a preferência declarada é embaixo, o
-	 * mais no canto possível. A ordem dos candidatos é o desempate; a folga é o
-	 * que faz o desempate valer na prática.
+	 * Sem esta folga, meio por cento de tinta mandava o selo do canto de baixo
+	 * para o de cima — e a preferência declarada é embaixo, o mais no canto
+	 * possível. A ordem dos candidatos é o desempate; a folga é o que faz o
+	 * desempate valer na prática.
 	 */
 	const FOLGA = 0.04;
 	let escolhido = candidatos[0];

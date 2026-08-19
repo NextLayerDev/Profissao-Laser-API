@@ -285,6 +285,9 @@ export async function licensedArtRoute(server: FastifyInstance) {
 					400: ErrorSchema,
 					401: ErrorSchema,
 					402: ErrorSchema,
+					// 403 = portão do vendedor. Sem ele DECLARADO, o Fastify não
+					// serializa a recusa e o aluno leva um erro sem mensagem.
+					403: ErrorSchema,
 					404: ErrorSchema,
 					409: ErrorSchema,
 					503: ErrorSchema,
