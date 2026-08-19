@@ -182,6 +182,9 @@ beforeEach(() => {
 		invocationId: 'inv-1',
 		voxesSpent: 0.5,
 		quotaConsumed: 0,
+		// Invocação LEGADA: sem `units`, o motor volta a inferir pelo pago.
+		units: null,
+		licenseUnits: 0,
 	});
 	mockVoxCost.mockResolvedValue(0.5);
 });
@@ -212,6 +215,9 @@ describe('o run entrega o que foi pago — nunca mais, e nunca um erro', () => {
 			invocationId: 'inv-1',
 			voxesSpent: 1, // 0,5 × 2
 			quotaConsumed: 0,
+			// Invocação LEGADA: sem `units`, o motor volta a inferir pelo pago.
+			units: null,
+			licenseUnits: 0,
 		});
 
 		const res = await rodar({ variation_count: '4' });
@@ -234,6 +240,9 @@ describe('o run entrega o que foi pago — nunca mais, e nunca um erro', () => {
 			invocationId: 'inv-1',
 			voxesSpent: 2,
 			quotaConsumed: 0,
+			// Invocação LEGADA: sem `units`, o motor volta a inferir pelo pago.
+			units: null,
+			licenseUnits: 0,
 		});
 
 		const res = await rodar({ variation_count: '4' });
@@ -251,6 +260,9 @@ describe('o run entrega o que foi pago — nunca mais, e nunca um erro', () => {
 			invocationId: 'inv-1',
 			voxesSpent: 2,
 			quotaConsumed: 0,
+			// Invocação LEGADA: sem `units`, o motor volta a inferir pelo pago.
+			units: null,
+			licenseUnits: 0,
 		});
 
 		const res = await rodar({ variation_count: '2' });
@@ -266,6 +278,9 @@ describe('o run entrega o que foi pago — nunca mais, e nunca um erro', () => {
 			invocationId: 'inv-1',
 			voxesSpent: 0.6, // round2(0,3 × 2)
 			quotaConsumed: 0,
+			// Invocação LEGADA: sem `units`, o motor volta a inferir pelo pago.
+			units: null,
+			licenseUnits: 0,
 		});
 
 		expect((await rodar({ variation_count: '2' })).status).toBe(201);
@@ -280,6 +295,9 @@ describe('o run entrega o que foi pago — nunca mais, e nunca um erro', () => {
 			invocationId: 'inv-1',
 			voxesSpent: 0.6,
 			quotaConsumed: 0,
+			// Invocação LEGADA: sem `units`, o motor volta a inferir pelo pago.
+			units: null,
+			licenseUnits: 0,
 		});
 		expect((await rodar({ variation_count: '4' })).status).toBe(201);
 		expect(variacoesInjetadas()).toBe(2);
@@ -292,6 +310,9 @@ describe('o run entrega o que foi pago — nunca mais, e nunca um erro', () => {
 			invocationId: 'inv-1',
 			voxesSpent: 1.5, // 0,5 × 3
 			quotaConsumed: 0,
+			// Invocação LEGADA: sem `units`, o motor volta a inferir pelo pago.
+			units: null,
+			licenseUnits: 0,
 		});
 
 		expect((await rodar({ variation_count: '4' })).status).toBe(201);
@@ -327,6 +348,9 @@ describe('cobrar N e entregar 1 — a falha do furo virada do avesso', () => {
 			invocationId: 'inv-1',
 			voxesSpent: 1, // pagou 2 de verdade — o problema não é a cobrança
 			quotaConsumed: 0,
+			// Invocação LEGADA: sem `units`, o motor volta a inferir pelo pago.
+			units: null,
+			licenseUnits: 0,
 		});
 
 		const res = await rodar({ variation_count: '2', invocation_id: 'inv-1' });
@@ -406,6 +430,9 @@ describe('os cantos em que NÃO se recusa (regra de ouro)', () => {
 			invocationId: 'inv-1',
 			voxesSpent: 0,
 			quotaConsumed: 1,
+			// Invocação LEGADA: sem `units`, o motor volta a inferir pelo pago.
+			units: null,
+			licenseUnits: 0,
 		});
 
 		const res = await rodar({ variation_count: '4' });
@@ -421,6 +448,9 @@ describe('os cantos em que NÃO se recusa (regra de ouro)', () => {
 			invocationId: 'inv-1',
 			voxesSpent: 0,
 			quotaConsumed: 0,
+			// Invocação LEGADA: sem `units`, o motor volta a inferir pelo pago.
+			units: null,
+			licenseUnits: 0,
 		});
 
 		expect((await rodar({ variation_count: '4' })).status).toBe(201);

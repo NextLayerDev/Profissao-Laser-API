@@ -31,6 +31,10 @@ export interface ToolInvocation {
 	status: 'pending' | 'succeeded' | 'failed' | 'refunded';
 	quota_consumed: number;
 	voxes_spent: number;
+	/** Unidades de geração compradas. Nulo/ausente = invocação anterior à coluna. */
+	units?: number | null;
+	/** Peças licenciadas além da primeira. */
+	license_units?: number | null;
 }
 
 /**
@@ -234,6 +238,14 @@ export type BillingGate =
 			invocationId: string;
 			voxesSpent: number;
 			quotaConsumed: number;
+			/**
+			 * Quantas unidades a invocação COMPROU, dito pelo upvox. `null` numa
+			 * invocação anterior à coluna — aí o motor volta a inferir pelo valor
+			 * pago.
+			 */
+			units: number | null;
+			/** Peças licenciadas além da primeira que a invocação comprou. */
+			licenseUnits: number;
 	  }
 	| { mode: 'free' }
 	| { mode: 'reject'; status: number; message: string };
@@ -268,6 +280,11 @@ export async function resolveToolBilling(
 			// no ponto de entrada, para o resto do motor só ver number.
 			voxesSpent: Number(inv.voxes_spent) || 0,
 			quotaConsumed: Number(inv.quota_consumed) || 0,
+			units:
+				inv.units === null || inv.units === undefined
+					? null
+					: Number(inv.units) || null,
+			licenseUnits: Number(inv.license_units ?? 0) || 0,
 		};
 	}
 	if (await isToolBilled(customerId, toolKey, authHeader)) {

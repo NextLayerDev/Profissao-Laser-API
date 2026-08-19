@@ -8,8 +8,8 @@ import { TEXT_MODELS_CATALOG } from '../lib/text-models-catalog.js';
 import {
 	resolveCreation,
 	resolveVariationCount,
+	unidadesDaInvocacao,
 	variacoesAEntregar,
-	variacoesPagas,
 } from '../lib/tool-creations.js';
 import {
 	type InputSpec,
@@ -814,8 +814,19 @@ async function executarRun(
 			 * chamada de rede nem uma superfície nova de falha.
 			 */
 			if (gate.mode === 'paid' && variationCount > 1) {
-				const voxCost = await getToolVoxCost(customerId, key, authHeader);
-				const pagas = variacoesPagas({
+				// O upvox agora GUARDA quantas unidades a rodada comprou. Só quando
+				// a invocação é anterior à coluna é que voltamos a inferir pelo valor
+				// pago — e aí o `vox_cost` precisa ser buscado, uma ida a menos ao
+				// upvox no caminho quente de todo mundo.
+				// "Tem número guardado?", não "é exatamente null": uma invocação
+				// anterior à coluna chega com o campo ausente, e tratar `undefined`
+				// como "sei o número" faria o motor entregar sem conferir nada.
+				const temUnidades = typeof gate.units === 'number' && gate.units >= 1;
+				const voxCost = temUnidades
+					? null
+					: await getToolVoxCost(customerId, key, authHeader);
+				const pagas = unidadesDaInvocacao({
+					units: gate.units,
 					voxesSpent: gate.voxesSpent,
 					quotaConsumed: gate.quotaConsumed,
 					voxCost,
@@ -826,8 +837,9 @@ async function executarRun(
 					allowedVariations,
 				);
 				if (pagas === null) {
-					// Indeterminado (cota do plano, conta ilimitada, preço mexido no
-					// meio do caminho). Entrega o pedido — ver `variacoesPagas`.
+					// Indeterminado, e só possível em invocação anterior à coluna
+					// `units` (cota do plano, conta ilimitada, preço mexido no meio do
+					// caminho). Entrega o pedido — ver `variacoesPagas`.
 					console.warn(
 						`[tool-run] ${key}: ${variationCount} variações sem conferência possível (voxes_spent=${gate.voxesSpent}, quota=${gate.quotaConsumed}, vox_cost=${voxCost ?? 'desconhecido'}).`,
 					);
