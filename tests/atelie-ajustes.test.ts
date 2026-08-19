@@ -658,14 +658,19 @@ describe('uma tool, mais de um caminho', () => {
 	});
 
 	it('executa só os nós do fluxo escolhido', async () => {
-		const saida = await executeTool(docDoisFluxos, {}, ctx, 'ajustar');
+		const { output: saida } = await executeTool(
+			docDoisFluxos,
+			{},
+			ctx,
+			'ajustar',
+		);
 		expect(saida.ajustado).toBe('do ajustar');
 		// A chave do outro fluxo some da resposta — não vira o texto "criar.v".
 		expect(saida.criado).toBeUndefined();
 	});
 
 	it('referência a nó de outro fluxo resolve vazia, não vira string literal', async () => {
-		const saida = await executeTool(docDoisFluxos, {}, ctx);
+		const { output: saida } = await executeTool(docDoisFluxos, {}, ctx);
 		expect(saida.criado).toBe('do criar');
 		expect(saida.ajustado).toBeUndefined();
 		expect(saida.ajustado).not.toBe('ajuste.v');
@@ -676,7 +681,9 @@ describe('uma tool, mais de um caminho', () => {
 			pipeline: [{ id: 'n', block: 'test.eco_fluxo', params: { v: 'legado' } }],
 			output: { x: 'n.v' },
 		};
-		expect(await executeTool(antigo, {}, ctx)).toEqual({ x: 'legado' });
+		expect((await executeTool(antigo, {}, ctx)).output).toEqual({
+			x: 'legado',
+		});
 	});
 
 	it('dois fluxos podem repetir id de nó (é o que faz uma `output` servir aos dois)', async () => {
@@ -687,8 +694,10 @@ describe('uma tool, mais de um caminho', () => {
 			},
 			output: { arte: 'arte.v' },
 		};
-		expect(await executeTool(doc, {}, ctx)).toEqual({ arte: 'A' });
-		expect(await executeTool(doc, {}, ctx, 'ajustar')).toEqual({ arte: 'B' });
+		expect((await executeTool(doc, {}, ctx)).output).toEqual({ arte: 'A' });
+		expect((await executeTool(doc, {}, ctx, 'ajustar')).output).toEqual({
+			arte: 'B',
+		});
 	});
 
 	it('id duplicado DENTRO do mesmo fluxo continua sendo erro', async () => {
@@ -787,7 +796,12 @@ describe('um Ajuste de ponta a ponta', () => {
 			{ origem_id: 'arte-mae', modo: 'ampliar' },
 			null,
 		);
-		const saida = await executeTool(fluxoAjustar, bag, ctx, 'ajustar');
+		const { output: saida } = await executeTool(
+			fluxoAjustar,
+			bag,
+			ctx,
+			'ajustar',
+		);
 
 		expect(saida.entry_id).toBe('arte-filha');
 		expect(saida.escala_real).toBe(2);

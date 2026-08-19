@@ -135,6 +135,25 @@ export async function listarDoCliente(
 }
 
 /**
+ * Anexa a arte à licença DEPOIS que o arquivo existe.
+ *
+ * A ordem importa: o código é emitido antes de o arquivo ser carimbado (é ele
+ * que vai gravado na peça), então a linha nasce sem `preview_url`. Uma falha no
+ * carimbo estorna o run e deixa a linha sem arte — e a retentativa, idempotente
+ * pelo `invocation_id`, reusa o MESMO código e preenche aqui.
+ */
+export async function anexarArte(
+	id: string,
+	previewUrl: string,
+): Promise<void> {
+	const { error } = await supabase
+		.from(TABELA)
+		.update({ preview_url: previewUrl })
+		.eq('id', id);
+	if (error) throw new Error(`anexarArte: ${error.message}`);
+}
+
+/**
  * Arquivar tira a peça da biblioteca — e NÃO apaga a licença.
  *
  * O QR dela pode já estar gravado num chaveiro que saiu daqui. Apagar a linha

@@ -4,6 +4,9 @@ import sharp from 'sharp';
 import { aiRodaDeGraca, nadaAPagarNesteRun } from '../lib/atelie/ajustes.js';
 import { isStaffRole } from '../lib/external-auth.js';
 import { IMAGE_MODELS_CATALOG } from '../lib/image-models-catalog.js';
+import { urlPublicaDaPeca } from '../lib/license-code.js';
+import { carimbarPeca } from '../lib/license-stamp.js';
+import { uploadToolOutput } from '../lib/storage.js';
 import { TEXT_MODELS_CATALOG } from '../lib/text-models-catalog.js';
 import {
 	resolveCreation,
@@ -36,7 +39,7 @@ import {
 	settleInvocation,
 } from '../lib/upvox-tools.js';
 import { imageSizePresetRepository } from '../repositories/image-size-preset.js';
-import { emitirLicenca } from '../repositories/licensed-art.js';
+import { anexarArte, emitirLicenca } from '../repositories/licensed-art.js';
 import { toolBankRepository } from '../repositories/tool-bank.js';
 import { registerCoreBlocks } from '../tool-blocks/index.js';
 import type { ToolBankEntry } from '../types/tool-bank.js';
@@ -459,6 +462,90 @@ function licenseFeatureKeyOf(entry?: ToolBankEntry): string | null {
 	// tratamos como "não licenciado" — melhor não emitir do que emitir com marca
 	// inválida.
 	return /^[a-z0-9]+:[a-z0-9-]+$/.test(chave) ? chave : null;
+}
+
+/**
+ * Carimba a arte e sobe a peça. É o ponto onde a licença deixa de ser um dado
+ * ao lado do arquivo e passa a ser parte dele.
+ *
+ * O master vem da BAG, não do `output`: `definition.output` é allow-list e, numa
+ * tool licenciada, ele de propósito não expõe o buffer da arte. `licensing.master`
+ * aponta a chave (`gen.png`), e a ausência dela derruba o run em vez de deixar
+ * passar — mexer na definition passa a ser uma queda barulhenta, não um
+ * vazamento silencioso.
+ */
+async function carimbarEEnviar(args: {
+	doc: ToolDefinitionDoc;
+	bag: Record<string, unknown>;
+	customerId: string;
+	code: string;
+}): Promise<{ url: string; thumb: string; aviso?: string }> {
+	const chave = args.doc.licensing?.master;
+	if (!chave) {
+		throw new Error(
+			'definition licenciada sem `licensing.master` — o motor não sabe qual buffer carimbar',
+		);
+	}
+	const master = args.bag[chave];
+	if (!Buffer.isBuffer(master)) {
+		throw new Error(
+			`\`licensing.master\` aponta para '${chave}', que não é um buffer de imagem`,
+		);
+	}
+
+	const { png, aviso } = await carimbarPeca(master, {
+		code: args.code,
+		url: urlPublicaDaPeca(args.code),
+	});
+
+	const url = await uploadToolOutput(
+		`arte-licenciada/${args.customerId}`,
+		png,
+		`${args.code}.png`,
+		'image/png',
+	);
+
+	// A prévia da tela é reduzida e é da peça JÁ CARIMBADA. Devolver o master em
+	// base64 — o que a definition fazia — era a segunda porta por onde a arte
+	// limpa saía em alta resolução.
+	const thumb = await sharp(png)
+		.resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+		.webp({ quality: 82 })
+		.toBuffer();
+
+	return {
+		url,
+		thumb: `data:image/webp;base64,${thumb.toString('base64')}`,
+		aviso,
+	};
+}
+
+/**
+ * Tira do pipeline TODO nó que escreve arquivo ou devolve imagem crua.
+ *
+ * Numa rodada licenciada a única saída em alta resolução permitida é a peça
+ * CARIMBADA. Enquanto o master cru subisse para o CDN — cuja URL é pública,
+ * permanente e sem expiração — ou voltasse em base64 no JSON, a "arte genérica
+ * sem código" continuaria existindo, e com ela o buraco inteiro da volumetria.
+ *
+ * Mesmo mecanismo do `skipInPreview`, com o propósito invertido: lá o corte
+ * garante que o caminho grátis não deixa rastro; aqui, que o caminho pago não
+ * entrega o original.
+ */
+function semSaidaCrua(doc: ToolDefinitionDoc): ToolDefinitionDoc {
+	const corta = (nos?: PipelineNode[]) =>
+		(nos ?? []).filter((n) => !n.block.startsWith('output.'));
+	return {
+		...doc,
+		...(doc.pipeline ? { pipeline: corta(doc.pipeline) } : {}),
+		...(doc.pipelines
+			? {
+					pipelines: Object.fromEntries(
+						Object.entries(doc.pipelines).map(([k, v]) => [k, corta(v)]),
+					),
+				}
+			: {}),
+	};
 }
 
 /** Nome de gente da marca, para a tela pública não mostrar `clube:corinthians`. */
@@ -900,18 +987,45 @@ async function executarRun(
 			return recusar(400, fileError);
 		}
 
+		/**
+		 * RODADA LICENCIADA EXIGE INVOCAÇÃO PAGA.
+		 *
+		 * Sem invocação, `emitirLicenca` recebe `invocation_id` nulo — e aí a
+		 * pré-checagem é pulada E o unique parcial do banco (`where invocation_id
+		 * is not null`) não se aplica. Cada retentativa emitiria um código novo,
+		 * de graça, sem idempotência nenhuma: uma torneira de licenças.
+		 *
+		 * Dois caminhos chegavam aqui: tool fora dos entitlements do cliente
+		 * (`gate.mode === 'free'`) e o preview de definition inline do staff
+		 * (`billed === false`, que nem passa pelo gate).
+		 *
+		 * Com tiragem isso deixa de ser um código órfão por clique e vira N.
+		 */
+		const featureKey = licenseFeatureKeyOf(selectedBankEntry);
+		if (featureKey && !invocationId) {
+			return recusar(
+				402,
+				'Arte licenciada precisa de uma rodada cobrada — o código de autenticidade nasce dela.',
+			);
+		}
+		// O master não pode escapar cru: nem para o CDN, nem no JSON da resposta.
+		const docRun = featureKey ? semSaidaCrua(doc) : doc;
+
 		// ── executa o pipeline ──
 		let output: Record<string, unknown>;
+		// A bag do run: o buffer da arte mora aqui e NUNCA é projetado no output
+		// de uma tool licenciada. É por ela que o carimbo pega o master.
+		let bag: Record<string, unknown> = {};
 		try {
-			const bag = coerceInputs(
+			const entrada = coerceInputs(
 				doc.input ?? {},
 				fields,
 				files,
 				buildFileMeta(fileMimes, fileNames),
 			);
-			output = await executeTool(
-				doc,
-				bag,
+			const rodada = await executeTool(
+				docRun,
+				entrada,
 				{
 					customerId,
 					authHeader,
@@ -919,6 +1033,8 @@ async function executarRun(
 				},
 				flow,
 			);
+			output = rodada.output;
+			bag = rodada.bag;
 		} catch (err) {
 			if (invocationId) {
 				await refundInvocation(customerId, invocationId, authHeader);
@@ -930,16 +1046,16 @@ async function executarRun(
 			return res.erro(500, message);
 		}
 
-		// ── arte licenciada: código de autenticidade ──
+		// ── arte licenciada: código, carimbo e a peça ──
 		//
 		// A regra mora AQUI, no motor, e não num bloco do pipeline: se fosse
 		// bloco, um admin editando a definition poderia removê-lo e a arte da
 		// marca sairia sem código — indistinguível de uma pirata, que é
-		// exatamente a falha que este produto existe para evitar.
+		// exatamente a falha que este produto existe para evitar. O editor visual
+		// da Fábrica, aliás, apaga fluxos nomeados em silêncio ao salvar.
 		//
 		// O gatilho é o dado, não a configuração: prompt com `feature_key` é
 		// prompt licenciado.
-		const featureKey = licenseFeatureKeyOf(selectedBankEntry);
 		let license: IssuedArtLicense | undefined;
 		if (featureKey) {
 			try {
@@ -951,9 +1067,31 @@ async function executarRun(
 					// A rodada cobrada é a unidade de idempotência: reenvio devolve o
 					// mesmo código em vez de emitir um segundo.
 					invocationId: invocationId ?? null,
-					previewUrl: firstUrlOf(output),
+					// A arte é anexada DEPOIS do carimbo — o código precisa existir
+					// antes, porque é ele que vai desenhado dentro da peça.
+					previewUrl: null,
 					promptTitle: selectedBankEntry?.title ?? null,
 				});
+
+				const peca = await carimbarEEnviar({
+					doc,
+					bag,
+					customerId,
+					code: emitida.art.code,
+				});
+				await anexarArte(emitida.art.id, peca.url);
+
+				// O output projetado é DESCARTADO: numa rodada licenciada quem manda
+				// na resposta é o motor, não a definition. Assim nenhuma chave
+				// esquecida no `output` devolve o master por acidente.
+				output = {
+					primary: peca.url,
+					preview: peca.thumb,
+					pieces: [{ index: 1, code: emitida.art.code, url: peca.url }],
+					count: 1,
+					...(peca.aviso ? { stamp_warning: peca.aviso } : {}),
+				};
+
 				license = {
 					code: emitida.art.code,
 					featureKey: emitida.art.feature_key,
@@ -961,16 +1099,16 @@ async function executarRun(
 					issuedAt: emitida.art.created_at,
 				};
 			} catch (err) {
-				// NUNCA entregar arte licenciada sem código. Custa uma chamada de
-				// modelo desperdiçada; entregar sem QR custaria a razão de ser do
-				// produto.
-				console.error('[tool-run] emissão de licença falhou:', err);
+				// NUNCA entregar arte licenciada sem código NEM sem carimbo. Custa
+				// uma chamada de modelo desperdiçada; entregar a arte crua custaria a
+				// razão de ser do produto.
+				console.error('[tool-run] peça licenciada falhou:', err);
 				if (invocationId) {
 					await refundInvocation(customerId, invocationId, authHeader);
 				}
 				return res.erro(
 					503,
-					'Não foi possível emitir o código de autenticidade. Nada foi cobrado — tente de novo.',
+					'Não foi possível emitir a peça licenciada. Nada foi cobrado — tente de novo.',
 				);
 			}
 		}
@@ -1299,7 +1437,7 @@ export const toolPreviewController = async (
 			small,
 			buildFileMeta(fileMimes, fileNames),
 		);
-		const output = await executeTool(
+		const { output } = await executeTool(
 			previewDoc,
 			bag,
 			{

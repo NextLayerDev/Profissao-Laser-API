@@ -174,7 +174,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	limparReservas();
 	mockLoad.mockResolvedValue(definition([1, 2, 4]));
-	mockExecute.mockResolvedValue({ imagem: 'ok' });
+	mockExecute.mockResolvedValue({ output: { imagem: 'ok' }, bag: {} });
 	// O padrão: invocação paga de 1 variação (vox_cost 0,5 × 1), como o
 	// `prompts_magicos` publicado.
 	mockBilling.mockResolvedValue({
@@ -374,7 +374,7 @@ describe('um recibo, um run (a outra metade do furo)', () => {
 		mockExecute.mockImplementationOnce(
 			() =>
 				new Promise((resolve) => {
-					liberar = () => resolve({ imagem: 'ok' });
+					liberar = () => resolve({ output: { imagem: 'ok' }, bag: {} });
 				}),
 		);
 

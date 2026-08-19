@@ -53,3 +53,18 @@ export function hashCodigo(codigo: string): string {
 		.update(normalizarCodigo(codigo))
 		.digest('hex');
 }
+
+/**
+ * A URL que o QR da peça carrega — a página pública `/a/:code`, que resolve sem
+ * login porque quem escaneia um chaveiro comprado numa feira não tem conta.
+ *
+ * Mora aqui, junto do código, e não no controller: a URL é gravada DENTRO da
+ * peça física. Uma vez queimada no acrílico, ela não muda mais — então o
+ * endereço tem uma fonte só, e mudá-lo é uma decisão consciente e única.
+ */
+export function urlPublicaDaPeca(code: string): string {
+	const base = (
+		process.env.NEXT_PUBLIC_SITE_URL || 'https://profissaolaser.com.br'
+	).replace(/\/+$/, '');
+	return `${base}/a/${encodeURIComponent(code)}`;
+}
