@@ -8,6 +8,7 @@ export interface LicensedBrand {
 	display_name: string;
 	crest_url: string | null;
 	mascot_url: string | null;
+	accent_color: string | null;
 	active: boolean;
 	notes: string | null;
 	created_by: string | null;
@@ -20,6 +21,7 @@ export interface SalvarMarcaInput {
 	display_name?: string;
 	crest_url?: string | null;
 	mascot_url?: string | null;
+	accent_color?: string | null;
 	active?: boolean;
 	notes?: string | null;
 }

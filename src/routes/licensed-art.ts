@@ -89,12 +89,18 @@ export async function licensedArtRoute(server: FastifyInstance) {
 			preHandler: [authenticateCustomer],
 			schema: {
 				description: 'As artes licenciadas que eu gerei.',
-				response: { 200: z.array(minhaArteSchema), 500: ErrorSchema },
+				response: {
+					200: z.array(minhaArteSchema),
+					401: ErrorSchema,
+					500: ErrorSchema,
+				},
 				tags: ['Licensed Art'],
 			},
 		},
 		async (request, reply) => {
-			const customerId = (request as { user?: { id?: string } }).user?.id;
+			// `currentCustomer` é populado pelo authenticateCustomer para aluno;
+			// para staff o middleware retorna cedo e só `currentUser` existe.
+			const customerId = request.currentCustomer?.id ?? request.currentUser?.id;
 			if (!customerId) {
 				return reply
 					.status(401)

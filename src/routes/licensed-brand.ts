@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { isStaffRole } from '../lib/external-auth.js';
 import { uploadToolOutput } from '../lib/storage.js';
-import { authenticateAdmin } from '../middleware/auth.js';
+import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
 import { licensedBrandRepository } from '../repositories/licensed-brand.js';
 import { ErrorSchema } from '../types/error.js';
 
@@ -14,6 +15,8 @@ const marcaSchema = z.object({
 	display_name: z.string(),
 	crest_url: z.string().nullable(),
 	mascot_url: z.string().nullable(),
+	// Opcional no schema para a API continuar de pé antes da migration da coluna.
+	accent_color: z.string().nullable().optional(),
 	active: z.boolean(),
 	notes: z.string().nullable(),
 	created_at: z.string(),
@@ -21,6 +24,19 @@ const marcaSchema = z.object({
 });
 
 const CHAVE = /^[a-z0-9]+:[a-z0-9-]+$/;
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/**
+ * A cor oficial do clube, usada como fundo do campo do escudo na tela de
+ * geração. Vazio é legítimo (nem toda marca tem uma cor chapada que funcione),
+ * e valor fora do formato vira nulo em vez de derrubar o cadastro — cor é
+ * decoração, não pode impedir o staff de salvar a marca.
+ */
+function corDeMarca(valor: string | undefined): string | null {
+	const v = valor?.trim();
+	if (!v) return null;
+	return HEX.test(v) ? v.toLowerCase() : null;
+}
 
 /**
  * Marcas licenciadas — o cadastro do escudo, do mascote e do nome público.
@@ -36,9 +52,10 @@ export async function licensedBrandRoute(server: FastifyInstance) {
 	server.get(
 		'/api/licensed-brands',
 		{
-			preHandler: [authenticateAdmin],
+			preHandler: [authenticateCustomer],
 			schema: {
-				description: 'Lista as marcas licenciadas cadastradas (staff).',
+				description:
+					'Lista as marcas licenciadas. Aluno vê só as ativas; staff vê tudo.',
 				querystring: z.object({ activeOnly: z.string().optional() }),
 				response: { 200: z.array(marcaSchema), 500: ErrorSchema },
 				tags: ['Licensed Brands'],
@@ -46,11 +63,16 @@ export async function licensedBrandRoute(server: FastifyInstance) {
 		},
 		async (request, reply) => {
 			const q = request.query as { activeOnly?: string };
-			return reply.send(
-				await licensedBrandRepository.list({
-					activeOnly: q.activeOnly === 'true',
-				}),
-			);
+			const staff = isStaffRole(request.currentRole);
+			// Marca inativa é contrato que caiu: some da tela de quem gera, mas
+			// continua no cadastro do staff. Mesmo padrão do banco de prompts.
+			const marcas = await licensedBrandRepository.list({
+				activeOnly: staff ? q.activeOnly === 'true' : true,
+			});
+			if (staff) return reply.send(marcas);
+			// `notes` é anotação interna do contrato (valor, prazo, contato). Não
+			// vai para o aluno.
+			return reply.send(marcas.map((m) => ({ ...m, notes: null })));
 		},
 	);
 
@@ -109,6 +131,7 @@ export async function licensedBrandRoute(server: FastifyInstance) {
 						display_name: campos.display_name.trim(),
 						crest_url: imagens.crest ?? null,
 						mascot_url: imagens.mascot ?? null,
+						accent_color: corDeMarca(campos.accent_color),
 						active: campos.active !== 'false',
 						notes: campos.notes?.trim() || null,
 					},
@@ -157,6 +180,9 @@ export async function licensedBrandRoute(server: FastifyInstance) {
 					...(imagens.crest !== undefined && { crest_url: imagens.crest }),
 					...(imagens.mascot !== undefined && { mascot_url: imagens.mascot }),
 					...(campos.removeMascot === 'true' && { mascot_url: null }),
+					...(campos.accent_color !== undefined && {
+						accent_color: corDeMarca(campos.accent_color),
+					}),
 					...(campos.active !== undefined && {
 						active: campos.active !== 'false',
 					}),
