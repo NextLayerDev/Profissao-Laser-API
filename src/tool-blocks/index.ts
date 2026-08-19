@@ -7,6 +7,7 @@ import { aiTextBlock } from './blocks/ai-text.js';
 import { videoPromptBlocks } from './blocks/ai-video-prompt.js';
 import { aiVisionBlock } from './blocks/ai-vision.js';
 import { bankAssetBlock } from './blocks/bank-asset.js';
+import { brandAssetBlock } from './blocks/brand-asset.js';
 import { brandmarkBlocks } from './blocks/brandmark.js';
 import { cadBlocks } from './blocks/cad.js';
 import { collectionBlocks } from './blocks/collection.js';
@@ -81,6 +82,7 @@ export function registerCoreBlocks(): void {
 	// de começar do zero.
 	for (const b of collectionImageBlocks) blockRegistry.register(b);
 	blockRegistry.register(bankAssetBlock);
+	blockRegistry.register(brandAssetBlock);
 	// CAD paramétrico — gerador, nesting e prévia saem da mesma IR (`lib/cad/*`);
 	// os export de arquivo ficam separados porque são os únicos que tocam storage.
 	for (const b of [...cadBlocks, ...outputCadBlocks]) blockRegistry.register(b);
