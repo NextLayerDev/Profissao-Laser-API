@@ -1,10 +1,12 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { authenticateCustomer } from '../middleware/auth.js';
 import {
+	arquivarDoCliente,
 	buscarPorCodigo,
 	listarDoCliente,
 } from '../repositories/licensed-art.js';
+import { licensedBrandRepository } from '../repositories/licensed-brand.js';
 import { ErrorSchema } from '../types/error.js';
 
 const codigoParams = z.object({ code: z.string().min(6).max(64) });
@@ -17,6 +19,10 @@ const verificacaoSchema = z.object({
 	content: z.string(),
 	featureKey: z.string(),
 	licensorName: z.string().nullable(),
+	/** O cadastro atual da marca — o escudo é o que identifica o licenciante. */
+	brandName: z.string().nullable(),
+	crestUrl: z.string().nullable(),
+	accentColor: z.string().nullable(),
 	previewUrl: z.string().nullable(),
 	issuedAt: z.string(),
 	checkedAt: z.string(),
@@ -30,6 +36,7 @@ const minhaArteSchema = z.object({
 	previewUrl: z.string().nullable(),
 	promptTitle: z.string().nullable(),
 	revoked: z.boolean(),
+	archived: z.boolean(),
 	issuedAt: z.string(),
 });
 
@@ -65,6 +72,24 @@ export async function licensedArtRoute(server: FastifyInstance) {
 					.send({ message: 'Código não encontrado.', code: 'not_found' });
 			}
 
+			// O escudo e a cor da marca vêm do cadastro ATUAL, e o nome congelado na
+			// licença fica de reserva: se a marca saiu do cadastro depois de a peça
+			// existir, o QR gravado tem de continuar dizendo quem licenciou.
+			//
+			// Marca inativa (contrato encerrado) NÃO some daqui: o veredito da peça
+			// é `revoked_at`, não o estado do contrato de hoje.
+			//
+			// Falha na busca da marca não derruba a verificação — a resposta à
+			// pergunta "isto é oficial?" não depende de decoração.
+			let marca: Awaited<
+				ReturnType<typeof licensedBrandRepository.findByFeatureKey>
+			> = null;
+			try {
+				marca = await licensedBrandRepository.findByFeatureKey(art.feature_key);
+			} catch (err) {
+				request.log.warn({ err }, 'marca da peça não pôde ser lida');
+			}
+
 			// Cacheável por CDN: a resposta é a mesma para todo mundo e não carrega
 			// nada do comprador. Curto porque revogação precisa aparecer rápido.
 			reply.header('Cache-Control', 'public, max-age=60');
@@ -73,9 +98,14 @@ export async function licensedArtRoute(server: FastifyInstance) {
 				code: art.code,
 				valid: !art.revoked_at,
 				status: art.revoked_at ? ('revoked' as const) : ('active' as const),
+				// `feature_key` é o último recurso, e é uma chave técnica: quem
+				// escaneia um chaveiro não deve ler "clube:corinthians".
 				content: art.prompt_title ?? art.licensor_name ?? art.feature_key,
 				featureKey: art.feature_key,
 				licensorName: art.licensor_name,
+				brandName: marca?.display_name ?? art.licensor_name,
+				crestUrl: marca?.crest_url ?? null,
+				accentColor: marca?.accent_color ?? null,
 				previewUrl: art.preview_url,
 				issuedAt: art.created_at,
 				checkedAt: new Date().toISOString(),
@@ -83,12 +113,24 @@ export async function licensedArtRoute(server: FastifyInstance) {
 		},
 	);
 
+	/**
+	 * `currentCustomer` é populado pelo authenticateCustomer para aluno; para
+	 * staff o middleware retorna cedo e só `currentUser` existe. As três rotas
+	 * da biblioteca leem o dono pelo MESMO caminho — se divergirem, alguém
+	 * consegue listar a própria peça e levar 404 ao arquivar.
+	 */
+	function donoDaBiblioteca(request: FastifyRequest): string | undefined {
+		return request.currentCustomer?.id ?? request.currentUser?.id;
+	}
+
 	server.get(
 		'/api/me/licensed-art',
 		{
 			preHandler: [authenticateCustomer],
 			schema: {
-				description: 'As artes licenciadas que eu gerei.',
+				description:
+					'As peças que eu gerei. `archived=true` traz as que eu arquivei.',
+				querystring: z.object({ archived: z.string().optional() }),
 				response: {
 					200: z.array(minhaArteSchema),
 					401: ErrorSchema,
@@ -98,16 +140,17 @@ export async function licensedArtRoute(server: FastifyInstance) {
 			},
 		},
 		async (request, reply) => {
-			// `currentCustomer` é populado pelo authenticateCustomer para aluno;
-			// para staff o middleware retorna cedo e só `currentUser` existe.
-			const customerId = request.currentCustomer?.id ?? request.currentUser?.id;
+			const customerId = donoDaBiblioteca(request);
 			if (!customerId) {
 				return reply
 					.status(401)
 					.send({ message: 'Não autenticado.', code: 'unauthorized' });
 			}
 
-			const artes = await listarDoCliente(customerId);
+			const q = request.query as { archived?: string };
+			const artes = await listarDoCliente(customerId, {
+				arquivadas: q.archived === 'true',
+			});
 			return reply.send(
 				artes.map((a) => ({
 					id: a.id,
@@ -117,9 +160,71 @@ export async function licensedArtRoute(server: FastifyInstance) {
 					previewUrl: a.preview_url,
 					promptTitle: a.prompt_title,
 					revoked: Boolean(a.revoked_at),
+					archived: Boolean(a.archived_at),
 					issuedAt: a.created_at,
 				})),
 			);
 		},
 	);
+
+	/**
+	 * Arquivar e desarquivar são a mesma coisa no mesmo caminho: POST guarda,
+	 * DELETE traz de volta. Em lugar nenhum da API isto se chama "apagar",
+	 * porque não é o que acontece — a licença e o QR seguem valendo.
+	 */
+	for (const [metodo, arquivar] of [
+		['post', true],
+		['delete', false],
+	] as const) {
+		server[metodo](
+			'/api/me/licensed-art/:id/archive',
+			{
+				preHandler: [authenticateCustomer],
+				schema: {
+					description: arquivar
+						? 'Tira a peça da minha biblioteca. A licença continua válida.'
+						: 'Traz a peça de volta para a minha biblioteca.',
+					params: z.object({ id: z.string().uuid() }),
+					response: {
+						200: minhaArteSchema,
+						401: ErrorSchema,
+						404: ErrorSchema,
+						500: ErrorSchema,
+					},
+					tags: ['Licensed Art'],
+				},
+			},
+			async (request, reply) => {
+				const customerId = donoDaBiblioteca(request);
+				if (!customerId) {
+					return reply
+						.status(401)
+						.send({ message: 'Não autenticado.', code: 'unauthorized' });
+				}
+
+				const { id } = request.params as { id: string };
+				const art = await arquivarDoCliente(id, customerId, arquivar);
+				// Peça de outra pessoa e peça inexistente dão a MESMA resposta: um
+				// 403 aqui confirmaria a existência de um id que não é de quem
+				// pergunta.
+				if (!art) {
+					return reply
+						.status(404)
+						.send({ message: 'Peça não encontrada.', code: 'not_found' });
+				}
+
+				return reply.send({
+					id: art.id,
+					code: art.code,
+					featureKey: art.feature_key,
+					licensorName: art.licensor_name,
+					previewUrl: art.preview_url,
+					promptTitle: art.prompt_title,
+					revoked: Boolean(art.revoked_at),
+					archived: Boolean(art.archived_at),
+					issuedAt: art.created_at,
+				});
+			},
+		);
+	}
 }

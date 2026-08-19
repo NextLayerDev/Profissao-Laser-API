@@ -16,6 +16,8 @@ export interface LicensedArt {
 	prompt_title: string | null;
 	revoked_at: string | null;
 	revoke_reason: string | null;
+	/** Quando o aluno tirou a peça da biblioteca dele. Nulo = visível. */
+	archived_at: string | null;
 	created_at: string;
 }
 
@@ -87,7 +89,12 @@ export async function buscarPorInvocacao(
 	return (data as LicensedArt) ?? null;
 }
 
-/** A busca do QR público: bate no hash, nunca no código em claro. */
+/**
+ * A busca do QR público: bate no hash, nunca no código em claro.
+ *
+ * NÃO filtra `archived_at` — e não pode. Arquivar é arrumação da estante do
+ * aluno; o QR gravado na peça física continua tendo de resolver.
+ */
 export async function buscarPorCodigo(
 	codigo: string,
 ): Promise<LicensedArt | null> {
@@ -99,8 +106,18 @@ export async function buscarPorCodigo(
 	return (data as LicensedArt) ?? null;
 }
 
+/**
+ * A biblioteca do aluno — as ativas por padrão, as arquivadas sob pedido.
+ *
+ * O corte de arquivadas é feito em MEMÓRIA, e não no `where`, para a coluna
+ * poder nascer sem deploy coordenado: enquanto `archived_at` não existir, o
+ * `select('*')` simplesmente não a traz, o campo fica indefinido e toda peça
+ * conta como ativa — em vez de a listagem inteira morrer com "column does not
+ * exist". A conta é barata: a lista já é do dono e tem teto.
+ */
 export async function listarDoCliente(
 	customerId: string,
+	opts: { arquivadas?: boolean } = {},
 	limite = 50,
 ): Promise<LicensedArt[]> {
 	const { data } = await supabase
@@ -108,8 +125,43 @@ export async function listarDoCliente(
 		.select('*')
 		.eq('customer_id', customerId)
 		.order('created_at', { ascending: false })
-		.limit(limite);
-	return (data as LicensedArt[]) ?? [];
+		// Folga sobre o teto: sem ela, arquivar peças recentes ia comendo lugar
+		// da página e a biblioteca encolhia a cada arrumação.
+		.limit(limite * 4);
+	const linhas = (data as LicensedArt[]) ?? [];
+	return linhas
+		.filter((a) => (opts.arquivadas ? !!a.archived_at : !a.archived_at))
+		.slice(0, limite);
+}
+
+/**
+ * Arquivar tira a peça da biblioteca — e NÃO apaga a licença.
+ *
+ * O QR dela pode já estar gravado num chaveiro que saiu daqui. Apagar a linha
+ * transformaria esse QR num 404, e a página pública lê código inexistente como
+ * sinal de falsificação: o aluno arrumando a própria estante acabaria acusando
+ * a própria peça. Por isso é reversível, e por isso `buscarPorCodigo` não olha
+ * `archived_at`.
+ *
+ * O `customer_id` no filtro é a AUTORIZAÇÃO: sem ele, o id de uma peça alheia
+ * bastaria para sumir com a peça de outra pessoa.
+ */
+export async function arquivarDoCliente(
+	id: string,
+	customerId: string,
+	arquivar: boolean,
+): Promise<LicensedArt | null> {
+	const { data, error } = await supabase
+		.from(TABELA)
+		.update({ archived_at: arquivar ? new Date().toISOString() : null })
+		.eq('id', id)
+		.eq('customer_id', customerId)
+		.select('*')
+		.maybeSingle();
+	// Sem `.is('archived_at', null)` de propósito: repetir a operação devolve a
+	// mesma peça em vez de um 404 inventado. Arquivar duas vezes é arquivado.
+	if (error) throw new Error(`arquivarDoCliente: ${error.message}`);
+	return (data as LicensedArt) ?? null;
 }
 
 /** Revogação de staff. A peça continua existindo; o que muda é o veredito. */
