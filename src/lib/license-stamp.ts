@@ -51,15 +51,17 @@ function fonte(): opentype.Font {
 	return fonteCache;
 }
 
-/** Tinta e chapa do carimbo. */
+/** A tinta do carimbo. Não há chapa: o fundo é transparente. */
 const TINTA = '#111111';
-const CHAPA = '#ffffff';
 
 /**
- * A chapa é SEMPRE branca e a tinta SEMPRE escura, e isso não é preguiça de
- * medir contraste: um QR só é lido pela câmera em escuro-sobre-claro. Fixar as
- * duas cores garante a leitura em qualquer arte — e, na peça gravada, uma chapa
- * branca é exatamente "não queime aqui", que é o que a máquina precisa saber.
+ * FUNDO TRANSPARENTE, tinta escura.
+ *
+ * Numa arte de laser, transparente quer dizer "não queime aqui" — que é
+ * exatamente o que o fundo do QR precisa ser para os módulos escuros lerem por
+ * contraste contra o material cru. Uma chapa branca opaca faria a mesma coisa
+ * na máquina, mas apagaria o que estivesse embaixo, e o carimbo NÃO fica em
+ * cima da arte (ver `carimbarPeca`).
  */
 export interface CarimboOpts {
 	/** O código em claro, como sai de `gerarCodigoLicenca`. */
@@ -193,8 +195,8 @@ export async function carimbarPeca(
 		const l1 = textoComoPaths(a, alturaTexto);
 		const l2 = b ? textoComoPaths(b, alturaTexto) : { paths: '', largura: 0 };
 		larguraTexto = Math.ceil(Math.max(l1.largura, l2.largura));
-		const baseX = respiro + qr + respiro;
-		const baseY = respiro + Math.round(qr * 0.42);
+		const baseX = qr + respiro;
+		const baseY = Math.round(qr * 0.42);
 		paths =
 			`<g fill="${TINTA}">` +
 			`<g transform="translate(${baseX} ${baseY})">${l1.paths}</g>` +
@@ -211,50 +213,58 @@ export async function carimbarPeca(
 		paths = '';
 	}
 
-	const chapaL =
-		respiro + qr + (larguraTexto ? respiro + larguraTexto : 0) + respiro;
-	const chapaA = respiro + qr + respiro;
-	const raio = Math.round(respiro * 0.6);
+	const selo = qr + (larguraTexto ? respiro + larguraTexto : 0);
+	const banda = qr + respiro * 2;
 
-	// O fio de contorno existe porque a arte de laser é BRANCA: sem ele a chapa
-	// branca some no fundo e o QR parece flutuar solto sobre o desenho.
-	const fio = Math.max(1, Math.round(qr * 0.012));
-	const chapa = Buffer.from(
-		`<svg xmlns="http://www.w3.org/2000/svg" width="${chapaL}" height="${chapaA}" viewBox="0 0 ${chapaL} ${chapaA}">` +
-			`<rect x="${fio / 2}" y="${fio / 2}" width="${chapaL - fio}" height="${chapaA - fio}" rx="${raio}" ry="${raio}" fill="${CHAPA}" stroke="${TINTA}" stroke-width="${fio}"/>` +
-			paths +
-			`</svg>`,
+	const texto = Buffer.from(
+		`<svg xmlns="http://www.w3.org/2000/svg" width="${selo}" height="${qr}" viewBox="0 0 ${selo} ${qr}">${paths}</svg>`,
 	);
 
 	// O QR sai como PNG e é composto por cima: pixel exato, sem passar por
 	// renderizador de SVG. Nível H (30% de redundância) porque ele vai gravado
-	// em acrílico ou metal e fotografado de lado, com risco e reflexo.
+	// em acrílico ou metal e fotografado de lado, com risco e reflexo. O fundo
+	// claro é TRANSPARENTE — na peça, "não queime aqui".
 	const qrPng = await QRCode.toBuffer(opts.url, {
 		errorCorrectionLevel: 'H',
 		type: 'png',
 		width: qr,
 		margin: 0,
-		color: { dark: TINTA, light: CHAPA },
+		color: { dark: TINTA, light: '#00000000' },
 	});
 
 	/**
-	 * O canto de baixo, o mais encostado possível — o carimbo é obrigatório, e
-	 * por isso tem de atrapalhar a arte o mínimo que der.
+	 * O CARIMBO NÃO FICA EM CIMA DA ARTE.
 	 *
-	 * A exceção é a arte PANORÂMICA (wrap 360°): ali os 8% externos de cada lado
-	 * são zona de emenda, e carimbo encostado na borda quebraria a costura da
-	 * caneca. Só nesse caso o recuo da direita cresce.
+	 * A tela cresce para baixo e o selo mora na faixa nova. Foi a correção de um
+	 * defeito visto na peça: no chaveiro, o carimbo caía por cima do nome
+	 * gravado. Uma arte licenciada não pode ser estragada pela marca que a
+	 * autentica — e o operador ainda ganha uma área separada, que ele posiciona
+	 * ou apara como quiser.
+	 *
+	 * O recuo da direita só cresce na arte PANORÂMICA: no wrap 360° os 8%
+	 * externos de cada lado são zona de emenda, e selo ali quebraria a costura
+	 * da caneca.
 	 */
 	const panoramica = W / H >= 2;
-	const margemX = panoramica ? Math.round(W * 0.1) : Math.round(menor * 0.02);
-	const margemY = Math.round(menor * 0.02);
-	const left = Math.max(0, W - chapaL - margemX);
-	const top = Math.max(0, H - chapaA - margemY);
+	const margemX = panoramica ? Math.round(W * 0.1) : respiro;
+	const left = Math.max(0, W - selo - margemX);
+	const top = H + respiro;
 
-	const png = await sharp(master)
+	const png = await sharp({
+		create: {
+			width: W,
+			height: H + banda,
+			channels: 4,
+			// Fundo transparente: nada é pintado onde não há arte nem carimbo.
+			background: { r: 0, g: 0, b: 0, alpha: 0 },
+		},
+	})
 		.composite([
-			{ input: chapa, left, top },
-			{ input: qrPng, left: left + respiro, top: top + respiro },
+			{ input: master, left: 0, top: 0 },
+			{ input: qrPng, left, top },
+			// O SVG do texto tem a largura do selo inteiro e já traz o deslocamento
+			// interno para depois do QR — por isso os dois entram na MESMA origem.
+			{ input: texto, left, top },
 		])
 		.png()
 		.toBuffer();
@@ -264,9 +274,9 @@ export async function carimbarPeca(
 		area: {
 			left,
 			top,
-			width: chapaL,
-			height: chapaA,
-			qr: { left: left + respiro, top: top + respiro, size: qr },
+			width: selo,
+			height: qr,
+			qr: { left, top, size: qr },
 		},
 		aviso,
 	};

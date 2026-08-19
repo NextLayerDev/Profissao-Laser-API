@@ -6,7 +6,7 @@ import { isStaffRole } from '../lib/external-auth.js';
 import { IMAGE_MODELS_CATALOG } from '../lib/image-models-catalog.js';
 import { urlPublicaDaPeca } from '../lib/license-code.js';
 import { carimbarPeca } from '../lib/license-stamp.js';
-import { uploadToolOutput } from '../lib/storage.js';
+import { deleteByUrl, uploadToolOutput } from '../lib/storage.js';
 import { TEXT_MODELS_CATALOG } from '../lib/text-models-catalog.js';
 import {
 	resolveCreation,
@@ -39,7 +39,7 @@ import {
 	settleInvocation,
 } from '../lib/upvox-tools.js';
 import { imageSizePresetRepository } from '../repositories/image-size-preset.js';
-import { anexarArte, emitirLicenca } from '../repositories/licensed-art.js';
+import { anexarArtes, emitirLote } from '../repositories/licensed-art.js';
 import { toolBankRepository } from '../repositories/tool-bank.js';
 import { registerCoreBlocks } from '../tool-blocks/index.js';
 import type { ToolBankEntry } from '../types/tool-bank.js';
@@ -76,6 +76,13 @@ const ALLOWED_FILE_EXT = new Set(['dxf', 'svg', 'lbrn2', 'csv', 'json', 'txt']);
  */
 const MAX_FILE_BYTES =
 	Number(process.env.TOOL_MAX_FILE_BYTES) || 25 * 1024 * 1024;
+
+/**
+ * Teto de peças por lote. 50 peças de ~3 MB são ~150 MB de egress e alguns
+ * segundos de CPU a quatro em voo — acima disso a rodada começa a competir com
+ * os picos de memória do encoder de vídeo no mesmo processo.
+ */
+const MAX_TIRAGEM = Number(process.env.TOOL_MAX_PRINT_RUN) || 50;
 
 interface ToolRunParams {
 	key: string;
@@ -474,12 +481,17 @@ function licenseFeatureKeyOf(entry?: ToolBankEntry): string | null {
  * passar — mexer na definition passa a ser uma queda barulhenta, não um
  * vazamento silencioso.
  */
-async function carimbarEEnviar(args: {
+async function carimbarLote(args: {
 	doc: ToolDefinitionDoc;
 	bag: Record<string, unknown>;
 	customerId: string;
-	code: string;
-}): Promise<{ url: string; thumb: string; aviso?: string }> {
+	batchId: string;
+	pecas: { id: string; code: string; piece_index: number }[];
+}): Promise<{
+	entregues: { id: string; index: number; code: string; url: string }[];
+	thumb: string;
+	aviso?: string;
+}> {
 	const chave = args.doc.licensing?.master;
 	if (!chave) {
 		throw new Error(
@@ -493,29 +505,85 @@ async function carimbarEEnviar(args: {
 		);
 	}
 
-	const { png, aviso } = await carimbarPeca(master, {
-		code: args.code,
-		url: urlPublicaDaPeca(args.code),
+	// Decodifica o PNG UMA vez e reusa os pixels crus em todas as peças. Sem
+	// isto, um lote de 50 paga 50 decodificações do mesmo master — segundos de
+	// CPU jogados fora, e o master é grande.
+	const cru = await sharp(master).ensureAlpha().raw().toBuffer({
+		resolveWithObject: true,
 	});
+	const base = () =>
+		sharp(cru.data, {
+			raw: {
+				width: cru.info.width,
+				height: cru.info.height,
+				channels: cru.info.channels,
+			},
+		})
+			.png()
+			.toBuffer();
 
-	const url = await uploadToolOutput(
-		`arte-licenciada/${args.customerId}`,
-		png,
-		`${args.code}.png`,
-		'image/png',
+	const entregues: {
+		id: string;
+		index: number;
+		code: string;
+		url: string;
+	}[] = [];
+	let aviso: string | undefined;
+	let primeiroPng: Buffer | undefined;
+
+	// Quatro em voo: o suficiente para o lote não ficar serial, longe o bastante
+	// do pico de RAM que o encoder de vídeo já mostrou ser real neste processo.
+	const FILA = 4;
+	let proxima = 0;
+	async function trabalhador() {
+		for (;;) {
+			const i = proxima++;
+			if (i >= args.pecas.length) return;
+			const peca = args.pecas[i];
+			const { png, aviso: a } = await carimbarPeca(await base(), {
+				code: peca.code,
+				url: urlPublicaDaPeca(peca.code),
+			});
+			if (a && !aviso) aviso = a;
+			if (peca.piece_index === 1) primeiroPng = png;
+			// O NOME DO ARQUIVO É O CÓDIGO, e o lote vive numa pasta só: é o que o
+			// operador precisa no chão de fábrica para achar a peça 23 de 50 e
+			// conferir o código gravado sem abrir o arquivo.
+			const url = await uploadToolOutput(
+				`arte-licenciada/${args.customerId}/${args.batchId}`,
+				png,
+				`${String(peca.piece_index).padStart(3, '0')}-${peca.code}.png`,
+				'image/png',
+			);
+			entregues.push({
+				id: peca.id,
+				index: peca.piece_index,
+				code: peca.code,
+				url,
+			});
+		}
+	}
+	await Promise.all(
+		Array.from({ length: Math.min(FILA, args.pecas.length) }, trabalhador),
 	);
+	entregues.sort((a, b) => a.index - b.index);
 
 	// A prévia da tela é reduzida e é da peça JÁ CARIMBADA. Devolver o master em
 	// base64 — o que a definition fazia — era a segunda porta por onde a arte
 	// limpa saía em alta resolução.
-	const thumb = await sharp(png)
+	// A prévia é achatada sobre branco DE PROPÓSITO: a peça entregue tem fundo
+	// transparente (na máquina, "não queime aqui"), e sobre a tela escura do app
+	// o carimbo preto sumiria. O arquivo continua com alfa — quem muda é só a
+	// miniatura.
+	const thumbBuf = await sharp(primeiroPng ?? (await base()))
+		.flatten({ background: '#ffffff' })
 		.resize(512, 512, { fit: 'inside', withoutEnlargement: true })
 		.webp({ quality: 82 })
 		.toBuffer();
 
 	return {
-		url,
-		thumb: `data:image/webp;base64,${thumb.toString('base64')}`,
+		entregues,
+		thumb: `data:image/webp;base64,${thumbBuf.toString('base64')}`,
 		aviso,
 	};
 }
@@ -556,26 +624,6 @@ function licensorNameOf(entry?: ToolBankEntry): string | null {
 }
 
 /**
- * A URL da arte dentro da saída do pipeline.
- *
- * O nome do campo de saída é escolhido na definition e varia por tool, então
- * procuramos a primeira URL http(s) em vez de fixar uma chave — fixar quebraria
- * em silêncio na primeira tool que nomeasse diferente.
- */
-function firstUrlOf(output: Record<string, unknown>): string | null {
-	for (const valor of Object.values(output)) {
-		if (typeof valor === 'string' && /^https?:\/\//.test(valor)) return valor;
-		if (Array.isArray(valor)) {
-			const achado = valor.find(
-				(v) => typeof v === 'string' && /^https?:\/\//.test(v),
-			);
-			if (typeof achado === 'string') return achado;
-		}
-	}
-	return null;
-}
-
-/**
  * Um "respondedor": ou a resposta HTTP normal, ou frames SSE.
  *
  * Existe para que a rota de STREAMING e a normal compartilhem o MESMO caminho
@@ -595,6 +643,11 @@ async function executarRun(
 	const customerId = request.currentCustomer?.id;
 	const authHeader = request.headers.authorization;
 	let invocationId: string | null = null;
+	/**
+	 * Peças licenciadas ALÉM da primeira que a invocação comprou. `null` quando
+	 * a invocação é anterior à coluna — e aí a tiragem é de uma peça só.
+	 */
+	let gateLicenseUnits: number | null = null;
 	/** Recibo que ESTE run tomou (ver `reservarInvocacao`); devolvido no `finally`. */
 	let reservado: string | null = null;
 
@@ -877,6 +930,7 @@ async function executarRun(
 				return recusar(402, 'billing_required');
 			}
 			invocationId = gate.mode === 'paid' ? gate.invocationId : null;
+			gateLicenseUnits = gate.mode === 'paid' ? gate.licenseUnits : null;
 
 			/**
 			 * ┌─ PAGOU POR UMA, PEDIU QUATRO ───────────────────────────────────────┐
@@ -1058,57 +1112,96 @@ async function executarRun(
 		// prompt licenciado.
 		let license: IssuedArtLicense | undefined;
 		if (featureKey) {
+			/**
+			 * A TIRAGEM É A QUE FOI PAGA, nunca a que foi pedida.
+			 *
+			 * `gate.licenseUnits` são as peças ALÉM da primeira que a invocação
+			 * comprou. Se o número não puder ser lido (invocação anterior à coluna),
+			 * o lote é de UMA peça.
+			 *
+			 * A assimetria contra as variações é deliberada. Lá, "não sei" entrega o
+			 * pedido, porque uma variação a menos custa ao aluno uma repetição. Aqui
+			 * "não sei" entrega uma peça, porque um código de licença a mais é dívida
+			 * com um terceiro cujo contrato é o produto inteiro. Nenhum dos dois
+			 * recusa a rodada: o aluno recebe arte e recebe código, só recebe menos
+			 * códigos.
+			 */
+			const compradas =
+				gateLicenseUnits === null ? 0 : Math.max(0, gateLicenseUnits);
+			const tiragem = Math.min(1 + compradas, MAX_TIRAGEM);
+			const batchId = crypto.randomUUID();
+			let subidas: string[] = [];
+
 			try {
-				const emitida = await emitirLicenca({
+				const pecas = await emitirLote({
 					customerId,
 					featureKey,
 					licensorName: licensorNameOf(selectedBankEntry),
 					toolKey: key,
-					// A rodada cobrada é a unidade de idempotência: reenvio devolve o
-					// mesmo código em vez de emitir um segundo.
+					// A rodada cobrada é a unidade de idempotência: reenvio devolve os
+					// MESMOS códigos em vez de emitir um segundo lote.
 					invocationId: invocationId ?? null,
-					// A arte é anexada DEPOIS do carimbo — o código precisa existir
-					// antes, porque é ele que vai desenhado dentro da peça.
-					previewUrl: null,
 					promptTitle: selectedBankEntry?.title ?? null,
+					batchId,
+					tamanho: tiragem,
 				});
 
-				const peca = await carimbarEEnviar({
+				const lote = await carimbarLote({
 					doc,
 					bag,
 					customerId,
-					code: emitida.art.code,
+					batchId: pecas[0]?.batch_id ?? batchId,
+					pecas: pecas.map((a) => ({
+						id: a.id,
+						code: a.code,
+						piece_index: a.piece_index,
+					})),
 				});
-				await anexarArte(emitida.art.id, peca.url);
+				subidas = lote.entregues.map((e) => e.url);
+				await anexarArtes(
+					lote.entregues.map((e) => ({ id: e.id, previewUrl: e.url })),
+				);
 
 				// O output projetado é DESCARTADO: numa rodada licenciada quem manda
 				// na resposta é o motor, não a definition. Assim nenhuma chave
 				// esquecida no `output` devolve o master por acidente.
 				output = {
-					primary: peca.url,
-					preview: peca.thumb,
-					pieces: [{ index: 1, code: emitida.art.code, url: peca.url }],
-					count: 1,
-					...(peca.aviso ? { stamp_warning: peca.aviso } : {}),
+					primary: lote.entregues[0]?.url,
+					preview: lote.thumb,
+					pieces: lote.entregues.map((e) => ({
+						index: e.index,
+						code: e.code,
+						url: e.url,
+					})),
+					count: lote.entregues.length,
+					...(lote.aviso ? { stamp_warning: lote.aviso } : {}),
 				};
 
+				const primeira = pecas[0];
 				license = {
-					code: emitida.art.code,
-					featureKey: emitida.art.feature_key,
-					licensorName: emitida.art.licensor_name,
-					issuedAt: emitida.art.created_at,
+					code: primeira.code,
+					featureKey: primeira.feature_key,
+					licensorName: primeira.licensor_name,
+					issuedAt: primeira.created_at,
 				};
 			} catch (err) {
-				// NUNCA entregar arte licenciada sem código NEM sem carimbo. Custa
-				// uma chamada de modelo desperdiçada; entregar a arte crua custaria a
-				// razão de ser do produto.
-				console.error('[tool-run] peça licenciada falhou:', err);
+				/**
+				 * TUDO OU NADA. Um lote entregue pela metade não tem meio-termo
+				 * possível: `refundInvocation` é tudo-ou-nada e só sai de `pending`,
+				 * então "estorno parcial" não existe como primitiva. Meio lote cobrado
+				 * cheio seria pior.
+				 *
+				 * Os arquivos já subidos são apagados — um PNG órfão no CDN é lixo
+				 * barato, e deixá-lo seria uma peça com código que o aluno não pagou.
+				 */
+				console.error('[tool-run] lote licenciado falhou:', err);
+				await Promise.all(subidas.map((u) => deleteByUrl(u).catch(() => {})));
 				if (invocationId) {
 					await refundInvocation(customerId, invocationId, authHeader);
 				}
 				return res.erro(
 					503,
-					'Não foi possível emitir a peça licenciada. Nada foi cobrado — tente de novo.',
+					'Não foi possível emitir as peças licenciadas. Nada foi cobrado — tente de novo.',
 				);
 			}
 		}

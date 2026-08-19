@@ -40,7 +40,8 @@ describe('carimbo de autenticidade', () => {
 
 		const meta = await sharp(png).metadata();
 		expect(meta.width).toBe(1200);
-		expect(meta.height).toBe(1200);
+		// A tela cresce para baixo: a faixa do carimbo é área NOVA, não é a arte.
+		expect(meta.height).toBeGreaterThan(1200);
 		expect(aviso).toBeUndefined();
 		expect(area.width).toBeGreaterThan(area.qr.size);
 	});
@@ -57,9 +58,10 @@ describe('carimbo de autenticidade', () => {
 			type: 'png',
 			width: area.qr.size,
 			margin: 0,
-			color: { dark: '#111111', light: '#ffffff' },
+			// Fundo transparente, como a peça de verdade.
+			color: { dark: '#111111', light: '#00000000' },
 		});
-		const esperadoRaw = await sharp(esperado).removeAlpha().raw().toBuffer();
+		const esperadoRaw = await sharp(esperado).ensureAlpha().raw().toBuffer();
 		const recorte = await sharp(png)
 			.extract({
 				left: area.qr.left,
@@ -67,7 +69,7 @@ describe('carimbo de autenticidade', () => {
 				width: area.qr.size,
 				height: area.qr.size,
 			})
-			.removeAlpha()
+			.ensureAlpha()
 			.raw()
 			.toBuffer();
 
@@ -86,9 +88,9 @@ describe('carimbo de autenticidade', () => {
 			type: 'png',
 			width: area.qr.size,
 			margin: 0,
-			color: { dark: '#111111', light: '#ffffff' },
+			color: { dark: '#111111', light: '#00000000' },
 		});
-		const outroRaw = await sharp(outro).removeAlpha().raw().toBuffer();
+		const outroRaw = await sharp(outro).ensureAlpha().raw().toBuffer();
 		const recorte = await sharp(png)
 			.extract({
 				left: area.qr.left,
@@ -96,7 +98,7 @@ describe('carimbo de autenticidade', () => {
 				width: area.qr.size,
 				height: area.qr.size,
 			})
-			.removeAlpha()
+			.ensureAlpha()
 			.raw()
 			.toBuffer();
 
@@ -160,34 +162,64 @@ describe('carimbo de autenticidade', () => {
 		const W = 2905;
 		const H = 1122;
 		const base = await arte(W, H, '#12212e');
-		const { png, area } = await carimbarPeca(base, { code: CODE, url: URL });
+		const { area } = await carimbarPeca(base, { code: CODE, url: URL });
 
 		expect(area.left + area.width).toBeLessThanOrEqual(Math.ceil(W * 0.92));
-
-		const zona = await cinzas(png, {
-			left: Math.ceil(W * 0.92),
-			top: 0,
-			width: W - Math.ceil(W * 0.92),
-			height: H,
-		});
-		expect(zona.filter((v) => v > 200).length).toBe(0);
 	});
 
-	it('a chapa fica clara mesmo em arte escura — o QR precisa disso', async () => {
-		// Fixar chapa clara e tinta escura não é preguiça de medir contraste:
-		// câmera só lê QR escuro sobre claro. Numa arte preta o carimbo tem de
-		// continuar claro, ou a peça sai com um QR que ninguém escaneia.
-		const base = await arte(1200, 1200, '#0b0b0d');
+	it('a arte sai INTOCADA — o carimbo não fica em cima dela', async () => {
+		/*
+		 * A prova mais forte que existe para "não estraga a arte": os pixels da
+		 * arte no arquivo entregue são BYTE A BYTE os do master. O carimbo mora
+		 * numa faixa que a tela ganhou embaixo.
+		 *
+		 * Isto nasceu de um defeito visto na peça: no chaveiro, o selo caiu por
+		 * cima do nome gravado. A marca que autentica a peça não pode estragá-la.
+		 */
+		const W = 1200;
+		const H = 900;
+		const base = await arte(W, H, '#ffffff');
+		const { png } = await carimbarPeca(base, { code: CODE, url: URL });
+
+		const meta = await sharp(png).metadata();
+		expect(meta.width).toBe(W);
+		expect(meta.height).toBeGreaterThan(H);
+
+		const original = await sharp(base).removeAlpha().raw().toBuffer();
+		const noArquivo = await sharp(png)
+			.extract({ left: 0, top: 0, width: W, height: H })
+			.removeAlpha()
+			.raw()
+			.toBuffer();
+		expect(noArquivo.equals(original)).toBe(true);
+	});
+
+	it('o fundo do carimbo é TRANSPARENTE, não branco', async () => {
+		// Na peça gravada, transparente é "não queime aqui" — que é o contraste
+		// de que o QR precisa. Um retângulo branco opaco apagaria o material.
+		const base = await arte(1200, 900, '#ffffff');
 		const { png, area } = await carimbarPeca(base, { code: CODE, url: URL });
 
-		const canto = await cinzas(png, {
-			left: area.left,
-			top: area.top,
-			width: area.width,
-			height: area.height,
-		});
-		expect(canto.filter((v) => v > 200).length).toBeGreaterThan(
-			canto.length * 0.3,
-		);
+		// Um pedaço da faixa fora do selo: tem de estar 100% transparente.
+		const canto = await sharp(png)
+			.extract({ left: 0, top: area.top, width: 60, height: area.height })
+			.ensureAlpha()
+			.raw()
+			.toBuffer();
+		const alfas = canto.filter((_v, i) => i % 4 === 3);
+		expect(alfas.every((a) => a === 0)).toBe(true);
+
+		// E o QR tem tinta de verdade: transparente não pode virar "vazio".
+		const noQr = await sharp(png)
+			.extract({
+				left: area.qr.left,
+				top: area.qr.top,
+				width: area.qr.size,
+				height: area.qr.size,
+			})
+			.ensureAlpha()
+			.raw()
+			.toBuffer();
+		expect(noQr.filter((_v, i) => i % 4 === 3).some((a) => a > 200)).toBe(true);
 	});
 });

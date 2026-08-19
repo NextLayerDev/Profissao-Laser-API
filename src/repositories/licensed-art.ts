@@ -18,6 +18,12 @@ export interface LicensedArt {
 	revoke_reason: string | null;
 	/** Quando o aluno tirou a peça da biblioteca dele. Nulo = visível. */
 	archived_at: string | null;
+	/** O lote a que a peça pertence. Nulo nas peças anteriores à tiragem. */
+	batch_id: string | null;
+	/** Posição no lote, de 1 a `batch_size`. */
+	piece_index: number;
+	/** Quantas peças o lote tem. */
+	batch_size: number;
 	created_at: string;
 }
 
@@ -76,6 +82,83 @@ export async function emitirLicenca(
 	}
 
 	return { art: data as LicensedArt, reused: false };
+}
+
+/**
+ * Emite as N peças de UM lote, com um código por peça.
+ *
+ * ┌─ A IDEMPOTÊNCIA MUDOU DE GRÃO ───────────────────────────────────────────┐
+ * │ Era por RODADA (`invocation_id` unique): reenvio devolvia o mesmo código. │
+ * │ Agora é por PEÇA da rodada (`invocation_id, piece_index`), porque uma     │
+ * │ rodada legitimamente emite N.                                             │
+ * │                                                                           │
+ * │ Uma retentativa relê o que já existe e insere SÓ os índices que faltam —  │
+ * │ nunca regera código de peça que já nasceu. Se o arquivo da peça 7 já foi  │
+ * │ entregue ao aluno, um retry que trocasse o código dela transformaria      │
+ * │ aquele QR gravado num código órfão.                                       │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * Sem `.upsert({ onConflict })` de propósito: o índice é PARCIAL (`where
+ * invocation_id is not null`) e o PostgREST não expõe a cláusula de predicado
+ * que o `ON CONFLICT` do Postgres exige para usar índice parcial como árbitro.
+ */
+export async function emitirLote(
+	input: EmitirLicencaInput & { batchId: string; tamanho: number },
+): Promise<LicensedArt[]> {
+	const existentes = input.invocationId
+		? await listarPorInvocacao(input.invocationId)
+		: [];
+	const jaTem = new Set(existentes.map((a) => a.piece_index));
+
+	const novas: Record<string, unknown>[] = [];
+	for (let i = 1; i <= input.tamanho; i++) {
+		if (jaTem.has(i)) continue;
+		const code = gerarCodigoLicenca();
+		novas.push({
+			customer_id: input.customerId,
+			feature_key: input.featureKey,
+			licensor_name: input.licensorName ?? null,
+			code,
+			code_hash: hashCodigo(code),
+			tool_key: input.toolKey,
+			invocation_id: input.invocationId ?? null,
+			preview_url: null,
+			prompt_title: input.promptTitle ?? null,
+			batch_id: input.batchId,
+			piece_index: i,
+			batch_size: input.tamanho,
+		});
+	}
+
+	if (novas.length > 0) {
+		const { error } = await supabase.from(TABELA).insert(novas);
+		// 23505: outra requisição da MESMA rodada ganhou a corrida. O lote dela é
+		// o certo — releremos tudo abaixo.
+		if (error && error.code !== '23505') {
+			throw new Error(`emitirLote: ${error.message}`);
+		}
+	}
+
+	const todas = input.invocationId
+		? await listarPorInvocacao(input.invocationId)
+		: [];
+	if (todas.length >= input.tamanho) return todas.slice(0, input.tamanho);
+	throw new Error(
+		`emitirLote: esperava ${input.tamanho} peças, encontrei ${todas.length}`,
+	);
+}
+
+/** As peças de uma rodada, em ordem de gravação. */
+export async function listarPorInvocacao(
+	invocationId: string,
+): Promise<LicensedArt[]> {
+	const { data, error } = await supabase
+		.from(TABELA)
+		.select('*')
+		.eq('invocation_id', invocationId)
+		.order('piece_index');
+	if (error) throw new Error(`listarPorInvocacao: ${error.message}`);
+	return (data as LicensedArt[]) ?? [];
 }
 
 export async function buscarPorInvocacao(
@@ -151,6 +234,13 @@ export async function anexarArte(
 		.update({ preview_url: previewUrl })
 		.eq('id', id);
 	if (error) throw new Error(`anexarArte: ${error.message}`);
+}
+
+/** O mesmo, para as N peças de um lote — uma ida ao banco por peça. */
+export async function anexarArtes(
+	pares: { id: string; previewUrl: string }[],
+): Promise<void> {
+	await Promise.all(pares.map((p) => anexarArte(p.id, p.previewUrl)));
 }
 
 /**

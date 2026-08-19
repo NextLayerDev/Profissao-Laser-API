@@ -22,7 +22,13 @@ async function upload(
 	return `https://${BUNNY_CDN_HOSTNAME}/${fullPath}`;
 }
 
-async function deleteByUrl(url: string): Promise<void> {
+/**
+ * Apaga um arquivo do storage pela URL pública que `upload` devolveu.
+ *
+ * Exportado porque a entrega de um LOTE é tudo-ou-nada: se a peça 37 falhar,
+ * as 36 que já subiram viram lixo com código que ninguém pagou.
+ */
+export async function deleteByUrl(url: string): Promise<void> {
 	const prefix = `https://${BUNNY_CDN_HOSTNAME}/`;
 	if (!url.startsWith(prefix)) return;
 	const filePath = url.slice(prefix.length);
