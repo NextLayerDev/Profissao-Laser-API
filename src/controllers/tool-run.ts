@@ -4,9 +4,12 @@ import sharp from 'sharp';
 import { aiRodaDeGraca, nadaAPagarNesteRun } from '../lib/atelie/ajustes.js';
 import { isStaffRole } from '../lib/external-auth.js';
 import { IMAGE_MODELS_CATALOG } from '../lib/image-models-catalog.js';
-import { urlPublicaDaPeca } from '../lib/license-code.js';
-import { carimbarPeca } from '../lib/license-stamp.js';
-import { deleteByUrl, uploadToolOutput } from '../lib/storage.js';
+import { carimbarLote, MAX_TIRAGEM } from '../lib/licensed-piece.js';
+import {
+	deleteByUrl,
+	fetchToolOutput,
+	uploadToolOutput,
+} from '../lib/storage.js';
 import { TEXT_MODELS_CATALOG } from '../lib/text-models-catalog.js';
 import {
 	resolveCreation,
@@ -39,7 +42,13 @@ import {
 	settleInvocation,
 } from '../lib/upvox-tools.js';
 import { imageSizePresetRepository } from '../repositories/image-size-preset.js';
-import { anexarArtes, emitirLote } from '../repositories/licensed-art.js';
+import {
+	anexarArtes,
+	anexarMaster,
+	atualizarTamanhoDoLote,
+	emitirLote,
+	listarLote,
+} from '../repositories/licensed-art.js';
 import { toolBankRepository } from '../repositories/tool-bank.js';
 import { registerCoreBlocks } from '../tool-blocks/index.js';
 import type { ToolBankEntry } from '../types/tool-bank.js';
@@ -76,13 +85,6 @@ const ALLOWED_FILE_EXT = new Set(['dxf', 'svg', 'lbrn2', 'csv', 'json', 'txt']);
  */
 const MAX_FILE_BYTES =
 	Number(process.env.TOOL_MAX_FILE_BYTES) || 25 * 1024 * 1024;
-
-/**
- * Teto de peças por lote. 50 peças de ~3 MB são ~150 MB de egress e alguns
- * segundos de CPU a quatro em voo — acima disso a rodada começa a competir com
- * os picos de memória do encoder de vídeo no mesmo processo.
- */
-const MAX_TIRAGEM = Number(process.env.TOOL_MAX_PRINT_RUN) || 50;
 
 interface ToolRunParams {
 	key: string;
@@ -469,123 +471,6 @@ function licenseFeatureKeyOf(entry?: ToolBankEntry): string | null {
 	// tratamos como "não licenciado" — melhor não emitir do que emitir com marca
 	// inválida.
 	return /^[a-z0-9]+:[a-z0-9-]+$/.test(chave) ? chave : null;
-}
-
-/**
- * Carimba a arte e sobe a peça. É o ponto onde a licença deixa de ser um dado
- * ao lado do arquivo e passa a ser parte dele.
- *
- * O master vem da BAG, não do `output`: `definition.output` é allow-list e, numa
- * tool licenciada, ele de propósito não expõe o buffer da arte. `licensing.master`
- * aponta a chave (`gen.png`), e a ausência dela derruba o run em vez de deixar
- * passar — mexer na definition passa a ser uma queda barulhenta, não um
- * vazamento silencioso.
- */
-async function carimbarLote(args: {
-	doc: ToolDefinitionDoc;
-	bag: Record<string, unknown>;
-	customerId: string;
-	batchId: string;
-	pecas: { id: string; code: string; piece_index: number }[];
-}): Promise<{
-	entregues: { id: string; index: number; code: string; url: string }[];
-	thumb: string;
-	aviso?: string;
-}> {
-	const chave = args.doc.licensing?.master;
-	if (!chave) {
-		throw new Error(
-			'definition licenciada sem `licensing.master` — o motor não sabe qual buffer carimbar',
-		);
-	}
-	const master = args.bag[chave];
-	if (!Buffer.isBuffer(master)) {
-		throw new Error(
-			`\`licensing.master\` aponta para '${chave}', que não é um buffer de imagem`,
-		);
-	}
-
-	// Decodifica o PNG UMA vez e reusa os pixels crus em todas as peças. Sem
-	// isto, um lote de 50 paga 50 decodificações do mesmo master — segundos de
-	// CPU jogados fora, e o master é grande.
-	const cru = await sharp(master).ensureAlpha().raw().toBuffer({
-		resolveWithObject: true,
-	});
-	const base = () =>
-		sharp(cru.data, {
-			raw: {
-				width: cru.info.width,
-				height: cru.info.height,
-				channels: cru.info.channels,
-			},
-		})
-			.png()
-			.toBuffer();
-
-	const entregues: {
-		id: string;
-		index: number;
-		code: string;
-		url: string;
-	}[] = [];
-	let aviso: string | undefined;
-	let primeiroPng: Buffer | undefined;
-
-	// Quatro em voo: o suficiente para o lote não ficar serial, longe o bastante
-	// do pico de RAM que o encoder de vídeo já mostrou ser real neste processo.
-	const FILA = 4;
-	let proxima = 0;
-	async function trabalhador() {
-		for (;;) {
-			const i = proxima++;
-			if (i >= args.pecas.length) return;
-			const peca = args.pecas[i];
-			const { png, aviso: a } = await carimbarPeca(await base(), {
-				code: peca.code,
-				url: urlPublicaDaPeca(peca.code),
-			});
-			if (a && !aviso) aviso = a;
-			if (peca.piece_index === 1) primeiroPng = png;
-			// O NOME DO ARQUIVO É O CÓDIGO, e o lote vive numa pasta só: é o que o
-			// operador precisa no chão de fábrica para achar a peça 23 de 50 e
-			// conferir o código gravado sem abrir o arquivo.
-			const url = await uploadToolOutput(
-				`arte-licenciada/${args.customerId}/${args.batchId}`,
-				png,
-				`${String(peca.piece_index).padStart(3, '0')}-${peca.code}.png`,
-				'image/png',
-			);
-			entregues.push({
-				id: peca.id,
-				index: peca.piece_index,
-				code: peca.code,
-				url,
-			});
-		}
-	}
-	await Promise.all(
-		Array.from({ length: Math.min(FILA, args.pecas.length) }, trabalhador),
-	);
-	entregues.sort((a, b) => a.index - b.index);
-
-	// A prévia da tela é reduzida e é da peça JÁ CARIMBADA. Devolver o master em
-	// base64 — o que a definition fazia — era a segunda porta por onde a arte
-	// limpa saía em alta resolução.
-	// A prévia é achatada sobre branco DE PROPÓSITO: a peça entregue tem fundo
-	// transparente (na máquina, "não queime aqui"), e sobre a tela escura do app
-	// o carimbo preto sumiria. O arquivo continua com alfa — quem muda é só a
-	// miniatura.
-	const thumbBuf = await sharp(primeiroPng ?? (await base()))
-		.flatten({ background: '#ffffff' })
-		.resize(512, 512, { fit: 'inside', withoutEnlargement: true })
-		.webp({ quality: 82 })
-		.toBuffer();
-
-	return {
-		entregues,
-		thumb: `data:image/webp;base64,${thumbBuf.toString('base64')}`,
-		aviso,
-	};
 }
 
 /**
@@ -1161,6 +1046,28 @@ async function executarRun(
 				await anexarArtes(
 					lote.entregues.map((e) => ({ id: e.id, previewUrl: e.url })),
 				);
+
+				/**
+				 * A ARTE-MÃE FICA GUARDADA, e o endereço dela nunca sai daqui.
+				 *
+				 * É o que permite ampliar a tiragem depois sem rodar o modelo de
+				 * novo — que importa porque a tiragem é escolhida ANTES de a arte
+				 * existir, e ninguém encomenda 50 peças no escuro.
+				 *
+				 * Best-effort: falhar aqui custa a possibilidade de ampliar, não o
+				 * lote que o aluno acabou de pagar.
+				 */
+				try {
+					const masterUrl = await uploadToolOutput(
+						`arte-licenciada-master/${customerId}`,
+						lote.master,
+						`${batchId}.png`,
+						'image/png',
+					);
+					await anexarMaster(pecas[0]?.batch_id ?? batchId, masterUrl);
+				} catch (err) {
+					console.error('[tool-run] arte-mãe não pôde ser guardada:', err);
+				}
 
 				// O output projetado é DESCARTADO: numa rodada licenciada quem manda
 				// na resposta é o motor, não a definition. Assim nenhuma chave

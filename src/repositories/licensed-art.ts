@@ -24,6 +24,8 @@ export interface LicensedArt {
 	piece_index: number;
 	/** Quantas peças o lote tem. */
 	batch_size: number;
+	/** Caminho da arte-mãe sem carimbo. NUNCA sai para o cliente. */
+	master_path: string | null;
 	created_at: string;
 }
 
@@ -103,15 +105,27 @@ export async function emitirLicenca(
  * que o `ON CONFLICT` do Postgres exige para usar índice parcial como árbitro.
  */
 export async function emitirLote(
-	input: EmitirLicencaInput & { batchId: string; tamanho: number },
+	input: EmitirLicencaInput & {
+		batchId: string;
+		tamanho: number;
+		/**
+		 * Primeiro índice deste lote. 1 numa rodada nova; numa AMPLIAÇÃO, o
+		 * próximo depois da última peça já emitida — "peça 23 de 50" tem de
+		 * continuar significando uma peça só.
+		 */
+		inicio?: number;
+		masterPath?: string | null;
+	},
 ): Promise<LicensedArt[]> {
 	const existentes = input.invocationId
 		? await listarPorInvocacao(input.invocationId)
 		: [];
 	const jaTem = new Set(existentes.map((a) => a.piece_index));
+	const inicio = input.inicio ?? 1;
+	const fim = inicio + input.tamanho - 1;
 
 	const novas: Record<string, unknown>[] = [];
-	for (let i = 1; i <= input.tamanho; i++) {
+	for (let i = inicio; i <= fim; i++) {
 		if (jaTem.has(i)) continue;
 		const code = gerarCodigoLicenca();
 		novas.push({
@@ -126,7 +140,8 @@ export async function emitirLote(
 			prompt_title: input.promptTitle ?? null,
 			batch_id: input.batchId,
 			piece_index: i,
-			batch_size: input.tamanho,
+			batch_size: fim,
+			master_path: input.masterPath ?? null,
 		});
 	}
 
@@ -146,6 +161,39 @@ export async function emitirLote(
 	throw new Error(
 		`emitirLote: esperava ${input.tamanho} peças, encontrei ${todas.length}`,
 	);
+}
+
+/**
+ * O lote inteiro do dono, em ordem de gravação.
+ *
+ * O `customer_id` no filtro é a AUTORIZAÇÃO: ampliar uma tiragem cria licenças
+ * novas, e um `batch_id` adivinhado não pode virar peça na conta de outra
+ * pessoa.
+ */
+export async function listarLote(
+	batchId: string,
+	customerId: string,
+): Promise<LicensedArt[]> {
+	const { data, error } = await supabase
+		.from(TABELA)
+		.select('*')
+		.eq('batch_id', batchId)
+		.eq('customer_id', customerId)
+		.order('piece_index');
+	if (error) throw new Error(`listarLote: ${error.message}`);
+	return (data as LicensedArt[]) ?? [];
+}
+
+/** Acerta o tamanho declarado em TODAS as peças depois de o lote crescer. */
+export async function atualizarTamanhoDoLote(
+	batchId: string,
+	tamanho: number,
+): Promise<void> {
+	const { error } = await supabase
+		.from(TABELA)
+		.update({ batch_size: tamanho })
+		.eq('batch_id', batchId);
+	if (error) throw new Error(`atualizarTamanhoDoLote: ${error.message}`);
 }
 
 /** As peças de uma rodada, em ordem de gravação. */
@@ -241,6 +289,21 @@ export async function anexarArtes(
 	pares: { id: string; previewUrl: string }[],
 ): Promise<void> {
 	await Promise.all(pares.map((p) => anexarArte(p.id, p.previewUrl)));
+}
+
+/**
+ * Guarda o caminho da arte-mãe nas peças do lote. É o que permite ampliar a
+ * tiragem depois sem rodar o modelo de novo.
+ */
+export async function anexarMaster(
+	batchId: string,
+	masterPath: string,
+): Promise<void> {
+	const { error } = await supabase
+		.from(TABELA)
+		.update({ master_path: masterPath })
+		.eq('batch_id', batchId);
+	if (error) throw new Error(`anexarMaster: ${error.message}`);
 }
 
 /**

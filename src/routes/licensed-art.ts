@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { ampliarLoteLicenciado } from '../lib/licensed-piece.js';
 import { authenticateCustomer } from '../middleware/auth.js';
 import {
 	arquivarDoCliente,
@@ -37,6 +38,12 @@ const minhaArteSchema = z.object({
 	promptTitle: z.string().nullable(),
 	revoked: z.boolean(),
 	archived: z.boolean(),
+	/** O lote a que a peça pertence, e a posição dela nele. */
+	batchId: z.string().nullable(),
+	pieceIndex: z.number(),
+	batchSize: z.number(),
+	/** A tiragem deste lote pode crescer? (só se a arte-mãe foi guardada) */
+	canGrow: z.boolean(),
 	issuedAt: z.string(),
 });
 
@@ -161,6 +168,10 @@ export async function licensedArtRoute(server: FastifyInstance) {
 					promptTitle: a.prompt_title,
 					revoked: Boolean(a.revoked_at),
 					archived: Boolean(a.archived_at),
+					batchId: a.batch_id,
+					pieceIndex: a.piece_index,
+					batchSize: a.batch_size,
+					canGrow: Boolean(a.batch_id && a.master_path),
 					issuedAt: a.created_at,
 				})),
 			);
@@ -222,9 +233,83 @@ export async function licensedArtRoute(server: FastifyInstance) {
 					promptTitle: art.prompt_title,
 					revoked: Boolean(art.revoked_at),
 					archived: Boolean(art.archived_at),
+					batchId: art.batch_id,
+					pieceIndex: art.piece_index,
+					batchSize: art.batch_size,
+					canGrow: Boolean(art.batch_id && art.master_path),
 					issuedAt: art.created_at,
 				});
 			},
 		);
 	}
+
+	/**
+	 * Ampliar a tiragem de um lote que já existe: mais peças da MESMA arte, sem
+	 * rodar o modelo de novo.
+	 *
+	 * Não é um `tool-run`: nada é gerado. Por isso mora aqui, na rota das
+	 * licenças, e não no motor — o que acontece é emissão, carimbo e entrega.
+	 * A quantidade vem da invocação (`license_units`), como em toda cobrança
+	 * desta ferramenta: o motor nunca acredita no número que o cliente manda.
+	 */
+	server.post(
+		'/api/me/licensed-art/batches/:batchId/pieces',
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Emite mais peças de um lote existente, com a arte original.',
+				params: z.object({ batchId: z.string().uuid() }),
+				body: z.object({
+					invocation_id: z.string(),
+					tool_key: z.string().default('arte_licenciada'),
+				}),
+				response: {
+					200: z.object({
+						pieces: z.array(
+							z.object({
+								index: z.number(),
+								code: z.string(),
+								url: z.string(),
+							}),
+						),
+					}),
+					400: ErrorSchema,
+					401: ErrorSchema,
+					402: ErrorSchema,
+					404: ErrorSchema,
+					409: ErrorSchema,
+					503: ErrorSchema,
+				},
+				tags: ['Licensed Art'],
+			},
+		},
+		async (request, reply) => {
+			const customerId = donoDaBiblioteca(request);
+			if (!customerId) {
+				return reply
+					.status(401)
+					.send({ message: 'Não autenticado.', code: 'unauthorized' });
+			}
+			const { batchId } = request.params as { batchId: string };
+			const body = request.body as {
+				invocation_id: string;
+				tool_key: string;
+			};
+
+			const r = await ampliarLoteLicenciado({
+				customerId,
+				batchId,
+				invocationId: body.invocation_id,
+				toolKey: body.tool_key,
+				authHeader: request.headers.authorization,
+			});
+			if (!r.ok) {
+				return reply.status(r.status ?? 503).send({
+					message: r.message ?? 'Não foi possível ampliar a tiragem.',
+				});
+			}
+			return reply.send({ pieces: r.pecas ?? [] });
+		},
+	);
 }

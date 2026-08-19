@@ -140,6 +140,48 @@ describe('emissão em lote', () => {
 		);
 	});
 
+	it('AMPLIAR continua a numeração — não recomeça do 1', async () => {
+		/*
+		 * "Peça 23 de 50" tem de significar UMA peça. Se a ampliação recomeçasse
+		 * a contagem, o lote passaria a ter duas peças 1 — e o operador, que acha
+		 * a peça pelo índice no nome do arquivo, pegaria a errada.
+		 */
+		await emitirLote({ ...base, tamanho: 10 });
+
+		const mais = await emitirLote({
+			...base,
+			invocationId: 'inv-2',
+			tamanho: 5,
+			inicio: 11,
+		});
+
+		expect(mais.map((p) => p.piece_index)).toEqual([11, 12, 13, 14, 15]);
+		expect(banco).toHaveLength(15);
+		// O tamanho declarado acompanha o lote que cresceu.
+		expect(mais.every((p) => p.batch_size === 15)).toBe(true);
+		// E nenhum código se repetiu.
+		expect(new Set(banco.map((b) => b.code)).size).toBe(15);
+	});
+
+	it('a retentativa de uma AMPLIAÇÃO devolve as mesmas peças', async () => {
+		await emitirLote({ ...base, tamanho: 3 });
+		const a = await emitirLote({
+			...base,
+			invocationId: 'inv-2',
+			tamanho: 2,
+			inicio: 4,
+		});
+		const b = await emitirLote({
+			...base,
+			invocationId: 'inv-2',
+			tamanho: 2,
+			inicio: 4,
+		});
+
+		expect(b.map((p) => p.code)).toEqual(a.map((p) => p.code));
+		expect(banco).toHaveLength(5);
+	});
+
 	it('lote de uma peça é o caso de sempre, sem nada de especial', async () => {
 		const pecas = await emitirLote({ ...base, tamanho: 1 });
 		expect(pecas).toHaveLength(1);
