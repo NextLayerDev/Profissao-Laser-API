@@ -20,6 +20,16 @@ const ALLOWED_IMAGE_MIMETYPES = [
 	'image/svg+xml',
 ];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+/**
+ * Os dois uploads FIXOS do registro (as imagens do card). Qualquer OUTRO campo
+ * de arquivo é um campo `type: "image"` declarado em `bank.fields` — a URL dele
+ * vai para dentro de `data`, sob o próprio nome.
+ *
+ * Antes esta lista era a única coisa aceita, e todo arquivo fora dela caía no
+ * `else { await part.toBuffer() }` — descartado EM SILÊNCIO. Uma tool com campo
+ * de imagem no banco (brasão, logo, mascote) salvava o registro sem a imagem,
+ * sem erro nenhum, e só se descobria na hora de usar.
+ */
 const IMAGE_FIELDS = new Set(['example_before', 'example_after']);
 
 /**
@@ -105,9 +115,12 @@ async function normalizeImageSize(
 async function collectMultipart(request: FastifyRequest): Promise<{
 	fields: Record<string, string>;
 	images: Record<string, string>;
+	/** URLs dos campos `type: "image"` do banco, por nome de campo. */
+	dataImages: Record<string, string>;
 }> {
 	const fields: Record<string, string> = {};
 	const images: Record<string, string> = {};
+	const dataImages: Record<string, string> = {};
 	for await (const part of request.parts()) {
 		if (part.type === 'file') {
 			if (IMAGE_FIELDS.has(part.fieldname)) {
@@ -126,13 +139,28 @@ async function collectMultipart(request: FastifyRequest): Promise<{
 					part.mimetype,
 				);
 			} else {
-				await part.toBuffer();
+				// Campo de imagem declarado em `bank.fields`. Mesmas travas de tipo e
+				// tamanho: um upload de admin não é motivo para relaxá-las.
+				if (!ALLOWED_IMAGE_MIMETYPES.includes(part.mimetype)) {
+					throw new Error('Tipo de imagem inválido (png/jpg/webp/gif/svg).');
+				}
+				const buffer = await part.toBuffer();
+				if (buffer.byteLength > MAX_IMAGE_SIZE) {
+					throw new Error('Imagem grande demais (máx 5MB).');
+				}
+				const ext = extFor(part.mimetype);
+				dataImages[part.fieldname] = await uploadToolOutput(
+					'tool-bank',
+					buffer,
+					`${crypto.randomUUID()}.${ext}`,
+					part.mimetype,
+				);
 			}
 		} else {
 			fields[part.fieldname] = part.value as string;
 		}
 	}
-	return { fields, images };
+	return { fields, images, dataImages };
 }
 
 export const listToolBankController = async (
@@ -162,9 +190,16 @@ export const createToolBankController = async (
 	if (!(await requireAdmin(request, reply))) return;
 	try {
 		const { key } = request.params;
-		const { fields, images } = await collectMultipart(request);
+		const { fields, images, dataImages } = await collectMultipart(request);
 		const dataObj0 = parseJsonObject(fields.data);
-		const dataObj = dataObj0 ? await normalizeImageSize(dataObj0) : dataObj0;
+		const dataObjNorm = dataObj0
+			? await normalizeImageSize(dataObj0)
+			: dataObj0;
+		// As URLs dos campos de imagem entram no `data`, junto dos textos.
+		const dataObj =
+			Object.keys(dataImages).length > 0
+				? { ...(dataObjNorm ?? {}), ...dataImages }
+				: dataObjNorm;
 		const data = createToolBankEntrySchema.parse({
 			title: fields.title,
 			...(fields.description !== undefined && {
@@ -202,9 +237,29 @@ export const updateToolBankController = async (
 	if (!(await requireAdmin(request, reply))) return;
 	try {
 		const { key, id } = request.params;
-		const { fields, images } = await collectMultipart(request);
+		const { fields, images, dataImages } = await collectMultipart(request);
 		const dataObj0 = parseJsonObject(fields.data);
-		const dataObj = dataObj0 ? await normalizeImageSize(dataObj0) : dataObj0;
+		const dataObjNorm = dataObj0
+			? await normalizeImageSize(dataObj0)
+			: dataObj0;
+		/**
+		 * Imagem NÃO reenviada preserva a que já estava.
+		 *
+		 * O front só manda o arquivo quando o admin escolhe um novo; sem esta
+		 * mesclagem, salvar o registro para corrigir um typo no título apagaria o
+		 * brasão — e o `data` é substituído por inteiro no update.
+		 */
+		const anterior = (await toolBankRepository.findById(id, key)) ?? null;
+		const imagensAntigas: Record<string, string> = {};
+		for (const [k, v] of Object.entries(
+			(anterior?.data ?? {}) as Record<string, unknown>,
+		)) {
+			if (typeof v === 'string' && /^https?:\/\//.test(v))
+				imagensAntigas[k] = v;
+		}
+		const dataObj = dataObjNorm
+			? { ...imagensAntigas, ...dataObjNorm, ...dataImages }
+			: dataObjNorm;
 		const beforeUrl =
 			fields.removeExampleBefore === 'true' ? null : images.example_before;
 		const afterUrl =

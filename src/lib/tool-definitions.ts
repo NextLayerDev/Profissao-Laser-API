@@ -146,6 +146,18 @@ export interface ToolDefinitionDoc {
 	/** Banco do admin (galeria de registros). Opcional. */
 	bank?: BankConfig;
 	output?: Record<string, unknown>;
+	/**
+	 * ARTE LICENCIADA: onde, na bag, mora o buffer da arte em alta resolução.
+	 *
+	 * Ex.: `{ master: 'gen.png' }`. O controller lê a bag por esta chave para
+	 * carimbar a peça, e a definition NÃO deve expor esse buffer no `output` —
+	 * a peça carimbada é a única saída em alta que sai daqui.
+	 *
+	 * Se o prompt for licenciado e isto estiver ausente ou apontar para o que
+	 * não é um buffer, o run é RECUSADO com estorno. É de propósito: assim
+	 * mexer na definition derruba a ferramenta em vez de vazar arte sem código.
+	 */
+	licensing?: { master: string };
 	ui?: Record<string, unknown>;
 	billing?: {
 		vox_cost: number | 'metered';

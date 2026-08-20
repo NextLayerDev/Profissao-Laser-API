@@ -167,3 +167,26 @@ export function variacoesAEntregar(
 	const cabe = allowed.filter((n) => n >= 1 && n <= pagas);
 	return cabe.length > 0 ? Math.max(...cabe) : 1;
 }
+
+/**
+ * QUANTAS UNIDADES ESTA INVOCAÇÃO COMPROU.
+ *
+ * Desde que o upvox passou a GUARDAR o número (`tool_invocations.units`), a
+ * pergunta tem resposta direta e a inferência vira caminho legado.
+ *
+ * A diferença não é de precisão, é de natureza: `variacoesPagas` reconstrói o
+ * número dividindo `voxes_spent / vox_cost` — arqueologia sobre um dado que
+ * ninguém tinha guardado — e por isso devolve "não sei" sempre que a divisão
+ * não fecha (cota do plano, conta ilimitada, preço mexido no meio). Nenhum
+ * desses casos é de quantidade desconhecível; são casos em que a conta não
+ * fecha. Com o número guardado, some a categoria inteira do "não sei".
+ *
+ * Invocação anterior à coluna cai no caminho antigo, com o comportamento
+ * leniente preservado inteiro — inclusive o `null`.
+ */
+export function unidadesDaInvocacao(
+	inv: PagamentoDoRun & { units?: number | null },
+): number | null {
+	if (typeof inv.units === 'number' && inv.units >= 1) return inv.units;
+	return variacoesPagas(inv);
+}

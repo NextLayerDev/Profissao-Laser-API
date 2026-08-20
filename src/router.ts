@@ -23,6 +23,9 @@ import { knowledgeBaseRoute } from './routes/knowledge-base.js';
 import { laserLineTypeRoute } from './routes/laser-line-type.js';
 import { laserProductRoute } from './routes/laser-product.js';
 import { lessonRoute } from './routes/lesson.js';
+import { licensedArtRoute } from './routes/licensed-art.js';
+import { licensedBrandRoute } from './routes/licensed-brand.js';
+import { licensedSellerRoute } from './routes/licensed-seller.js';
 import { machineRoute } from './routes/machine.js';
 import { mentorshipRoute } from './routes/mentorship.js';
 import { mercadoLivreOAuthRoute } from './routes/mercado-livre-oauth.js';
@@ -47,6 +50,7 @@ import { textModelsRoute } from './routes/text-models.js';
 import { toolAgentRoute } from './routes/tool-agent.js';
 import { toolBankRoute } from './routes/tool-bank.js';
 import { toolBankSmartTemaRoute } from './routes/tool-bank-smart-tema.js';
+import { toolBankSummarizePromptRoute } from './routes/tool-bank-summarize-prompt.js';
 import { toolCollectionRoute } from './routes/tool-collection.js';
 import { toolRunRoute } from './routes/tool-run.js';
 import { userRoute } from './routes/user.js';
@@ -95,8 +99,12 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(textModelsRoute);
 	app.register(toolAgentRoute);
 	app.register(toolBankRoute);
+	app.register(licensedArtRoute);
+	app.register(licensedBrandRoute);
+	app.register(licensedSellerRoute);
 	app.register(toolCollectionRoute);
 	app.register(toolBankSmartTemaRoute);
+	app.register(toolBankSummarizePromptRoute);
 	// Perfil curto do Orçamento: seis perguntas → os 31 campos. Não cobra, não
 	// grava e não chama modelo — é cadastro, não cotação.
 	app.register(quoteProfileRoutes);
