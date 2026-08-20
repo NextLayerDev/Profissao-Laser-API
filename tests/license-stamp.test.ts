@@ -16,6 +16,12 @@ import { carimbarPeca, escolherSelo } from '@/lib/license-stamp.js';
 const CODE = 'PL-WXQ8W-4Z6NH-1Z8V6-ERKV0';
 const URL = 'https://profissaolaser.com.br/a/PL-WXQ8W-4Z6NH-1Z8V6-ERKV0';
 
+/**
+ * O lado do selo, derivado da REGRA e não copiado dela: módulos do QR × 2.
+ * Fixar 82 aqui faria o teste passar a testar a constante, não o carimbo.
+ */
+const LADO = QRCode.create(URL, { errorCorrectionLevel: 'H' }).modules.size * 2;
+
 const arte = (w: number, h: number, cor: string) =>
 	sharp({ create: { width: w, height: h, channels: 3, background: cor } })
 		.png()
@@ -258,7 +264,7 @@ describe('a cor do QR acompanha a arte', () => {
 		})
 			.png()
 			.toBuffer();
-		expect((await escolherSelo(base)).escuro).toBe(false);
+		expect((await escolherSelo(base, URL)).escuro).toBe(false);
 	});
 
 	it('o selo pedido é OBEDECIDO — é assim que o lote sai uniforme', async () => {
@@ -377,20 +383,20 @@ describe('onde o carimbo pousa', () => {
 		})
 			.png()
 			.toBuffer();
-		const { left, top } = await escolherSelo(base);
-		expect(left < W * 0.15 || left + 120 > W * 0.85).toBe(true);
-		expect(top < H * 0.15 || top + 120 > H * 0.85).toBe(true);
+		const { left, top } = await escolherSelo(base, URL);
+		expect(left < W * 0.15 || left + LADO > W * 0.85).toBe(true);
+		expect(top < H * 0.15 || top + LADO > H * 0.85).toBe(true);
 	});
 
 	it('numa arte recortada, o canto é o da PEÇA, não o do arquivo', async () => {
 		// A silhueta ocupa o miolo e sobra papel em volta. O selo encosta no
 		// contorno da peça, não na borda do arquivo.
 		const m = 300;
-		const { left, top } = await escolherSelo(await pecaRecortada());
-		const perto = 120 + (W - 2 * m) * 0.25;
+		const { left, top } = await escolherSelo(await pecaRecortada(), URL);
+		const perto = LADO + (W - 2 * m) * 0.25;
 		const noCantoDaPeca =
-			(left < m + perto || left + 120 > W - m - perto + 120) &&
-			(top < m + perto || top + 120 > H - m - perto + 120);
+			(left < m + perto || left + LADO > W - m - perto + LADO) &&
+			(top < m + perto || top + LADO > H - m - perto + LADO);
 		expect(noCantoDaPeca).toBe(true);
 	});
 
@@ -403,8 +409,8 @@ describe('onde o carimbo pousa', () => {
 		 * parar lá. Ali o QR é cortado fora e some da peça vendida, que é pior
 		 * do que ele cobrir o desenho.
 		 */
-		const { left, top } = await escolherSelo(await losango());
-		const lado = 120;
+		const { left, top } = await escolherSelo(await losango(), URL);
+		const lado = LADO;
 		const vertices = [
 			[left, top],
 			[left + lado, top],
@@ -422,12 +428,12 @@ describe('onde o carimbo pousa', () => {
 		 * o lugar mais vazio da arte inteira; qualquer busca ingênua por "vazio"
 		 * vai parar lá, e o QR sai na sucata.
 		 */
-		const { left, top } = await escolherSelo(await pecaRecortada());
+		const { left, top } = await escolherSelo(await pecaRecortada(), URL);
 		const m = 300;
 		expect(left).toBeGreaterThanOrEqual(m);
 		expect(top).toBeGreaterThanOrEqual(m);
-		expect(left + 120).toBeLessThanOrEqual(W - m);
-		expect(top + 120).toBeLessThanOrEqual(H - m);
+		expect(left + LADO).toBeLessThanOrEqual(W - m);
+		expect(top + LADO).toBeLessThanOrEqual(H - m);
 	});
 
 	it('dentro da peça, foge de onde tem desenho', async () => {
@@ -437,8 +443,9 @@ describe('onde o carimbo pousa', () => {
 			await pecaRecortada([
 				{ left: m + 20, top: H / 2, width: W - 2 * m - 40, height: H / 2 - m },
 			]),
+			URL,
 		);
-		expect(top + 120).toBeLessThanOrEqual(H / 2);
+		expect(top + LADO).toBeLessThanOrEqual(H / 2);
 	});
 
 	it('respeita a zona de emenda mesmo escolhendo o canto', async () => {
@@ -449,8 +456,8 @@ describe('onde o carimbo pousa', () => {
 		})
 			.png()
 			.toBuffer();
-		const { left } = await escolherSelo(base);
-		expect(left + 120).toBeLessThanOrEqual(Math.ceil(Wp * 0.92));
+		const { left } = await escolherSelo(base, URL);
+		expect(left + LADO).toBeLessThanOrEqual(Math.ceil(Wp * 0.92));
 		expect(left).toBeGreaterThanOrEqual(Math.floor(Wp * 0.08));
 	});
 });

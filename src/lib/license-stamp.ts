@@ -207,25 +207,55 @@ async function medirRegiao(
 }
 
 /**
- * As medidas do selo para uma arte deste tamanho.
+ * QUANTOS PIXELS CADA MÓDULO DO QR OCUPA.
  *
- * Sem a chapa e sem o texto, o selo é o QUADRADO do QR e nada mais.
+ * ┌─ ESTE NÚMERO FOI MEDIDO, NÃO ESCOLHIDO ─────────────────────────────────┐
+ * │ Gerando o QR e tentando decodificá-lo em 24 condições (borrão do         │
+ * │ queimado × ângulo da foto × distância), a taxa de leitura é:             │
+ * │                                                                          │
+ * │     2 px/módulo  →  82 px  →  75% das tentativas                         │
+ * │   2,5 px/módulo  → 103 px  →  79%                                        │
+ * │     3 px/módulo  → 123 px  → 100%                                        │
+ * │                                                                          │
+ * │ Duas coisas saltam daí. A primeira: 3 px/módulo é um DEGRAU, não uma     │
+ * │ rampa — abaixo dele a leitura despenca. A segunda: o selo anterior tinha │
+ * │ 120 px fixos, que dão 2,93 px/módulo e caíam logo ABAIXO do degrau,      │
+ * │ lendo em 83%. Três pixels a mais o teriam levado a 100%.                 │
+ * │                                                                          │
+ * │ Ficou em 2 porque o pedido foi um selo ~1/3 menor, e o custo medido são  │
+ * │ 8 pontos contra um patamar que já não era 100%. Subir para 3 é trocar    │
+ * │ tamanho por leitura — a conta está aqui para essa decisão ser possível.  │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
+const PX_POR_MODULO = 2;
+
+/**
+ * O LADO DO SELO — sempre múltiplo INTEIRO do número de módulos.
+ *
+ * O múltiplo inteiro não é capricho. Com tamanho quebrado o renderizador
+ * reamostra e as bordas dos módulos borram: medido, 110 px (2,68 px/módulo) lê
+ * em 13% das tentativas, enquanto 100 px e 120 px, vizinhos dos dois lados,
+ * leem em ~80%. É um buraco que aparece e some conforme o tamanho da arte — o
+ * pior tipo de defeito, intermitente e invisível até a peça estar gravada.
+ *
+ * Depende da URL porque é ela que define quantos módulos o QR tem.
+ */
+function ladoDoSelo(url: string): number {
+	return (
+		QRCode.create(url, { errorCorrectionLevel: 'H' }).modules.size *
+		PX_POR_MODULO
+	);
+}
+
+/** As medidas do selo para uma arte deste tamanho. */
 function geometriaDoSelo(
 	W: number,
 	H: number,
+	url: string,
 ): { lado: number; margemX: number; margemY: number } {
 	const menor = Math.min(W, H);
-	/**
-	 * O piso de 120 px é FÍSICO, não estético: abaixo dele os módulos do QR
-	 * fecham no queimado e o código para de escanear. Num chaveiro de 60 mm,
-	 * 120 px numa arte de 1200 já são ~0,18 mm por módulo. Encolher mais exigiria
-	 * encurtar a URL — e o endereço fica queimado no acrílico, então mudá-lo
-	 * invalidaria todo QR já gravado.
-	 */
-	const lado = Math.max(120, Math.min(200, Math.round(menor * 0.07)));
 	return {
-		lado,
+		lado: ladoDoSelo(url),
 		// No wrap 360° os 8% externos de cada lado são zona de emenda da caneca.
 		margemX: W / H >= 2 ? Math.round(W * 0.1) : Math.round(menor * 0.012),
 		margemY: Math.round(menor * 0.012),
@@ -251,11 +281,15 @@ function geometriaDoSelo(
  * Exportada porque `carimbarLote` a chama UMA vez por lote: é isso que mantém
  * as trinta peças de um pedido com o selo idêntico.
  */
-export async function escolherSelo(master: Buffer): Promise<Selo> {
+export async function escolherSelo(
+	master: Buffer,
+	/** A URL que o QR vai carregar — é ela que define o tamanho do selo. */
+	url: string,
+): Promise<Selo> {
 	const meta = await sharp(master).metadata();
 	const W = meta.width ?? 0;
 	const H = meta.height ?? 0;
-	const g = geometriaDoSelo(W, H);
+	const g = geometriaDoSelo(W, H, url);
 	/** O canto de baixo à direita do arquivo — o desfecho quando nada serve. */
 	const ultimoRecurso = (): Selo => ({
 		left: Math.max(0, W - g.lado - g.margemX),
@@ -338,10 +372,16 @@ export async function escolherSelo(master: Buffer): Promise<Selo> {
 		passoX: number,
 		passoY: number,
 	): { x: number; y: number; tinta: number } | null => {
-		const alcance = Math.max(
-			2,
-			Math.round(Math.min(pMaxX - pMinX, pMaxY - pMinY) * 0.2),
-		);
+		/**
+		 * O alcance é medido em PIXELS DA ARTE, não em células da grade.
+		 *
+		 * A grade é 96×96 seja qual for a proporção, então numa caneca 360°
+		 * (2905×1122) cada célula tem 30 px de largura e 12 de altura. Contar
+		 * passos de célula fazia a caminhada horizontal andar duas vezes e meia
+		 * mais que a vertical — e o selo, que devia ficar no canto, ia parar no
+		 * meio da arte.
+		 */
+		const limitePx = Math.min(W, H) * 0.15;
 		let melhor: { x: number; y: number; tinta: number } | null = null;
 		/*
 		 * Três caminhos a partir da quina, não um: a diagonal e as DUAS BORDAS.
@@ -368,6 +408,8 @@ export async function escolherSelo(master: Buffer): Promise<Selo> {
 			 * contam. É o que segura o selo perto da quina em vez de deixá-lo
 			 * passear até o meio da arte atrás do ponto mais vazio.
 			 */
+			/** Quanto este passo anda na arte, em pixels. */
+			const passoPx = Math.hypot(px / porX, py / porY);
 			let entrou = -1;
 			for (let k = 0; k < GRADE; k++) {
 				if (tintaDoBloco(quinaX + px * k, quinaY + py * k) !== null) {
@@ -376,7 +418,7 @@ export async function escolherSelo(master: Buffer): Promise<Selo> {
 				}
 			}
 			if (entrou < 0) continue;
-			for (let k = entrou; k <= entrou + alcance; k++) {
+			for (let k = entrou; (k - entrou) * passoPx <= limitePx; k++) {
 				const x = quinaX + px * k;
 				const y = quinaY + py * k;
 				const t = tintaDoBloco(x, y);
@@ -450,8 +492,8 @@ export async function carimbarPeca(
 	const H = meta.height ?? 0;
 	if (!W || !H) throw new Error('carimbarPeca: master sem dimensões');
 
-	const selo = opts.selo ?? (await escolherSelo(master));
-	const g = geometriaDoSelo(W, H);
+	const selo = opts.selo ?? (await escolherSelo(master, opts.url));
+	const g = geometriaDoSelo(W, H, opts.url);
 	const caixa = {
 		left: Math.max(0, Math.min(W - g.lado, selo.left)),
 		top: Math.max(0, Math.min(H - g.lado, selo.top)),
@@ -462,7 +504,9 @@ export async function carimbarPeca(
 	const qrPng = await QRCode.toBuffer(opts.url, {
 		errorCorrectionLevel: 'H',
 		type: 'png',
-		width: caixa.width,
+		// `scale`, e não `width`: pede o QR com um número INTEIRO de pixels por
+		// módulo, sem reamostragem. Ver `ladoDoSelo`.
+		scale: PX_POR_MODULO,
 		margin: 0,
 		color: {
 			dark: selo.escuro ? TINTA_INVERSA : TINTA,

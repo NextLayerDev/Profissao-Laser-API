@@ -231,7 +231,11 @@ export async function carimbarLote(args: {
 	const referencia =
 		master ??
 		args.artes?.get(Math.min(...args.pecas.map((p) => p.piece_index)));
-	const selo = referencia ? await escolherSelo(referencia) : undefined;
+	// A URL da primeira peça define o tamanho do selo — e todas as peças do
+	// lote têm URL do mesmo formato, logo o mesmo número de módulos.
+	const selo = referencia
+		? await escolherSelo(referencia, urlPublicaDaPeca(args.pecas[0].code))
+		: undefined;
 
 	const entregues: {
 		id: string;
