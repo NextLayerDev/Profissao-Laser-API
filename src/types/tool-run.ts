@@ -5,9 +5,27 @@ import { z } from 'zod';
  * forma varia por tool (ex.: `{ primary, preview, meta, savable }`), por isso os
  * valores são `any` (o serializer não deve podar nada).
  */
+/**
+ * Código de autenticidade da arte licenciada. Só vem quando o prompt escolhido
+ * carrega uma marca.
+ */
+export const artLicenseSchema = z.object({
+	code: z.string(),
+	featureKey: z.string(),
+	licensorName: z.string().nullable(),
+	issuedAt: z.string(),
+});
+
 export const toolRunResultSchema = z.object({
 	id: z.string(),
 	output: z.record(z.string(), z.any()),
+	/**
+	 * ⚠️ PRECISA estar declarado aqui. O Fastify serializa contra o schema de
+	 * resposta e PODA silenciosamente o que não estiver nele — foi o que
+	 * aconteceu: o motor emitia o código, gravava a licença no banco, e o campo
+	 * sumia no caminho de volta. A tela mostrava a arte sem QR, sem erro nenhum.
+	 */
+	license: artLicenseSchema.optional(),
 });
 
 export type ToolRunResult = z.infer<typeof toolRunResultSchema>;

@@ -321,14 +321,20 @@ export function comPipeline(
 
 /**
  * Executa a definition: roda o pipeline linear sobre a bag de inputs e devolve a
- * saída projetada. A bag é mutada com as saídas de cada bloco.
+ * saída projetada JUNTO com a bag. A bag é mutada com as saídas de cada bloco.
+ *
+ * A bag sai porque `definition.output` é ALLOW-LIST: o que um bloco produz e a
+ * definition não lista é calculado, pago e descartado. O buffer da arte é
+ * exatamente esse caso — ele existe na bag e nunca é projetado. Devolvê-la
+ * permite ao controller carimbar a peça sem depender de a definition expor o
+ * master, que é justamente o que NÃO pode acontecer numa tool licenciada.
  */
 export async function executeTool(
 	def: ToolDefinitionDoc,
 	bag: Bag,
 	ctx: BlockRunContext,
 	flow?: string | null,
-): Promise<Record<string, unknown>> {
+): Promise<{ output: Record<string, unknown>; bag: Bag }> {
 	const pipeline = selecionarPipeline(def, flow);
 	if (pipeline.length === 0) {
 		throw new ToolEngineError(400, 'pipeline vazio');
@@ -396,5 +402,5 @@ export async function executeTool(
 		ctxNode.onProgress?.({ kind: 'node_done', block: node.block });
 	}
 
-	return projectOutput(def.output ?? {}, bag, heads);
+	return { output: projectOutput(def.output ?? {}, bag, heads), bag };
 }

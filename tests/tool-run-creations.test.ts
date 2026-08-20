@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	resolveCreation,
 	resolveVariationCount,
+	unidadesDaInvocacao,
 	variacoesAEntregar,
 	variacoesPagas,
 } from '@/lib/tool-creations.js';
@@ -216,5 +217,57 @@ describe('variacoesAEntregar', () => {
 		// que caiba. Entregar 1 é o único desfecho que não é nem fraude nem erro.
 		expect(variacoesAEntregar(4, 1, [2, 4])).toBe(1);
 		expect(variacoesAEntregar(4, 1, [])).toBe(1);
+	});
+});
+
+/* ─────────────────── o número guardado vence a inferência ─────────────────── */
+
+describe('unidadesDaInvocacao', () => {
+	it('usa o número que o upvox guardou, sem precisar do preço', () => {
+		// Sem `voxCost` a inferência seria impossível; com `units` a pergunta
+		// nem chega a ser feita.
+		expect(
+			unidadesDaInvocacao({
+				units: 4,
+				voxesSpent: 20,
+				quotaConsumed: 0,
+				voxCost: null,
+			}),
+		).toBe(4);
+	});
+
+	it('o número guardado vale mesmo quando a divisão daria outra coisa', () => {
+		// É o caso da tiragem: `voxes_spent` carrega geração + licença, e dividir
+		// pelo `vox_cost` devolveria um número inventado.
+		expect(
+			unidadesDaInvocacao({
+				units: 1,
+				voxesSpent: 19, // 1 de geração + 18 de licença
+				quotaConsumed: 0,
+				voxCost: 1,
+			}),
+		).toBe(1);
+	});
+
+	it('invocação anterior à coluna cai no caminho antigo, inteiro', () => {
+		// Sem `units`: infere pelo pago, exatamente como antes.
+		expect(
+			unidadesDaInvocacao({ voxesSpent: 2, quotaConsumed: 0, voxCost: 0.5 }),
+		).toBe(4);
+		// E o "não sei" da cota do plano continua sendo "não sei".
+		expect(
+			unidadesDaInvocacao({ voxesSpent: 0, quotaConsumed: 1, voxCost: 0.5 }),
+		).toBeNull();
+	});
+
+	it('units inválido não é confiado — volta a inferir', () => {
+		expect(
+			unidadesDaInvocacao({
+				units: 0,
+				voxesSpent: 2,
+				quotaConsumed: 0,
+				voxCost: 0.5,
+			}),
+		).toBe(4);
 	});
 });
