@@ -9,6 +9,7 @@ import {
 	getAppointmentsByTechnicianController,
 	getAppointmentsController,
 	getAvailableSlotsController,
+	getClientCooldownController,
 	getMyAppointmentsController,
 	updateAppointmentStatusController,
 	updateAppointmentTechnicianController,
@@ -19,7 +20,11 @@ import {
 	updateAppointmentStatusSchema,
 	updateAppointmentTechnicianSchema,
 } from '../types/appointment.js';
-import { availableSlotsResponseSchema } from '../types/appointment-config.js';
+import {
+	availableSlotsResponseSchema,
+	clientCooldownQuerySchema,
+	clientCooldownResponseSchema,
+} from '../types/appointment-config.js';
 import { ErrorSchema } from '../types/error.js';
 
 export async function appointmentRoute(server: FastifyInstance) {
@@ -121,6 +126,25 @@ export async function appointmentRoute(server: FastifyInstance) {
 			},
 		},
 		getAvailableSlotsController,
+	);
+
+	server.get(
+		'/appointments/cooldown',
+		{
+			preHandler: [authenticate],
+			schema: {
+				description:
+					'Situação do intervalo mínimo entre atendimentos do cliente. Staff pode consultar por email/phone; customer recebe sempre a própria situação. Retorna {enabled, hours, blocked, nextAllowedDate, blockedDates, lastAppointment}.',
+				querystring: clientCooldownQuerySchema,
+				response: {
+					200: clientCooldownResponseSchema,
+					500: ErrorSchema,
+				},
+				tags: ['Appointments'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		getClientCooldownController,
 	);
 
 	server.post(

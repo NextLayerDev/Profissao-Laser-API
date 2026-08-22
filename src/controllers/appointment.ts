@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { formatCooldownMessage } from '../lib/appointment-cooldown.js';
 import { isStaffRole } from '../lib/external-auth.js';
 import { appointmentRepository } from '../repositories/appointment.js';
 import { appointmentConfigService } from '../services/appointment-config.js';
@@ -7,6 +8,7 @@ import {
 	updateAppointmentStatusSchema,
 	updateAppointmentTechnicianSchema,
 } from '../types/appointment.js';
+import { clientCooldownQuerySchema } from '../types/appointment-config.js';
 
 export const getAppointmentsController = async (
 	request: FastifyRequest,
@@ -55,9 +57,19 @@ export const getAvailableSlotsController = async (
 ) => {
 	try {
 		const { date, technicianId } = request.query;
+
+		// O intervalo mínimo é um fato DO CLIENTE, então só se aplica a quem
+		// está marcando pra si. O painel vê a agenda inteira e recebe o aviso
+		// (com opção de furar) na tela de criação.
+		const email = request.currentUser?.email || null;
+		const client = isStaffRole(request.currentRole)
+			? undefined
+			: { email, phone: request.currentUser?.phone ?? null };
+
 		const result = await appointmentConfigService.getAvailableSlots(
 			date,
 			technicianId,
+			client,
 		);
 		return reply.send(result);
 	} catch (err) {
@@ -71,7 +83,39 @@ export const createAppointmentController = async (
 	reply: FastifyReply,
 ) => {
 	try {
-		const data = createAppointmentSchema.parse(request.body);
+		// `overrideCooldown` é flag de regra, NÃO coluna de `pl_appointment` — o
+		// repositório faz `...data` direto no insert, então tem de sair aqui.
+		const { overrideCooldown, ...data } = createAppointmentSchema.parse(
+			request.body,
+		);
+
+		const staff = isStaffRole(request.currentRole);
+		const accountEmail = request.currentUser?.email || null;
+
+		// Cliente só marca em nome próprio. Sem isto o intervalo mínimo é furado
+		// em um passo: basta mandar outro e-mail no body.
+		if (!staff && accountEmail) data.customerEmail = accountEmail;
+
+		// ── Intervalo mínimo entre atendimentos do mesmo cliente ──────────
+		// Staff pode furar explicitamente (encaixe, retorno); customer, nunca.
+		if (!(staff && overrideCooldown)) {
+			const check = await appointmentConfigService.checkClientCooldown({
+				email: data.customerEmail || null,
+				phone: data.customerPhone ?? request.currentUser?.phone ?? null,
+				date: data.date,
+				time: data.time,
+			});
+			if (check.blocked && check.conflict) {
+				return reply.status(409).send({
+					code: 'client_cooldown',
+					message: formatCooldownMessage(
+						check.conflict,
+						check.hours,
+						staff ? 'staff' : 'customer',
+					),
+				});
+			}
+		}
 
 		let technicianId = data.technicianId;
 		if (!technicianId) {
@@ -99,6 +143,43 @@ export const createAppointmentController = async (
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		if (message === 'Time slot already booked')
 			return reply.status(409).send({ message });
+		return reply.status(500).send({ message });
+	}
+};
+
+export const getClientCooldownController = async (
+	request: FastifyRequest<{
+		Querystring: {
+			email?: string;
+			phone?: string;
+			from?: string;
+			days?: number;
+		};
+	}>,
+	reply: FastifyReply,
+) => {
+	try {
+		const q = clientCooldownQuerySchema.parse(request.query);
+
+		// Customer só consulta a si mesmo: a resposta traz data e hora do último
+		// atendimento, então deixar consultar e-mail alheio vazaria a agenda de
+		// terceiro.
+		const staff = isStaffRole(request.currentRole);
+		const accountEmail = request.currentUser?.email || null;
+		const email = staff ? (q.email ?? null) : accountEmail;
+		const phone = staff
+			? (q.phone ?? null)
+			: (request.currentUser?.phone ?? null);
+
+		const status = await appointmentConfigService.getClientCooldownStatus({
+			email,
+			phone,
+			from: q.from,
+			days: q.days,
+		});
+		return reply.send(status);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
 	}
 };
