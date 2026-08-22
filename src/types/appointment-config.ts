@@ -24,6 +24,12 @@ export const globalConfigSchema = z.object({
 	lunchStart: timeStr.nullable(),
 	lunchEnd: timeStr.nullable(),
 	slotDurationMinutes: z.number().int().positive(),
+	// ─── Intervalo mínimo entre atendimentos do mesmo cliente ────────────
+	// `.default()` mantém a resposta válida se a migração ainda não rodou —
+	// senão o GET /appointment-config/global quebraria com 500 no deploy.
+	clientCooldownEnabled: z.boolean().default(false),
+	clientCooldownHours: z.number().int().min(1).max(720).default(48),
+	clientCooldownMatchPhone: z.boolean().default(true),
 	updatedAt: z.string(),
 	updatedBy: z.string().nullable(),
 });
@@ -35,6 +41,9 @@ export const updateGlobalConfigSchema = z.object({
 	lunchStart: timeStr.nullable().optional(),
 	lunchEnd: timeStr.nullable().optional(),
 	slotDurationMinutes: z.number().int().positive().optional(),
+	clientCooldownEnabled: z.boolean().optional(),
+	clientCooldownHours: z.number().int().min(1).max(720).optional(),
+	clientCooldownMatchPhone: z.boolean().optional(),
 });
 
 // ─── Holidays ────────────────────────────────────────────────────────────
@@ -157,6 +166,41 @@ export const availableSlotsResponseSchema = z.object({
 	reason: z.string().nullable(),
 });
 
+// ─── Intervalo mínimo entre atendimentos ─────────────────────────────────
+// Só pra UI (banner + trava do input de data). A regra de verdade é aplicada
+// no POST /appointment.
+export const clientCooldownQuerySchema = z.object({
+	/** Staff consulta qualquer cliente; customer recebe sempre a própria situação. */
+	email: z.string().optional(),
+	phone: z.string().optional(),
+	from: z
+		.string()
+		.regex(/^\d{4}-\d{2}-\d{2}$/)
+		.optional(),
+	days: z.coerce.number().int().min(1).max(120).optional(),
+});
+
+export const clientCooldownResponseSchema = z.object({
+	enabled: z.boolean(),
+	hours: z.number().int(),
+	matchPhone: z.boolean(),
+	/** O dia inicial da consulta (hoje, ou `from`) está bloqueado? */
+	blocked: z.boolean(),
+	/** Primeira data com algum horário livre, ou null se nada bloqueia. */
+	nextAllowedDate: z.string().nullable(),
+	/** Dias 100% bloqueados dentro da janela consultada. */
+	blockedDates: z.array(z.string()),
+	/** O atendimento futuro mais distante — é ele que o banner cita. */
+	lastAppointment: z
+		.object({
+			id: z.string(),
+			date: z.string(),
+			time: z.string(),
+			service: z.string().nullable(),
+		})
+		.nullable(),
+});
+
 export type GlobalConfig = z.infer<typeof globalConfigSchema>;
 export type UpdateGlobalConfig = z.infer<typeof updateGlobalConfigSchema>;
 export type Holiday = z.infer<typeof holidaySchema>;
@@ -171,4 +215,8 @@ export type RecurringBlock = z.infer<typeof recurringBlockSchema>;
 export type CreateRecurringBlock = z.infer<typeof createRecurringBlockSchema>;
 export type AvailableSlotsResponse = z.infer<
 	typeof availableSlotsResponseSchema
+>;
+export type ClientCooldownQuery = z.infer<typeof clientCooldownQuerySchema>;
+export type ClientCooldownResponse = z.infer<
+	typeof clientCooldownResponseSchema
 >;
