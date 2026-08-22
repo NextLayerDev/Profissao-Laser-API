@@ -42,7 +42,29 @@ class AppointmentRepository {
 		return data;
 	}
 
-	async create(data: AppointmentCreate) {
+	/**
+	 * Atendimentos ATIVOS (não cancelados) numa janela de datas.
+	 *
+	 * O recorte por cliente NÃO vai no SQL de propósito: e-mail é
+	 * case-insensitive e telefone precisa de normalização de dígitos — nada
+	 * disso usaria índice. A janela é de poucos dias, então filtrar em memória
+	 * (com `matchesClient`) sai mais barato e mais correto.
+	 */
+	async listActiveBetween(from: string, to: string) {
+		const { data, error } = await supabase
+			.from('pl_appointment')
+			.select('id, customerEmail, customerPhone, date, time, service')
+			.gte('date', from)
+			.lte('date', to)
+			.neq('status', 'cancelado')
+			.order('date', { ascending: true })
+			.order('time', { ascending: true });
+
+		if (error) throw new Error(error.message);
+		return data ?? [];
+	}
+
+	async create(data: Omit<AppointmentCreate, 'overrideCooldown'>) {
 		const existing = await this.listByDate(data.date, data.technicianId);
 		const conflict = existing.some((a) => a.time === data.time);
 		if (conflict) throw new Error('Time slot already booked');
