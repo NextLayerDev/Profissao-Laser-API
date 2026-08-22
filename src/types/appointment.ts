@@ -25,6 +25,14 @@ export const createAppointmentSchema = z.object({
 	notes: z.string().optional(),
 	technicianId: z.string().uuid().optional(),
 	machine: z.string().optional(),
+	/**
+	 * Staff furando o intervalo mínimo conscientemente (encaixe, retorno de
+	 * garantia). Ignorado para customer.
+	 *
+	 * NÃO é coluna de `pl_appointment` — o controller precisa tirar do payload
+	 * antes do insert, senão o Supabase rejeita a coluna inexistente.
+	 */
+	overrideCooldown: z.boolean().optional(),
 });
 
 export const updateAppointmentStatusSchema = z.object({
