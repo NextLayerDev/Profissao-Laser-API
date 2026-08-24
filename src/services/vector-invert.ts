@@ -1,52 +1,47 @@
-import sharp from 'sharp';
 import { withCapture } from '@/lib/sentry.js';
 import { uploadVectorPng } from '../lib/storage.js';
-import { invertSvgPolarity, readSvgGeometry } from '../lib/svg-invert.js';
+import { invertSvgBoundedBySilhouette } from '../lib/svg-invert-bounded.js';
 import { chooseInvertMode, invertModeForSubject } from '../lib/svg-negative.js';
-import { rasterizeSvgToPng } from '../lib/svg-raster.js';
+import { rasterizeSvgToPng, readViewBox } from '../lib/svg-raster.js';
 import { buildSilhouetteContourSvg } from '../lib/svg-silhouette-contour.js';
-import { svgToDxf } from '../lib/vectorize.js';
+import { parseVectorizeParams, svgToDxf } from '../lib/vectorize.js';
 import { vectorRepository } from '../repositories/vector.js';
+import type { VectorizeParams } from '../types/vector.js';
 
 // ─────────────────────────────────────────────────────────────────────
-// VETOR INVERTIDO (fundo preto). Transformação PURA de um vetor já gerado —
-// NÃO cobra, não cria linha nova e não mexe em `paid_formats`: o crédito de
-// formato já pago cobre o arquivo invertido automaticamente.
+// VETOR INVERTIDO. Transformação PURA de um vetor já gerado — NÃO cobra,
+// não cria linha nova e não mexe em `paid_formats`: o crédito de formato já
+// pago cobre o arquivo invertido automaticamente.
 //
-// Dois caminhos:
-//   geométrico  — complemento exato (lossless). Default: logo, texto, traço.
+// Dois caminhos, ambos DELIMITADOS PELA SILHUETA da arte (+ contorno fino):
+//   geométrico  — compound path even-odd = silhueta traçada + arte como
+//                 furos (lossless), verificado por cobertura pixel a pixel;
+//                 fallback interno re-traça `silhueta ∧ ¬tinta` de uma vez.
+//                 Default: logo, texto, traço.
 //   silhueta    — NEGATIVO LOCAL: inverte os tons só DENTRO da silhueta do
-//                 assunto, preservando o desenho original e o fundo
-//                 verdadeiro. Pra gravura hachurada, onde o complemento
-//                 geométrico viraria uma chapa preta.
+//                 assunto (raster, preserva todo o detalhe) + contorno fino
+//                 vetorial sobreposto. Pra gravura hachurada/foto.
 //
-// A silhueta já passou por três encarnações antes desta:
-//   1. negativo morfológico COM FUROS — reconstruía um contorno vetorial da
-//      silhueta via raster→morfologia→re-trace e mantinha a arte original em
-//      vetor como furos (compound path, even-odd). A reconstrução do contorno
-//      não fechava direito formas finas/diagonais (ex.: a pá de um remo
-//      cruzado ficava parcialmente fora do contorno calculado — visível com
-//      zoom, reportado pelo usuário).
-//   2. negativo RASTER puro (`rasterNegative` abaixo) — inversão de pixel
-//      direta (como o "Negative Image" do LightBurn), sem reconstrução
-//      nenhuma. Perfeita por construção, mas inverte a imagem INTEIRA,
-//      fundo incluso — pra retrato com muito espaço em branco ao redor, o
-//      resultado fica uma chapa preta pesada e "suja".
-//   3. SILHUETA SÓLIDA CHAPADA — preenchia a forma inteira de uma cor só,
-//      sem detalhe nenhum. Rejeitada pelo usuário ao ver o resultado: "perdeu
-//      todo conteúdo da foto" — ele queria o detalhe do desenho preservado,
-//      só com o FUNDO fora do personagem sem inverter.
+// REGRA DA 5ª ENCARNAÇÃO: NUNCA emitir o retângulo do viewBox. A peça é
+// para gravação — uma moldura retangular seria gravada inteira. Falhou
+// tudo → 422, não o quadrado.
 //
-// O caminho ATUAL (`buildSilhouetteContourSvg`, em `svg-silhouette-contour.ts`)
-// reaproveita a mesma máscara morfológica das encarnações 1 e 3, mas usa ela
-// só como CRITÉRIO de "que pixel inverter" — a inversão em si é raster puro
-// (igual `rasterNegative`), restrita à área da silhueta. Sem reconstrução
-// vetorial nenhuma, então não tem "vazar pra fora do contorno"; o risco
-// residual é um pedaço pequeno (ex.: pulseira/franja solta) não fundir à
-// silhueta principal e ficar com a polaridade errada — pego por um detector
-// de componentes conectados antes de aceitar; se sobrar mais de um pedaço
-// significativo, cai automaticamente em `rasterNegative` — que continua
-// existindo como rede de segurança, não mais como o caminho padrão.
+// Histórico (por que o código é assim):
+//   1. negativo morfológico COM FUROS — contorno re-traçado + arte em vetor
+//      como furos. O contorno não fechava direito formas finas/diagonais
+//      (a pá de um remo ficava parcialmente fora — visível com zoom).
+//   2. negativo RASTER puro — negate da imagem INTEIRA (como o "Negative
+//      Image" do LightBurn). Perfeito por construção, mas o fundo todo
+//      virava uma chapa preta pesada e "suja".
+//   3. SILHUETA SÓLIDA CHAPADA — preenchia a forma inteira sem detalhe.
+//      Rejeitada: "perdeu todo conteúdo da foto".
+//   4. negativo local dentro da silhueta, com fallback pro raster puro
+//      quando a silhueta fragmentava — o fallback devolvia o retângulo
+//      preto de novo (reprovado pelo usuário, com print).
+//   5. ATUAL — a nº1 ressuscitada com as defesas que faltavam (verificação
+//      de cobertura + retry + fallback re-traçado de UM trace só, imune a
+//      desalinhamento) no geométrico; a nº4 sem o fallback retangular e com
+//      contorno fino traçado na silhueta (que também alimenta o DXF).
 // ─────────────────────────────────────────────────────────────────────
 
 export type InvertMode = 'auto' | 'geometric' | 'silhouette';
@@ -57,39 +52,8 @@ export const INVERT_UNSUPPORTED = {
 	transform: 'invert_unsupported_transform',
 	no_geometry: 'invert_unsupported_no_geometry',
 	no_viewbox: 'invert_unsupported_no_viewbox',
+	empty: 'invert_unsupported_empty',
 } as const;
-
-/**
- * Negativo RASTER puro — inverte os pixels do PNG rasterizado direto, sem
- * nenhuma etapa de reconstrução de contorno. Mesma prática do LightBurn (e do
- * setor em geral) pra imagem/foto: "Negative Image" só inverte os valores de
- * pixel — sem aproximação, então não tem como sair errado de forma.
- *
- * O resultado deixa de ser 100% vetor (paths) pra essa variant — vira uma
- * imagem embutida no SVG (mesmo contrato de arquivo). Isso já era esperado
- * no DXF de uma foto invertida (só a moldura, sem preenchimento) e passa a
- * valer também pro SVG/PNG — troca aceita: sem isso a silhueta reconstruída
- * deixava pedaços de formas finas/diagonais (ex.: a pá de um remo cruzado)
- * "vazando" pra fora do contorno calculado.
- */
-async function rasterNegative(svg: string): Promise<string> {
-	const geo = readSvgGeometry(svg);
-	if (!geo) throw new Error(INVERT_UNSUPPORTED.no_geometry);
-
-	// Rasteriza a arte ATUAL (ainda não invertida), achatada em branco — teto
-	// de resolução do próprio `rasterizeSvgToPng` (2000px), suficiente pra
-	// gravação a laser.
-	const png = await rasterizeSvgToPng(svg, {
-		maxDim: 2000,
-		flattenWhite: true,
-	});
-	// Inversão de pixel exata. `alpha:false` porque já achatamos em branco
-	// (sem transparência de verdade pra inverter).
-	const negated = await sharp(png).negate({ alpha: false }).png().toBuffer();
-	const b64 = negated.toString('base64');
-
-	return `<svg xmlns="http://www.w3.org/2000/svg" width="${geo.w}" height="${geo.h}" viewBox="${geo.x} ${geo.y} ${geo.w} ${geo.h}"><image x="${geo.x}" y="${geo.y}" width="${geo.w}" height="${geo.h}" preserveAspectRatio="none" href="data:image/png;base64,${b64}"/></svg>`;
-}
 
 export const vectorInvertService = {
 	/**
@@ -101,7 +65,8 @@ export const vectorInvertService = {
 	 * no-op: uma cópia com `paid_formats` vazio recobraria o cliente.
 	 *
 	 * Idempotente por (pai, modo): alternar a polaridade várias vezes não enche a
-	 * biblioteca de duplicatas.
+	 * biblioteca de duplicatas — e re-inverter um vetor antigo sobrescreve o
+	 * resultado persistido com o formato novo (sem retângulo).
 	 */
 	async invert(
 		customerId: string,
@@ -132,24 +97,54 @@ export const vectorInvertService = {
 
 			let svgContent: string;
 			if (mode === 'silhouette') {
-				// Tenta o negativo local (só dentro da silhueta) primeiro; só cai no
-				// raster negate (imagem inteira) se o detector de fragmentação
-				// recusar o resultado. Sem classificador manual por tipo de imagem —
-				// o fallback automático É o diferenciador entre os dois caminhos.
-				const contour = await buildSilhouetteContourSvg(original);
-				svgContent = contour.ok ? contour.svg : await rasterNegative(original);
+				// Foto original + params da geração → negativo RE-DITHERIZADO
+				// (tons invertidos ANTES do dither, como no fluxo manual). Sem o
+				// original (vetor antigo, fetch falhou), o builder cai no
+				// pixel-flip de sempre.
+				let originalImage: Buffer | undefined;
+				const originalUrl = (vector as { original_url?: string }).original_url;
+				if (originalUrl) {
+					try {
+						const imgRes = await fetch(originalUrl);
+						if (imgRes.ok) {
+							originalImage = Buffer.from(await imgRes.arrayBuffer());
+						}
+					} catch {
+						// segue sem original
+					}
+				}
+				// Params gravados são um VectorizeParams serializado; o merge com
+				// os defaults protege contra registros antigos/parciais.
+				const storedParams = {
+					...parseVectorizeParams({}),
+					...((vector.params as Partial<VectorizeParams> | null) ?? {}),
+				} as VectorizeParams;
+
+				const contour = await buildSilhouetteContourSvg(original, {
+					originalImage,
+					params: storedParams,
+				});
+				if (contour.ok === false) {
+					throw new Error(INVERT_UNSUPPORTED[contour.reason]);
+				}
+				svgContent = contour.svg;
 			} else {
-				const result = invertSvgPolarity(original);
-				if ('error' in result) {
-					throw new Error(INVERT_UNSUPPORTED[result.error]);
+				const result = await invertSvgBoundedBySilhouette(original);
+				if (result.ok === false) {
+					throw new Error(INVERT_UNSUPPORTED[result.reason]);
 				}
 				svgContent = result.svg;
 			}
 
-			// PNG achatado em branco: o SVG invertido é um campo preto com furos
-			// TRANSPARENTES — sem achatar, os furos não leem como brancos.
+			// PNG achatado em branco: o SVG invertido pode ser um campo preto com
+			// furos TRANSPARENTES — sem achatar, os furos não leem como brancos.
+			// Resolução NATIVA do viewBox (não o default de 1200): reamostrar uma
+			// trama de dithering cria moiré/listras no preview — os pontos têm
+			// que sair 1:1.
+			const vb = readViewBox(svgContent);
 			const pngBuffer = await rasterizeSvgToPng(svgContent, {
 				flattenWhite: true,
+				maxDim: vb ? Math.max(vb.w, vb.h) : 1200,
 			});
 			// Caminho determinístico: re-inverter sobrescreve com o mesmo conteúdo.
 			const pngUrl = await uploadVectorPng(

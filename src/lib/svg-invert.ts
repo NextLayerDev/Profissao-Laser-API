@@ -288,6 +288,23 @@ function stripShapes(svg: string): string {
 }
 
 /**
+ * Substitui TODA a geometria renderizável do SVG por um único markup de path
+ * (o compound path novo), preservando a tag `<svg>` e seus atributos.
+ */
+export function injectSoleCompoundPath(
+	svgRaw: string,
+	pathMarkup: string,
+): string {
+	let out = stripShapes(stripNonRenderable(svgRaw));
+	if (/<\/svg>/i.test(out)) {
+		out = out.replace(/<\/svg>/i, `${pathMarkup}</svg>`);
+	} else {
+		out = out.replace(/(<svg\b[^>]*>)/i, `$1${pathMarkup}`);
+	}
+	return out;
+}
+
+/**
  * Inverte a polaridade: devolve o SVG com um único compound path = moldura do
  * viewBox menos a arte. Recusa (com motivo) quando a inversão geométrica não é
  * confiável — o chamador então roteia pro caminho raster/silhueta.
@@ -309,14 +326,7 @@ export function invertSvgPolarity(svgRaw: string): InvertResult {
 	const combined = `${rectD} ${geo.ds.join(' ')}`;
 	const invertedPath = `<path fill="${geo.ink}" fill-rule="evenodd" d="${combined}"/>`;
 
-	const stripped = stripNonRenderable(svgRaw);
-	let out = stripShapes(stripped);
-	if (/<\/svg>/i.test(out)) {
-		out = out.replace(/<\/svg>/i, `${invertedPath}</svg>`);
-	} else {
-		out = out.replace(/(<svg\b[^>]*>)/i, `$1${invertedPath}`);
-	}
-	return { svg: out };
+	return { svg: injectSoleCompoundPath(svgRaw, invertedPath) };
 }
 
 /**
@@ -330,11 +340,5 @@ export function mergeIntoSingleCompoundPath(svgRaw: string): string {
 		return svgRaw;
 	}
 	const merged = `<path fill="${geo.ink}" fill-rule="evenodd" d="${geo.ds.join(' ')}"/>`;
-	let out = stripShapes(stripNonRenderable(svgRaw));
-	if (/<\/svg>/i.test(out)) {
-		out = out.replace(/<\/svg>/i, `${merged}</svg>`);
-	} else {
-		out = out.replace(/(<svg\b[^>]*>)/i, `$1${merged}`);
-	}
-	return out;
+	return injectSoleCompoundPath(svgRaw, merged);
 }
