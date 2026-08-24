@@ -394,9 +394,10 @@ export const aiLineartController = async (
 };
 
 /**
- * VETOR INVERTIDO (fundo preto). Transformação pura de um vetor já gerado:
- * **não cobra**, não pede `invocation_id` e não mexe em `paid_formats` — quem
- * já pagou um formato baixa a versão invertida sem custo novo.
+ * VETOR INVERTIDO (delimitado pela silhueta, nunca retângulo). Transformação
+ * pura de um vetor já gerado: **não cobra**, não pede `invocation_id` e não
+ * mexe em `paid_formats` — quem já pagou um formato baixa a versão invertida
+ * sem custo novo.
  */
 export const invertVectorController = async (
 	request: FastifyRequest<{
