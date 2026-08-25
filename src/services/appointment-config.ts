@@ -154,6 +154,15 @@ function inAnyRange(
 
 // ─── Service ─────────────────────────────────────────────────────────────
 
+/** Slot pedido no agendamento não está disponível (folga, feriado, bloqueio,
+ *  fora do expediente ou já bookado). Mapeada em 409 pelo controller. */
+export class SlotUnavailableError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'SlotUnavailableError';
+	}
+}
+
 class AppointmentConfigService {
 	getGlobal() {
 		return appointmentConfigRepository.getGlobal();
@@ -515,6 +524,53 @@ class AppointmentConfigService {
 		}
 
 		return { slots, blocked: false, reason: null };
+	}
+
+	/**
+	 * Valida que `time` está disponível em `date` e resolve o técnico do
+	 * agendamento, reusando `getAvailableSlots` como fonte única de verdade
+	 * (folgas, feriados, bloqueios recorrentes, working days/horário, almoço e
+	 * horários já bookados). Lança `SlotUnavailableError` se indisponível.
+	 *
+	 * - Com technicianId: exige aquele técnico livre nesse slot.
+	 * - Sem technicianId: sorteia entre os técnicos realmente livres nesse slot;
+	 *   sem técnicos cadastrados, valida a config global e retorna undefined.
+	 */
+	async resolveBookingTechnician(
+		date: string,
+		time: string,
+		technicianId?: string,
+	): Promise<string | undefined> {
+		if (technicianId) {
+			const { slots, blocked, reason } = await this.getAvailableSlots(
+				date,
+				technicianId,
+			);
+			if (blocked || !slots.includes(time)) {
+				throw new SlotUnavailableError(reason ?? 'Horário indisponível');
+			}
+			return technicianId;
+		}
+
+		const techIds = await appointmentRepository.listTechnicianIds();
+
+		if (techIds.length === 0) {
+			const { slots, blocked, reason } = await this.getAvailableSlots(date);
+			if (blocked || !slots.includes(time)) {
+				throw new SlotUnavailableError(reason ?? 'Horário indisponível');
+			}
+			return undefined;
+		}
+
+		const free: string[] = [];
+		for (const id of techIds) {
+			const { slots, blocked } = await this.getAvailableSlots(date, id);
+			if (!blocked && slots.includes(time)) free.push(id);
+		}
+		if (free.length === 0) {
+			throw new SlotUnavailableError('Horário indisponível nesta data');
+		}
+		return free[Math.floor(Math.random() * free.length)];
 	}
 }
 
