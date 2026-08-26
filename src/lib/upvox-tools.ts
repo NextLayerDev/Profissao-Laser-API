@@ -64,14 +64,20 @@ export async function getInvocation(
 		});
 		if (!res.ok) {
 			// Não engole em silêncio: 401 aqui = EXTERNAL_API_URL no gateway sem Bearer.
+			// Corpo do erro + se o Bearer foi repassado, pra achar a causa real por
+			// trás do 403 genérico (`invalid_invocation`) que isso vira lá em cima.
+			const body = await res.text().catch(() => '<sem corpo>');
 			console.error(
-				`[upvox-tools] getInvocation ${id} → HTTP ${res.status} (EXTERNAL_API_URL=${externalApiUrl})`,
+				`[upvox-tools] getInvocation ${id} → HTTP ${res.status} customerId=${customerId} hasAuthHeader=${!!authHeader} (EXTERNAL_API_URL=${externalApiUrl}) body=${body}`,
 			);
 			return null;
 		}
 		return (await res.json()) as ToolInvocation;
 	} catch (err) {
-		console.error(`[upvox-tools] getInvocation ${id} falhou:`, err);
+		console.error(
+			`[upvox-tools] getInvocation ${id} falhou (rede/fetch) customerId=${customerId} hasAuthHeader=${!!authHeader}:`,
+			err,
+		);
 		return null;
 	}
 }
