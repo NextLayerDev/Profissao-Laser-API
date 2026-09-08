@@ -11,48 +11,33 @@ import sharp from 'sharp';
  * resolução" deixa de existir como coisa baixável, que é o buraco inteiro do
  * controle de volumetria.
  *
- * ┌─ O QUE SAIU DAQUI, E O QUE ISSO CUSTOU ─────────────────────────────────┐
- * │ Havia uma chapa branca com o código escrito por extenso ao lado do QR.   │
- * │ Ocupava 349×158 px num canto da arte e, no chaveiro "escudo e nome" —    │
- * │ o modelo mais usado —, brigava com o desenho.                            │
+ * ┌─ A PLACA VOLTOU, SEM O TEXTO ───────────────────────────────────────────┐
+ * │ Primeiro havia uma chapa branca com o código por extenso ao lado do QR   │
+ * │ (349×158 px). Saiu por brigar com o desenho. Depois ficou só o QR, sem   │
+ * │ fundo, invertendo a cor sobre arte escura.                               │
  * │                                                                          │
- * │ Agora é só o QR, sem fundo. A área caiu ~72% e o carimbo some no canto.  │
+ * │ Sem fundo não sobreviveu ao chão de fábrica: sobre arte cinza ou com     │
+ * │ textura o QR se mistura ao desenho, e no software do laser — que mostra  │
+ * │ tudo em tons de cinza — ninguém acha nem lê o código. O cliente mandou   │
+ * │ o print de como tem de ser: QR preto numa PLACA branca de cantos         │
+ * │ arredondados com borda preta fina. Na peça gravada é coerente: branco é  │
+ * │ "não queime aqui", a borda e os módulos são o queimado.                  │
  * │                                                                          │
- * │ O preço: quem tem a peça física com o QR riscado não lê mais o código a  │
- * │ olho. Ele continua no nome do arquivo e na biblioteca do aluno, mas o    │
- * │ objeto sozinho deixa de ser identificável sem leitor. Foi uma escolha.   │
+ * │ O texto do código NÃO voltou — ele continua no nome do arquivo e na      │
+ * │ biblioteca do aluno. A placa é só o que o QR precisa para ler sempre.    │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 
-/** A cor do QR sobre arte clara. */
+/** A tinta do QR e da borda da placa. */
 const TINTA = '#111111';
-/** A cor do QR sobre arte escura — ver `escolherSelo`. */
-const TINTA_INVERSA = '#ffffff';
+/** O fundo da placa. */
+const PLACA = '#ffffff';
 
-/**
- * Abaixo desta luminância média (0–255) o canto é escuro e o QR inverte.
- *
- * 128 é o meio da escala de propósito: a pergunta é literalmente "este pedaço é
- * mais claro ou mais escuro?", e qualquer limiar mais esperto seria calibrado
- * numa arte e errado na seguinte.
- */
-const LIMIAR_ESCURO = 128;
-
-/** A decisão do selo para uma arte: onde pousa e de que cor sai. */
+/** A decisão do selo para uma arte: onde a placa pousa. */
 export interface Selo {
-	/** Canto superior esquerdo do selo, em pixels da arte. */
+	/** Canto superior esquerdo da PLACA, em pixels da arte. */
 	left: number;
 	top: number;
-	/**
-	 * O canto é escuro? Então o QR sai BRANCO.
-	 *
-	 * Sem chapa, o contraste tem de vir da própria arte. Sobre um campo
-	 * queimado, módulos claros em fundo escuro leem tão bem quanto o contrário —
-	 * leitor de celular moderno lê QR invertido. E na peça gravada isso é
-	 * coerente por construção: branco é "não queime aqui", então o QR aparece
-	 * como o material cru dentro do campo queimado.
-	 */
-	escuro: boolean;
 }
 
 export interface CarimboOpts {
@@ -72,11 +57,12 @@ export interface CarimboOpts {
 
 /** Onde o carimbo caiu, em pixels da arte. */
 export interface AreaDoCarimbo {
+	/** A PLACA inteira: fundo branco + borda. */
 	left: number;
 	top: number;
 	width: number;
 	height: number;
-	/** O QR ocupa a área inteira agora — repetido para quem lia este campo. */
+	/** Só o QR, dentro da placa. */
 	qr: { left: number; top: number; size: number };
 }
 
@@ -88,7 +74,7 @@ export interface CarimboResult {
 	 * e um teste que recalcula a conta à mão testa a cópia, não o carimbo.
 	 */
 	area: AreaDoCarimbo;
-	/** A cor em que o QR saiu — o lote inteiro usa a mesma. */
+	/** Onde a placa pousou — o lote inteiro usa a mesma. */
 	selo: Selo;
 }
 
@@ -98,8 +84,6 @@ const GRADE = 96;
 interface MapaDaArte {
 	/** `true` onde há tinta (pixel opaco e escuro) — o que a máquina queima. */
 	tinta: boolean[];
-	/** Luminância média de cada célula, 0–255. Transparente conta como claro. */
-	luz: number[];
 	/**
 	 * `true` onde a célula está DENTRO da peça.
 	 *
@@ -128,18 +112,11 @@ async function lerArte(master: Buffer): Promise<MapaDaArte> {
 
 	const n = GRADE * GRADE;
 	const tinta: boolean[] = new Array(n);
-	const luz: number[] = new Array(n);
 	for (let i = 0; i < n; i++) {
 		const p = i * info.channels;
 		const alfa = info.channels === 4 ? data[p + 3] : 255;
 		const l = (data[p] * 299 + data[p + 1] * 587 + data[p + 2] * 114) / 1000;
-		if (alfa < 32) {
-			tinta[i] = false;
-			luz[i] = 255;
-		} else {
-			tinta[i] = l < 200;
-			luz[i] = l;
-		}
+		tinta[i] = alfa >= 32 && l < 200;
 	}
 
 	// Para cada linha e coluna, onde começa e termina a tinta. Com isso, "cercada
@@ -171,45 +148,22 @@ async function lerArte(master: Buffer): Promise<MapaDaArte> {
 		}
 	}
 
-	return { tinta, luz, dentro };
+	return { tinta, dentro };
 }
 
 /**
- * A luminância média de um recorte, no pixel real.
+ * QUANTO DA ARTE O QR OCUPA: ~8% do menor lado.
  *
- * Serve só para decidir a COR do QR, e por isso não passa pela grade: uma
- * célula da grade da caneca tem 30 px de largura, e a vizinhança contaminaria a
- * polaridade do selo.
+ * Proporcional, e não fixo, porque a mesma peça é vendida como chaveiro de
+ * 1200 px e como caneca de 2905×1122: um QR de 82 px fixos é discreto num e
+ * ilegível no outro. O pedido foi "como no print" — visível, no canto.
  */
-async function medirRegiao(
-	master: Buffer,
-	box: { left: number; top: number; width: number; height: number },
-): Promise<{ luz: number }> {
-	if (box.width <= 0 || box.height <= 0) return { luz: 255 };
-	const { data, info } = await sharp(master)
-		.extract(box)
-		.ensureAlpha()
-		.resize(48, 48, { fit: 'fill' })
-		.raw()
-		.toBuffer({ resolveWithObject: true });
-	const total = info.width * info.height;
-	let soma = 0;
-	for (let i = 0; i < total; i++) {
-		const p = i * info.channels;
-		const alfa = info.channels === 4 ? data[p + 3] : 255;
-		// Transparente é o material cru da peça, que é CLARO.
-		soma +=
-			alfa < 32
-				? 255
-				: (data[p] * 299 + data[p + 1] * 587 + data[p + 2] * 114) / 1000;
-	}
-	return { luz: soma / total };
-}
+const FRACAO_DO_MENOR_LADO = 0.08;
 
 /**
- * QUANTOS PIXELS CADA MÓDULO DO QR OCUPA.
+ * O PISO DE PIXELS POR MÓDULO — medido, não escolhido.
  *
- * ┌─ ESTE NÚMERO FOI MEDIDO, NÃO ESCOLHIDO ─────────────────────────────────┐
+ * ┌─────────────────────────────────────────────────────────────────────────┐
  * │ Gerando o QR e tentando decodificá-lo em 24 condições (borrão do         │
  * │ queimado × ângulo da foto × distância), a taxa de leitura é:             │
  * │                                                                          │
@@ -217,45 +171,68 @@ async function medirRegiao(
  * │   2,5 px/módulo  → 103 px  →  79%                                        │
  * │     3 px/módulo  → 123 px  → 100%                                        │
  * │                                                                          │
- * │ Duas coisas saltam daí. A primeira: 3 px/módulo é um DEGRAU, não uma     │
- * │ rampa — abaixo dele a leitura despenca. A segunda: o selo anterior tinha │
- * │ 120 px fixos, que dão 2,93 px/módulo e caíam logo ABAIXO do degrau,      │
- * │ lendo em 83%. Três pixels a mais o teriam levado a 100%.                 │
+ * │ 3 px/módulo é um DEGRAU, não uma rampa — abaixo dele a leitura despenca. │
+ * │ E o múltiplo tem de ser INTEIRO: 110 px (2,68 px/módulo) leu em 13% das  │
+ * │ tentativas, com 100 px e 120 px, vizinhos dos dois lados, em ~80%. Com   │
+ * │ tamanho quebrado o renderizador reamostra e as bordas dos módulos borram │
+ * │ — um defeito intermitente, invisível até a peça estar gravada.           │
  * │                                                                          │
- * │ Ficou em 2 porque o pedido foi um selo ~1/3 menor, e o custo medido são  │
- * │ 8 pontos contra um patamar que já não era 100%. Subir para 3 é trocar    │
- * │ tamanho por leitura — a conta está aqui para essa decisão ser possível.  │
+ * │ Por isso o tamanho proporcional é ARREDONDADO para um múltiplo inteiro,  │
+ * │ nunca abaixo de 2: em arte até ~1280 px de menor lado dá 2 px/módulo     │
+ * │ (82 px); acima disso, 3 (123 px) — e é aí que a leitura chega a 100%.    │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
-const PX_POR_MODULO = 2;
+const MINIMO_PX_POR_MODULO = 2;
 
-/**
- * O LADO DO SELO — sempre múltiplo INTEIRO do número de módulos.
- *
- * O múltiplo inteiro não é capricho. Com tamanho quebrado o renderizador
- * reamostra e as bordas dos módulos borram: medido, 110 px (2,68 px/módulo) lê
- * em 13% das tentativas, enquanto 100 px e 120 px, vizinhos dos dois lados,
- * leem em ~80%. É um buraco que aparece e some conforme o tamanho da arte — o
- * pior tipo de defeito, intermitente e invisível até a peça estar gravada.
- *
- * Depende da URL porque é ela que define quantos módulos o QR tem.
- */
-function ladoDoSelo(url: string): number {
-	return (
-		QRCode.create(url, { errorCorrectionLevel: 'H' }).modules.size *
-		PX_POR_MODULO
-	);
+/** As medidas do selo para uma arte deste tamanho e esta URL. */
+export interface GeometriaDoSelo {
+	/** Lado da PLACA — o quadrado que precisa caber na peça. */
+	lado: number;
+	/** Lado do QR, dentro da placa. */
+	qr: number;
+	/** Pixels por módulo do QR — inteiro, ver `MINIMO_PX_POR_MODULO`. */
+	pxPorModulo: number;
+	/** Respiro branco entre a borda e o QR (a "zona quieta" do padrão). */
+	respiro: number;
+	/** Espessura da borda preta da placa. */
+	borda: number;
+	/** Raio dos cantos arredondados da placa. */
+	raio: number;
+	/** Distância mínima da placa às bordas do arquivo. */
+	margemX: number;
+	margemY: number;
 }
 
-/** As medidas do selo para uma arte deste tamanho. */
-function geometriaDoSelo(
+/**
+ * Exportada para os testes derivarem o lado da REGRA em vez de copiar um
+ * número: fixar "94" num teste faria ele testar a constante, não o carimbo.
+ */
+export function geometriaDoSelo(
 	W: number,
 	H: number,
 	url: string,
-): { lado: number; margemX: number; margemY: number } {
+): GeometriaDoSelo {
 	const menor = Math.min(W, H);
+	const modulos = QRCode.create(url, { errorCorrectionLevel: 'H' }).modules
+		.size;
+	const pxPorModulo = Math.max(
+		MINIMO_PX_POR_MODULO,
+		Math.round((menor * FRACAO_DO_MENOR_LADO) / modulos),
+	);
+	const qr = modulos * pxPorModulo;
+	// Dois módulos de respiro: o padrão pede quatro para leitores antigos, mas
+	// aqui o branco da placa já é o contraste — e cada módulo a mais é arte
+	// coberta.
+	const respiro = 2 * pxPorModulo;
+	const borda = Math.max(2, pxPorModulo);
+	const lado = qr + 2 * respiro + 2 * borda;
 	return {
-		lado: ladoDoSelo(url),
+		lado,
+		qr,
+		pxPorModulo,
+		respiro,
+		borda,
+		raio: Math.round(lado / 10),
 		// No wrap 360° os 8% externos de cada lado são zona de emenda da caneca.
 		margemX: W / H >= 2 ? Math.round(W * 0.1) : Math.round(menor * 0.012),
 		margemY: Math.round(menor * 0.012),
@@ -263,19 +240,18 @@ function geometriaDoSelo(
 }
 
 /**
- * O SELO DO LOTE: ONDE o QR pousa e de que COR ele sai.
+ * O SELO DO LOTE: ONDE a placa pousa.
  *
- * ┌─ POR QUE NÃO É "UM DOS QUATRO CANTOS" ──────────────────────────────────┐
- * │ Era. O canto mais vazio do ARQUIVO, o que funcionava bem na caneca, que  │
- * │ é um retângulo cheio. No chaveiro quebrou de um jeito pior que cobrir o  │
- * │ desenho: o canto mais vazio de um recorte é o lado de FORA da silhueta,  │
- * │ e ali o QR ia parar na sucata do corte. Código que não fica na peça é    │
+ * ┌─ POR QUE NÃO É SIMPLESMENTE "O CANTO DO ARQUIVO" ───────────────────────┐
+ * │ Na caneca, que é um retângulo cheio, o canto do arquivo serve. No        │
+ * │ chaveiro recortado, o canto do arquivo é o lado de FORA da silhueta, e   │
+ * │ ali o QR vai parar na sucata do corte. Código que não fica na peça é     │
  * │ pior que código em cima do nome.                                         │
  * │                                                                          │
- * │ Agora a busca é por posição, não por canto, e só valem posições DENTRO   │
- * │ da peça (`MapaDaArte.dentro`). Entre as válidas, ganha a mais baixa e    │
- * │ mais à direita — que é o "mais no canto" que foi pedido, medido no canto │
- * │ da PEÇA e não no do arquivo.                                             │
+ * │ Então o canto é o da PEÇA (a tinta), medido em `MapaDaArte.dentro`, e é  │
+ * │ sempre o mesmo: embaixo à ESQUERDA, como no print do cliente. Não há     │
+ * │ busca por "canto mais vazio" — isso já mandou o QR para lugares que      │
+ * │ ninguém previa. Os outros cantos só entram se ali não couber nada.       │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
  * Exportada porque `carimbarLote` a chama UMA vez por lote: é isso que mantém
@@ -290,13 +266,12 @@ export async function escolherSelo(
 	const W = meta.width ?? 0;
 	const H = meta.height ?? 0;
 	const g = geometriaDoSelo(W, H, url);
-	/** O canto de baixo à direita do arquivo — o desfecho quando nada serve. */
+	/** O canto de baixo à esquerda do arquivo — o desfecho quando nada serve. */
 	const ultimoRecurso = (): Selo => ({
-		left: Math.max(0, W - g.lado - g.margemX),
+		left: Math.min(Math.max(0, W - g.lado), g.margemX),
 		top: Math.max(0, H - g.lado - g.margemY),
-		escuro: false,
 	});
-	if (!W || !H) return { left: 0, top: 0, escuro: false };
+	if (!W || !H) return { left: 0, top: 0 };
 
 	const mapa = await lerArte(master);
 	const porX = GRADE / W;
@@ -312,20 +287,15 @@ export async function escolherSelo(
 	const maxY = Math.floor((H - g.lado - g.margemY) * porY);
 	if (maxX < minX || maxY < minY) return ultimoRecurso();
 
-	/** Fração de tinta de um bloco, ou `null` se ele sai da peça. */
-	const tintaDoBloco = (x: number, y: number): number | null => {
-		if (x < minX || y < minY || x > maxX || y > maxY) return null;
-		let comTinta = 0;
-		let celulas = 0;
+	/** O bloco cabe inteiro DENTRO da peça? */
+	const cabe = (x: number, y: number): boolean => {
+		if (x < minX || y < minY || x > maxX || y > maxY) return false;
 		for (let dy = 0; dy < alturaEmCelulas; dy++) {
 			for (let dx = 0; dx < larguraEmCelulas; dx++) {
-				const i = (y + dy) * GRADE + (x + dx);
-				if (!mapa.dentro[i]) return null;
-				if (mapa.tinta[i]) comTinta++;
-				celulas++;
+				if (!mapa.dentro[(y + dy) * GRADE + (x + dx)]) return false;
 			}
 		}
-		return celulas === 0 ? null : comTinta / celulas;
+		return true;
 	};
 
 	/**
@@ -353,24 +323,13 @@ export async function escolherSelo(
 	/**
 	 * DE UM CANTO DA PEÇA, O PRIMEIRO LUGAR QUE CABE.
 	 *
-	 * ┌─ O QUE SAIU DAQUI ──────────────────────────────────────────────────────┐
-	 * │ Havia uma caminhada de 15% da peça para dentro, escolhendo o ponto      │
-	 * │ mais VAZIO — e uma folga que trocava de canto se outro fosse mais       │
-	 * │ quieto. Na caneca com foto isso mandou o QR para o canto de CIMA à      │
-	 * │ ESQUERDA, e o cliente leu como "QR em lugar aleatório".                 │
-	 * │                                                                          │
-	 * │ O pedido é o oposto: o mais no canto possível, sempre o mesmo canto.    │
-	 * │ Um QR pequeno colado na quina atrapalha menos do que um QR que "foge do │
-	 * │ desenho" para um lugar que ninguém prevê.                                │
-	 * └──────────────────────────────────────────────────────────────────────────┘
-	 *
-	 * O que fica é só a fase de ENTRAR: num losango ou em qualquer silhueta
-	 * recortada, a quina da caixa é papel que o corte leva embora, então o selo
-	 * anda da quina para dentro até o primeiro bloco inteiramente dentro da
-	 * peça — e para ali. Três caminhos (diagonal e as duas bordas), e ganha o
-	 * que entra mais PERTO da quina, medido em pixels da arte e não em células:
-	 * a grade é 96×96 seja qual for a proporção, e na caneca 360° uma célula
-	 * horizontal vale duas vezes e meia uma vertical.
+	 * Num losango ou em qualquer silhueta recortada, a quina da caixa é papel
+	 * que o corte leva embora, então o selo anda da quina para dentro até o
+	 * primeiro bloco inteiramente dentro da peça — e para ali. Três caminhos
+	 * (diagonal e as duas bordas), e ganha o que entra mais PERTO da quina,
+	 * medido em pixels da arte e não em células: a grade é 96×96 seja qual for
+	 * a proporção, e na caneca 360° uma célula horizontal vale duas vezes e
+	 * meia uma vertical.
 	 */
 	const perto = (
 		quinaX: number,
@@ -388,7 +347,7 @@ export async function escolherSelo(
 			for (let k = 0; k < GRADE; k++) {
 				const x = quinaX + px * k;
 				const y = quinaY + py * k;
-				if (tintaDoBloco(x, y) === null) continue;
+				if (!cabe(x, y)) continue;
 				const distPx = k * passoPx;
 				if (!melhor || distPx < melhor.distPx) melhor = { x, y, distPx };
 				break;
@@ -405,46 +364,46 @@ export async function escolherSelo(
 	 * por largura: o QR terminava 11% acima da borda de baixo, e não a 1%. A
 	 * caminhada existe para silhueta recortada, não para pagar margem.
 	 */
+	const esq = Math.max(pMinX, minX);
 	const dir = Math.min(pMaxX - larguraEmCelulas + 1, maxX);
 	const baixo = Math.min(pMaxY - alturaEmCelulas + 1, maxY);
-	const esq = Math.max(pMinX, minX);
 	const cima = Math.max(pMinY, minY);
-	// Embaixo à direita é O canto. Os outros só entram se ali não couber nada
+	// Embaixo à esquerda é O canto. Os outros só entram se ali não couber nada
 	// dentro da peça — não há comparação de "mais vazio" entre eles.
 	const escolhido =
-		perto(dir, baixo, -1, -1) ??
 		perto(esq, baixo, 1, -1) ??
-		perto(dir, cima, -1, 1) ??
-		perto(esq, cima, 1, 1);
+		perto(dir, baixo, -1, -1) ??
+		perto(esq, cima, 1, 1) ??
+		perto(dir, cima, -1, 1);
 
 	if (!escolhido) return ultimoRecurso();
 
-	const left = Math.max(
-		0,
-		Math.min(W - g.lado, Math.round(escolhido.x / porX)),
+	return {
+		left: Math.max(0, Math.min(W - g.lado, Math.round(escolhido.x / porX))),
+		top: Math.max(0, Math.min(H - g.lado, Math.round(escolhido.y / porY))),
+	};
+}
+
+/** A placa: quadrado branco de cantos arredondados com borda preta fina. */
+function placaSvg(g: GeometriaDoSelo): Buffer {
+	// O stroke do SVG é centrado no contorno; deslocar meio traço para dentro
+	// deixa a borda inteira dentro do quadrado, sem pixel cortado na aresta.
+	const meio = g.borda / 2;
+	const interno = g.lado - g.borda;
+	return Buffer.from(
+		`<svg xmlns="http://www.w3.org/2000/svg" width="${g.lado}" height="${g.lado}">` +
+			`<rect x="${meio}" y="${meio}" width="${interno}" height="${interno}" rx="${g.raio}" ry="${g.raio}" ` +
+			`fill="${PLACA}" stroke="${TINTA}" stroke-width="${g.borda}"/></svg>`,
 	);
-	const top = Math.max(0, Math.min(H - g.lado, Math.round(escolhido.y / porY)));
-	// A COR se mede no recorte exato, não na grade: a grade é grossa demais (uma
-	// célula da caneca tem 30 px de largura) e erraria a polaridade do QR por
-	// causa da vizinhança.
-	const { luz } = await medirRegiao(master, {
-		left,
-		top,
-		width: g.lado,
-		height: g.lado,
-	});
-	return { left, top, escuro: luz < LIMIAR_ESCURO };
 }
 
 /**
  * Aplica o carimbo e devolve o PNG da peça.
  *
- * O QR é composto como PNG, não por SVG: pixel exato, sem passar por
- * renderizador. Nível H (30% de redundância) porque ele vai gravado em acrílico
- * ou metal e fotografado de lado, com risco e reflexo.
- *
- * Os módulos claros saem TRANSPARENTES — é isso que quer dizer "sem fundo". O
- * contraste vem da própria arte, e por isso `escolherSelo` decide a cor.
+ * A placa vai como SVG (é geometria: retângulo arredondado), o QR vai como PNG
+ * com `scale` inteiro — pixel exato, sem reamostragem, ver `geometriaDoSelo`.
+ * Nível H (30% de redundância) porque ele vai gravado em acrílico ou metal e
+ * fotografado de lado, com risco e reflexo.
  */
 export async function carimbarPeca(
 	master: Buffer,
@@ -457,41 +416,34 @@ export async function carimbarPeca(
 
 	const selo = opts.selo ?? (await escolherSelo(master, opts.url));
 	const g = geometriaDoSelo(W, H, opts.url);
-	const caixa = {
+	const placa = {
 		left: Math.max(0, Math.min(W - g.lado, selo.left)),
 		top: Math.max(0, Math.min(H - g.lado, selo.top)),
 		width: Math.min(g.lado, W),
 		height: Math.min(g.lado, H),
 	};
+	const qr = {
+		left: placa.left + g.borda + g.respiro,
+		top: placa.top + g.borda + g.respiro,
+		size: g.qr,
+	};
 
 	const qrPng = await QRCode.toBuffer(opts.url, {
 		errorCorrectionLevel: 'H',
 		type: 'png',
-		// `scale`, e não `width`: pede o QR com um número INTEIRO de pixels por
-		// módulo, sem reamostragem. Ver `ladoDoSelo`.
-		scale: PX_POR_MODULO,
+		scale: g.pxPorModulo,
 		margin: 0,
-		color: {
-			dark: selo.escuro ? TINTA_INVERSA : TINTA,
-			light: '#00000000',
-		},
+		color: { dark: TINTA, light: PLACA },
 	});
 
 	const png = await sharp(master)
 		.ensureAlpha()
-		.composite([{ input: qrPng, left: caixa.left, top: caixa.top }])
+		.composite([
+			{ input: placaSvg(g), left: placa.left, top: placa.top },
+			{ input: qrPng, left: qr.left, top: qr.top },
+		])
 		.png()
 		.toBuffer();
 
-	return {
-		png,
-		area: {
-			left: caixa.left,
-			top: caixa.top,
-			width: caixa.width,
-			height: caixa.height,
-			qr: { left: caixa.left, top: caixa.top, size: caixa.width },
-		},
-		selo,
-	};
+	return { png, area: { ...placa, qr }, selo };
 }
