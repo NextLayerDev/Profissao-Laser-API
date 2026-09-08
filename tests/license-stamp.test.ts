@@ -475,8 +475,12 @@ describe('onde o carimbo pousa', () => {
 		})
 			.png()
 			.toBuffer();
-		const { left } = await escolherSelo(base, URL);
+		const { left, top } = await escolherSelo(base, URL);
 		expect(left + LADO).toBeLessThanOrEqual(Math.ceil(Wp * 0.92));
 		expect(left).toBeGreaterThanOrEqual(Math.floor(Wp * 0.08));
+		// E a emenda não empurra o selo para CIMA: ele continua colado na borda
+		// de baixo. Já subiu 11% quando a quina de partida nascia dentro da zona
+		// de emenda e só a diagonal saía dela.
+		expect(Hp - (top + LADO)).toBeLessThan(Hp * 0.03);
 	});
 });

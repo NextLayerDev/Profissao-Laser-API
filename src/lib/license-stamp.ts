@@ -397,15 +397,25 @@ export async function escolherSelo(
 		return melhor;
 	};
 
-	const dir = pMaxX - larguraEmCelulas + 1;
-	const baixo = pMaxY - alturaEmCelulas + 1;
+	/**
+	 * A quina de partida já nasce DENTRO da zona permitida.
+	 *
+	 * Sem isto, na caneca 360° a quina da peça caía na zona de emenda (os 10%
+	 * externos), e a única rota que saía dela era a diagonal — que troca altura
+	 * por largura: o QR terminava 11% acima da borda de baixo, e não a 1%. A
+	 * caminhada existe para silhueta recortada, não para pagar margem.
+	 */
+	const dir = Math.min(pMaxX - larguraEmCelulas + 1, maxX);
+	const baixo = Math.min(pMaxY - alturaEmCelulas + 1, maxY);
+	const esq = Math.max(pMinX, minX);
+	const cima = Math.max(pMinY, minY);
 	// Embaixo à direita é O canto. Os outros só entram se ali não couber nada
 	// dentro da peça — não há comparação de "mais vazio" entre eles.
 	const escolhido =
 		perto(dir, baixo, -1, -1) ??
-		perto(pMinX, baixo, 1, -1) ??
-		perto(dir, pMinY, -1, 1) ??
-		perto(pMinX, pMinY, 1, 1);
+		perto(esq, baixo, 1, -1) ??
+		perto(dir, cima, -1, 1) ??
+		perto(esq, cima, 1, 1);
 
 	if (!escolhido) return ultimoRecurso();
 
