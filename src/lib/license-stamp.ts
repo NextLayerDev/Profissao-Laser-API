@@ -351,80 +351,47 @@ export async function escolherSelo(
 	if (pMaxX < 0) return ultimoRecurso();
 
 	/**
-	 * DE UM CANTO DA PEÇA, O MELHOR LUGAR PERTO DELE.
+	 * DE UM CANTO DA PEÇA, O PRIMEIRO LUGAR QUE CABE.
 	 *
-	 * A caminhada é pela diagonal para dentro e CURTA — um quinto da peça. É o
-	 * que concilia as duas metades do pedido:
+	 * ┌─ O QUE SAIU DAQUI ──────────────────────────────────────────────────────┐
+	 * │ Havia uma caminhada de 15% da peça para dentro, escolhendo o ponto      │
+	 * │ mais VAZIO — e uma folga que trocava de canto se outro fosse mais       │
+	 * │ quieto. Na caneca com foto isso mandou o QR para o canto de CIMA à      │
+	 * │ ESQUERDA, e o cliente leu como "QR em lugar aleatório".                 │
+	 * │                                                                          │
+	 * │ O pedido é o oposto: o mais no canto possível, sempre o mesmo canto.    │
+	 * │ Um QR pequeno colado na quina atrapalha menos do que um QR que "foge do │
+	 * │ desenho" para um lugar que ninguém prevê.                                │
+	 * └──────────────────────────────────────────────────────────────────────────┘
 	 *
-	 *  · "mais no canto" — a busca nunca se afasta muito da quina, então o selo
-	 *    não vai parar no meio da arte;
-	 *  · "sem atrapalhar" — entre os poucos lugares dessa caminhada, ganha o
-	 *    mais vazio, então ele desvia do nome em vez de pousar em cima dele.
-	 *
-	 * Parar no PRIMEIRO ponto que cabe seria o defeito de volta: no chaveiro, o
-	 * primeiro ponto dentro da peça vindo de baixo é exatamente onde o nome
-	 * está. E varrer o quadrante inteiro seria o outro extremo — na caneca, que
-	 * é foto e não tem vazio nenhum, o "mais quieto" fica no meio da arte.
+	 * O que fica é só a fase de ENTRAR: num losango ou em qualquer silhueta
+	 * recortada, a quina da caixa é papel que o corte leva embora, então o selo
+	 * anda da quina para dentro até o primeiro bloco inteiramente dentro da
+	 * peça — e para ali. Três caminhos (diagonal e as duas bordas), e ganha o
+	 * que entra mais PERTO da quina, medido em pixels da arte e não em células:
+	 * a grade é 96×96 seja qual for a proporção, e na caneca 360° uma célula
+	 * horizontal vale duas vezes e meia uma vertical.
 	 */
 	const perto = (
 		quinaX: number,
 		quinaY: number,
 		passoX: number,
 		passoY: number,
-	): { x: number; y: number; tinta: number } | null => {
-		/**
-		 * O alcance é medido em PIXELS DA ARTE, não em células da grade.
-		 *
-		 * A grade é 96×96 seja qual for a proporção, então numa caneca 360°
-		 * (2905×1122) cada célula tem 30 px de largura e 12 de altura. Contar
-		 * passos de célula fazia a caminhada horizontal andar duas vezes e meia
-		 * mais que a vertical — e o selo, que devia ficar no canto, ia parar no
-		 * meio da arte.
-		 */
-		const limitePx = Math.min(W, H) * 0.15;
-		let melhor: { x: number; y: number; tinta: number } | null = null;
-		/*
-		 * Três caminhos a partir da quina, não um: a diagonal e as DUAS BORDAS.
-		 *
-		 * Só a diagonal não bastava. No chaveiro, a diagonal do canto de baixo
-		 * atravessa o nome inteiro antes de achar branco, e o selo pousava em
-		 * cima das letras. Subindo pela borda direita, ele acha o vão ao lado da
-		 * âncora em dois passos — que é onde uma pessoa poria.
-		 */
+	): { x: number; y: number } | null => {
+		let melhor: { x: number; y: number; distPx: number } | null = null;
 		for (const [px, py] of [
 			[passoX, passoY],
 			[passoX, 0],
 			[0, passoY],
 		]) {
-			/*
-			 * Duas fases, e a ordem importa.
-			 *
-			 * ENTRAR não tem limite de passos: num losango — ou em qualquer
-			 * silhueta bem recortada — a quina da caixa fica longe da peça, e
-			 * parar cedo devolveria "não achei" e mandaria o selo para o canto do
-			 * arquivo, que é sucata depois do corte.
-			 *
-			 * ESCOLHER, sim, é curto: uma vez dentro, só os próximos passos
-			 * contam. É o que segura o selo perto da quina em vez de deixá-lo
-			 * passear até o meio da arte atrás do ponto mais vazio.
-			 */
-			/** Quanto este passo anda na arte, em pixels. */
 			const passoPx = Math.hypot(px / porX, py / porY);
-			let entrou = -1;
 			for (let k = 0; k < GRADE; k++) {
-				if (tintaDoBloco(quinaX + px * k, quinaY + py * k) !== null) {
-					entrou = k;
-					break;
-				}
-			}
-			if (entrou < 0) continue;
-			for (let k = entrou; (k - entrou) * passoPx <= limitePx; k++) {
 				const x = quinaX + px * k;
 				const y = quinaY + py * k;
-				const t = tintaDoBloco(x, y);
-				if (t === null) continue;
-				// `<` e não `<=`: empate fica com o mais perto da quina, que veio antes.
-				if (!melhor || t < melhor.tinta) melhor = { x, y, tinta: t };
+				if (tintaDoBloco(x, y) === null) continue;
+				const distPx = k * passoPx;
+				if (!melhor || distPx < melhor.distPx) melhor = { x, y, distPx };
+				break;
 			}
 		}
 		return melhor;
@@ -432,29 +399,15 @@ export async function escolherSelo(
 
 	const dir = pMaxX - larguraEmCelulas + 1;
 	const baixo = pMaxY - alturaEmCelulas + 1;
-	// Ordem = desempate: embaixo antes de em cima, direita antes de esquerda.
-	const candidatos = [
-		perto(dir, baixo, -1, -1),
-		perto(pMinX, baixo, 1, -1),
-		perto(dir, pMinY, -1, 1),
-		perto(pMinX, pMinY, 1, 1),
-	].filter((c): c is { x: number; y: number; tinta: number } => c !== null);
+	// Embaixo à direita é O canto. Os outros só entram se ali não couber nada
+	// dentro da peça — não há comparação de "mais vazio" entre eles.
+	const escolhido =
+		perto(dir, baixo, -1, -1) ??
+		perto(pMinX, baixo, 1, -1) ??
+		perto(dir, pMinY, -1, 1) ??
+		perto(pMinX, pMinY, 1, 1);
 
-	if (candidatos.length === 0) return ultimoRecurso();
-
-	/**
-	 * Trocar de canto exige ser MESMO mais quieto, não quieto por um fio.
-	 *
-	 * Sem esta folga, meio por cento de tinta mandava o selo do canto de baixo
-	 * para o de cima — e a preferência declarada é embaixo, o mais no canto
-	 * possível. A ordem dos candidatos é o desempate; a folga é o que faz o
-	 * desempate valer na prática.
-	 */
-	const FOLGA = 0.04;
-	let escolhido = candidatos[0];
-	for (const c of candidatos) {
-		if (c.tinta < escolhido.tinta - FOLGA) escolhido = c;
-	}
+	if (!escolhido) return ultimoRecurso();
 
 	const left = Math.max(
 		0,

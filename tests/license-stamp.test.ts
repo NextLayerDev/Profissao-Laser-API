@@ -436,16 +436,35 @@ describe('onde o carimbo pousa', () => {
 		expect(top + LADO).toBeLessThanOrEqual(H - m);
 	});
 
-	it('dentro da peça, foge de onde tem desenho', async () => {
-		// Metade de baixo da peça tomada: o selo tem de ir para a metade de cima.
+	it('fica no canto de BAIXO À DIREITA da peça mesmo com desenho ali', async () => {
+		/*
+		 * Era o contrário: metade de baixo tomada mandava o selo para cima. Foi
+		 * isso que, na caneca com foto, pôs o QR em cima à esquerda — "em lugar
+		 * aleatório" para quem recebeu a peça. O canto é fixo agora: o selo não
+		 * foge do desenho, ele encolhe no canto e pronto.
+		 */
 		const m = 300;
-		const { top } = await escolherSelo(
+		const { left, top } = await escolherSelo(
 			await pecaRecortada([
 				{ left: m + 20, top: H / 2, width: W - 2 * m - 40, height: H / 2 - m },
 			]),
 			URL,
 		);
-		expect(top + LADO).toBeLessThanOrEqual(H / 2);
+		const folga = 2 * GRADE_PX;
+		expect(left + LADO).toBeGreaterThanOrEqual(W - m - folga);
+		expect(top + LADO).toBeGreaterThanOrEqual(H - m - folga);
+	});
+
+	it('na arte cheia o canto é SEMPRE o de baixo à direita', async () => {
+		// Duas artes, a mesma quina: o cliente tem de saber onde o QR vai cair
+		// antes de gerar. Metade de cima clara e metade de baixo escura não muda
+		// nada — não existe mais "canto mais vazio".
+		const base = await arteCom([
+			{ left: 0, top: H / 2, width: W, height: H / 2 },
+		]);
+		const { left, top } = await escolherSelo(base, URL);
+		expect(W - (left + LADO)).toBeLessThan(W * 0.03);
+		expect(H - (top + LADO)).toBeLessThan(H * 0.03);
 	});
 
 	it('respeita a zona de emenda mesmo escolhendo o canto', async () => {
