@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isStaffRole } from '../lib/external-auth.js';
+import { garantirModeloCarimbo } from '../lib/licensed-stamp-entry.js';
 import { uploadToolOutput } from '../lib/storage.js';
 import { authenticateAdmin, authenticateCustomer } from '../middleware/auth.js';
 import { volumePorMarca } from '../repositories/licensed-art.js';
@@ -186,6 +187,17 @@ export async function licensedBrandRoute(server: FastifyInstance) {
 					},
 					request.currentUser?.id ?? null,
 				);
+				// A marca já existe; o modelo "só licenciar" é consequência dela.
+				// Falhar aqui vira log, não 400 — o admin não pode perder a marca
+				// por causa do banco de modelos.
+				try {
+					await garantirModeloCarimbo(marca, request.currentUser?.id ?? null);
+				} catch (err) {
+					console.error(
+						`[licensed-brands] modelo "só licenciar" não pôde ser criado para ${marca.feature_key}:`,
+						err,
+					);
+				}
 				return reply.status(201).send(marca);
 			} catch (err) {
 				return reply
@@ -239,6 +251,16 @@ export async function licensedBrandRoute(server: FastifyInstance) {
 						notes: campos.notes.trim() || null,
 					}),
 				});
+				// Marca anterior a este modelo ganha o "só licenciar" na primeira
+				// edição — sem migração à mão para cada clube já cadastrado.
+				try {
+					await garantirModeloCarimbo(marca, request.currentUser?.id ?? null);
+				} catch (err) {
+					console.error(
+						`[licensed-brands] modelo "só licenciar" não pôde ser garantido para ${marca.feature_key}:`,
+						err,
+					);
+				}
 				return reply.send(marca);
 			} catch (err) {
 				return reply
