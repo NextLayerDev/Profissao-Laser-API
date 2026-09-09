@@ -119,6 +119,15 @@ export interface Creation {
 	height: number;
 	/** Default true; false omite o card do cliente mas preserva o cadastro. */
 	active?: boolean;
+	/**
+	 * A peça deste formato sai SEM FUNDO (PNG com alfa real).
+	 *
+	 * Só faz sentido na arte licenciada: chaveiro/vetor/capinha são recorte,
+	 * caneca é sangria total. Quando `true` e o modelo devolve a arte opaca —
+	 * fundo branco, ou o xadrez de "transparência falsa" que ele adora pintar —
+	 * o motor passa a arte pelo removedor de fundo ANTES do carimbo.
+	 */
+	transparent?: boolean;
 }
 
 export interface ToolDefinitionDoc {

@@ -4,11 +4,13 @@ import sharp from 'sharp';
 import { aiRodaDeGraca, nadaAPagarNesteRun } from '../lib/atelie/ajustes.js';
 import { isStaffRole } from '../lib/external-auth.js';
 import { IMAGE_MODELS_CATALOG } from '../lib/image-models-catalog.js';
+import { garantirSemFundo } from '../lib/licensed-background.js';
 import {
 	camposDaPeca,
 	carimbarLote,
 	lerDadosVariaveis,
 	MAX_TIRAGEM,
+	nomesDasEspecificacoes,
 	type PecaVariavel,
 } from '../lib/licensed-piece.js';
 import {
@@ -1113,9 +1115,15 @@ async function executarRun(
 						rotulo: linha.tema,
 					});
 
-					// O texto da linha manda no `tema` E refaz o prompt a partir do
-					// molde cru — sem a segunda metade, a peça sai sem o nome dela.
-					const campos = camposDaPeca(fields, moldesComVariavel, linha);
+					// O texto da linha manda no `tema` (e na especificação principal
+					// do registro, quando há) E refaz o prompt a partir do molde cru —
+					// sem a segunda metade, a peça sai sem o nome dela.
+					const campos = camposDaPeca(
+						fields,
+						moldesComVariavel,
+						linha,
+						selectedBankEntry ? nomesDasEspecificacoes(selectedBankEntry) : [],
+					);
 
 					// A foto da linha entra como `referencia`. As fotos das OUTRAS
 					// linhas ficam de fora — senão o fallback de imagem única do
@@ -1214,6 +1222,31 @@ async function executarRun(
 			const subidas: string[] = [];
 
 			try {
+				/**
+				 * SEM FUNDO DE VERDADE, antes do carimbo.
+				 *
+				 * Nos formatos de recorte (`Creation.transparent`) o modelo devolve
+				 * a arte opaca com frequência — fundo branco ou o xadrez falso de
+				 * transparência. Gravada assim, a máquina queima a placa inteira. O
+				 * removedor roda aqui, dentro do `try`: se falhar, o lote é estornado
+				 * como qualquer outra falha, em vez de entregar peça com fundo.
+				 */
+				const criacao = doc.creations?.find((c) => c.id === fields.creation_id);
+				if (criacao?.transparent) {
+					const ctxFundo = { customerId, authHeader };
+					if (dadosVariaveis) {
+						for (const [indice, arte] of artesDaPeca) {
+							artesDaPeca.set(indice, await garantirSemFundo(arte, ctxFundo));
+						}
+					} else {
+						const chave = doc.licensing?.master;
+						const master = chave ? bag[chave] : undefined;
+						if (chave && Buffer.isBuffer(master)) {
+							bag[chave] = await garantirSemFundo(master, ctxFundo);
+						}
+					}
+				}
+
 				const pecas = await emitirLote({
 					customerId,
 					featureKey,
