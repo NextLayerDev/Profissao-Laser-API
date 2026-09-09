@@ -65,7 +65,11 @@ import {
 import { toolBankRepository } from '../repositories/tool-bank.js';
 import { registerCoreBlocks } from '../tool-blocks/index.js';
 import type { ToolBankEntry } from '../types/tool-bank.js';
-import { bankImageSizeSchema, resolveImageSizePx } from '../types/tool-bank.js';
+import {
+	BANK_MODE_CARIMBO,
+	bankImageSizeSchema,
+	resolveImageSizePx,
+} from '../types/tool-bank.js';
 
 // Garante que os blocos curados estejam no registry (idempotente).
 registerCoreBlocks();
@@ -140,6 +144,17 @@ function validateUploadedFiles(
 		}
 
 		const spec = inputSpec[field];
+		// A foto de cada linha do lote personalizado (`piece_image_<i>`) nunca
+		// está no `input` da definition — é o run que a remapeia para
+		// `referencia`. Sem esta exceção, um lote com DUAS fotos caía em "Arquivo
+		// inesperado" (o fallback abaixo só perdoa um arquivo sozinho) — com
+		// estorno, mas caía. Medido: "cada peça diferente" nunca passou com foto.
+		if (/^piece_image_\d+$/.test(field)) {
+			if (!ALLOWED_IMAGE_MIME.has(mimes[field] ?? '')) {
+				return `Tipo de arquivo não suportado em '${field}' (envie PNG/JPG/WEBP).`;
+			}
+			continue;
+		}
 		// Fieldname genérico com UM input de imagem: é o fallback legado do motor
 		// (`coerceInputs`), então precisa continuar passando aqui.
 		if (!spec) {
@@ -504,6 +519,29 @@ function licenseFeatureKeyOf(entry?: ToolBankEntry): string | null {
 	return /^[a-z0-9]+:[a-z0-9-]+$/.test(chave) ? chave : null;
 }
 
+/** O `mode` do registro do banco, como o admin cadastrou (`data.mode`). */
+function bankModeOf(entry?: ToolBankEntry): string | null {
+	const bruto = (entry?.data as Record<string, unknown> | undefined)?.mode;
+	return typeof bruto === 'string' && bruto.trim() ? bruto.trim() : null;
+}
+
+/**
+ * A arte enviada pelo aluno, normalizada em PNG.
+ *
+ * "Como está" é a promessa do modo só-licenciar — sem redimensionar, sem tirar
+ * fundo, sem passar por modelo. A única transformação é o contêiner: o master
+ * sobe para o CDN como `.png` e o carimbo compõe sobre alfa, então um JPEG
+ * vira PNG uma vez, sem perda de pixel. Conteúdo que o sharp não lê é erro do
+ * cliente (400), não do motor.
+ */
+async function normalizarPng(buf: Buffer): Promise<Buffer> {
+	try {
+		return await sharp(buf).png().toBuffer();
+	} catch {
+		throw new ToolEngineError(400, 'A imagem enviada não pôde ser lida.');
+	}
+}
+
 /**
  * Tira do pipeline TODO nó que escreve arquivo ou devolve imagem crua.
  *
@@ -748,6 +786,30 @@ async function executarRun(
 			}
 		}
 
+		/**
+		 * SÓ LICENCIAR: o registro do banco com `mode: 'carimbo'`.
+		 *
+		 * ┌─ POR QUE ISTO NÃO É UM PROMPT ──────────────────────────────────────┐
+		 * │ Tentou-se: um registro "Licenciar Arte" pedindo ao modelo que        │
+		 * │ reproduzisse a referência "exatamente". Não tem como dar certo: o    │
+		 * │ pipeline licenciado injeta o escudo como imagem 1 SEMPRE, e modelo   │
+		 * │ de imagem reinterpreta por natureza. Quem só queria o código na arte │
+		 * │ que já tinha recebia outra arte.                                     │
+		 * │                                                                      │
+		 * │ Então este modo não gera nada. O arquivo enviado É o master: entra   │
+		 * │ como está, recebe o(s) código(s) e o carimbo, e sai. Billing, portão │
+		 * │ do vendedor, tiragem, estorno — tudo igual à rodada gerada; só o     │
+		 * │ `executeTool` some do caminho.                                       │
+		 * └──────────────────────────────────────────────────────────────────────┘
+		 */
+		const modoCarimbo = bankModeOf(selectedBankEntry) === BANK_MODE_CARIMBO;
+		if (modoCarimbo && !licenseFeatureKeyOf(selectedBankEntry)) {
+			return recusar(
+				400,
+				'Este modelo de licenciamento não tem marca vinculada.',
+			);
+		}
+
 		// Tamanho escolhido pelo CLIENTE na hora da geração (`image_size`) — vence
 		// banco e tool. `"native"` mantém o tamanho nativo gerado pela IA (sem
 		// redimensionar); qualquer outro valor é JSON no formato do banco (px | mm | preset).
@@ -795,6 +857,11 @@ async function executarRun(
 					: 'Quantidade de variações inválida.';
 			return recusar(400, message);
 		}
+		// Só licenciar não gera: "variação" não quer dizer nada aqui, e aceitar
+		// N cobraria N gerações de um modelo que não roda.
+		if (modoCarimbo && variationCount > 1) {
+			return recusar(400, 'Só licenciar entrega uma arte por rodada.');
+		}
 
 		/**
 		 * QUAL FLUXO. A validação continua antes do portão — não porque "400
@@ -840,14 +907,17 @@ async function executarRun(
 		 * `ToolDefinitionLoadError` e transformava este 400 em **HTTP 500**, com
 		 * mensagem de usuário e voxxy preso.
 		 */
-		try {
-			resolveCreation(doc, fields.creation_id);
-		} catch (err) {
-			const message =
-				err instanceof ToolEngineError
-					? err.message
-					: 'Tipo de criação inválido.';
-			return recusar(400, message);
+		// Só licenciar não tem Passo 1: a arte já vem no tamanho dela.
+		if (!modoCarimbo) {
+			try {
+				resolveCreation(doc, fields.creation_id);
+			} catch (err) {
+				const message =
+					err instanceof ToolEngineError
+						? err.message
+						: 'Tipo de criação inválido.';
+				return recusar(400, message);
+			}
 		}
 
 		/**
@@ -975,20 +1045,30 @@ async function executarRun(
 		// raw_prompt, e tamanho (cliente > creation_id > banco > tool) para
 		// `ai.generate_image`/`ai.image_studio`. DEPOIS do portão de propósito: o
 		// `variationCount` que entra aqui é o RECONCILIADO, não o pedido.
-		doc = injectModelOverrides(
-			doc,
-			fields,
-			variationCount,
-			bankImageSize(selectedBankEntry),
-			clientSize,
-		);
+		// Só licenciar nunca chega nos nós de imagem — e o override resolveria o
+		// `creation_id` de novo, que aqui não existe.
+		if (!modoCarimbo) {
+			doc = injectModelOverrides(
+				doc,
+				fields,
+				variationCount,
+				bankImageSize(selectedBankEntry),
+				clientSize,
+			);
+		}
 
 		// Falha rápida em arquivo inválido (defense-in-depth; mimetype é spoofável).
 		// Valida CADA arquivo enviado CONTRA O SEU INPUT: input de imagem exige
 		// mimetype de imagem; input `type:'file'` valida por extensão. Refund se já
 		// houver invocação pendente, pra não deixá-la presa.
+		//
+		// No modo só-licenciar a `referencia` é a própria arte: valida como imagem
+		// mesmo que a definition um dia deixe de declará-la (ela é config da
+		// GERAÇÃO, e este modo não gera).
 		const fileError = validateUploadedFiles(
-			doc.input ?? {},
+			modoCarimbo
+				? { ...(doc.input ?? {}), referencia: { type: 'image' } }
+				: (doc.input ?? {}),
 			files,
 			fileMimes,
 			fileNames,
@@ -1087,9 +1167,44 @@ async function executarRun(
 		 * `piece_index` (base 1). Vazio no lote uniforme, onde a arte é uma só.
 		 */
 		const artesDaPeca = new Map<number, Buffer>();
+		/**
+		 * A chave da bag onde o master do modo só-licenciar mora. O `doc` real
+		 * aponta `licensing.master` para a saída do modelo (`gen.png`), que aqui
+		 * não existe — `carimbarLote` recebe um doc de mentira apontando para cá,
+		 * o mesmo truque de `ampliarLoteLicenciado`.
+		 */
+		const CHAVE_UPLOAD = 'upload.png';
 		try {
 			const meta = buildFileMeta(fileMimes, fileNames);
-			if (dadosVariaveis) {
+			if (modoCarimbo) {
+				if (dadosVariaveis) {
+					// Sem geração não há o que fazer com um nome sozinho: cada linha
+					// precisa da PRÓPRIA arte, e o texto vira só o rótulo da peça.
+					for (let i = 0; i < dadosVariaveis.length; i++) {
+						const propria = files[`piece_image_${i}`];
+						if (!propria) {
+							return recusar(
+								400,
+								`A peça ${i + 1} não tem arte. No modo só licenciar, cada peça precisa do próprio arquivo.`,
+							);
+						}
+						res.progresso?.({
+							etapa: 'peca',
+							atual: i + 1,
+							total: dadosVariaveis.length,
+							rotulo: dadosVariaveis[i].tema,
+						});
+						artesDaPeca.set(i + 1, await normalizarPng(propria));
+					}
+				} else {
+					const arte = files.referencia;
+					if (!arte) {
+						return recusar(400, 'Envie a arte pronta que você quer licenciar.');
+					}
+					bag = { [CHAVE_UPLOAD]: await normalizarPng(arte) };
+				}
+				output = {};
+			} else if (dadosVariaveis) {
 				/**
 				 * UMA RODADA POR LINHA. Não há atalho possível: um nome diferente é
 				 * um prompt diferente, e um prompt diferente é uma arte diferente.
@@ -1232,7 +1347,8 @@ async function executarRun(
 				 * como qualquer outra falha, em vez de entregar peça com fundo.
 				 */
 				const criacao = doc.creations?.find((c) => c.id === fields.creation_id);
-				if (criacao?.transparent) {
+				// Só licenciar entrega a arte como veio — fundo incluso, se tiver.
+				if (!modoCarimbo && criacao?.transparent) {
 					const ctxFundo = { customerId, authHeader };
 					if (dadosVariaveis) {
 						for (const [indice, arte] of artesDaPeca) {
@@ -1262,7 +1378,9 @@ async function executarRun(
 				});
 
 				const lote = await carimbarLote({
-					doc,
+					doc: modoCarimbo
+						? ({ licensing: { master: CHAVE_UPLOAD } } as ToolDefinitionDoc)
+						: doc,
 					bag,
 					artes: dadosVariaveis ? artesDaPeca : undefined,
 					customerId,
