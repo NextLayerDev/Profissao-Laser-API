@@ -225,4 +225,51 @@ describe('os campos de cada peça', () => {
 		);
 		expect(campos.prompt).toBe('grave MARINA em {material}');
 	});
+
+	describe('registro com especificações (a caixa de tema não existe)', () => {
+		/**
+		 * O prompt do Corinthians usa `{frase}` e `{jogadores}` — os NOMES das
+		 * especificações —, não `{tema}`. No lote personalizado o front não manda
+		 * nenhum dos dois: a lista É o texto. Sem isto, três peças saíam com três
+		 * códigos e nenhum nome, e `{frase}` ficava literal no prompt.
+		 */
+		const MOLDE = {
+			prompt: 'caneca com a frase {frase} e os jogadores {jogadores}',
+		};
+
+		it('o texto da peça vai para a PRIMEIRA especificação', () => {
+			const campos = camposDaPeca({}, MOLDE, { tema: 'JOAO' }, [
+				'frase',
+				'jogadores',
+			]);
+			expect(campos.frase).toBe('JOAO');
+			expect(campos.prompt).toContain('a frase JOAO');
+		});
+
+		it('as demais especificações ficam como vieram — vazias de propósito', () => {
+			const campos = camposDaPeca({}, MOLDE, { tema: 'JOAO' }, [
+				'frase',
+				'jogadores',
+			]);
+			expect(campos.jogadores).toBeUndefined();
+			expect(campos.prompt).toContain('{jogadores}');
+		});
+
+		it('não atropela uma especificação que o cliente preencheu', () => {
+			const campos = camposDaPeca(
+				{ frase: 'VAI CORINGAO' },
+				MOLDE,
+				{ tema: 'JOAO' },
+				['frase', 'jogadores'],
+			);
+			expect(campos.frase).toBe('VAI CORINGAO');
+			expect(campos.tema).toBe('JOAO');
+		});
+
+		it('sem especificações, continua sendo só o tema — o lote legado', () => {
+			const campos = camposDaPeca({}, MOLDE, { tema: 'JOAO' }, []);
+			expect(campos.frase).toBeUndefined();
+			expect(campos.tema).toBe('JOAO');
+		});
+	});
 });

@@ -78,79 +78,6 @@ export interface CarimboResult {
 	selo: Selo;
 }
 
-/** Lado da grade em que a arte é lida para escolher o lugar do selo. */
-const GRADE = 96;
-
-interface MapaDaArte {
-	/** `true` onde há tinta (pixel opaco e escuro) — o que a máquina queima. */
-	tinta: boolean[];
-	/**
-	 * `true` onde a célula está DENTRO da peça.
-	 *
-	 * Dentro quer dizer cercada: existe tinta acima, abaixo, à esquerda e à
-	 * direita dela. É um teste barato e surpreendentemente certeiro para
-	 * silhueta recortada — e é o que separa o vazio de dentro do chaveiro do
-	 * vazio que vira sucata depois do corte.
-	 */
-	dentro: boolean[];
-}
-
-/**
- * Lê a arte inteira numa grade pequena, de uma vez.
- *
- * `GRADE × GRADE` é grosseiro de propósito: a pergunta é "cabe aqui?", e ler
- * milhões de pixels para respondê-la seria pagar caro por uma resposta que cabe
- * em nove mil células. Transparente conta como CLARO porque, na arte de laser,
- * transparente é o material cru — e material cru é claro.
- */
-async function lerArte(master: Buffer): Promise<MapaDaArte> {
-	const { data, info } = await sharp(master)
-		.ensureAlpha()
-		.resize(GRADE, GRADE, { fit: 'fill' })
-		.raw()
-		.toBuffer({ resolveWithObject: true });
-
-	const n = GRADE * GRADE;
-	const tinta: boolean[] = new Array(n);
-	for (let i = 0; i < n; i++) {
-		const p = i * info.channels;
-		const alfa = info.channels === 4 ? data[p + 3] : 255;
-		const l = (data[p] * 299 + data[p + 1] * 587 + data[p + 2] * 114) / 1000;
-		tinta[i] = alfa >= 32 && l < 200;
-	}
-
-	// Para cada linha e coluna, onde começa e termina a tinta. Com isso, "cercada
-	// nas quatro direções" sai em O(1) por célula.
-	const primeiroNaLinha = new Array(GRADE).fill(-1);
-	const ultimoNaLinha = new Array(GRADE).fill(-1);
-	const primeiroNaColuna = new Array(GRADE).fill(-1);
-	const ultimoNaColuna = new Array(GRADE).fill(-1);
-	for (let y = 0; y < GRADE; y++) {
-		for (let x = 0; x < GRADE; x++) {
-			if (!tinta[y * GRADE + x]) continue;
-			if (primeiroNaLinha[y] < 0) primeiroNaLinha[y] = x;
-			ultimoNaLinha[y] = x;
-			if (primeiroNaColuna[x] < 0) primeiroNaColuna[x] = y;
-			ultimoNaColuna[x] = y;
-		}
-	}
-
-	const dentro: boolean[] = new Array(n);
-	for (let y = 0; y < GRADE; y++) {
-		for (let x = 0; x < GRADE; x++) {
-			dentro[y * GRADE + x] =
-				primeiroNaLinha[y] >= 0 &&
-				primeiroNaColuna[x] >= 0 &&
-				x > primeiroNaLinha[y] &&
-				x < ultimoNaLinha[y] &&
-				y > primeiroNaColuna[x] &&
-				y < ultimoNaColuna[x];
-		}
-	}
-
-	return { tinta, dentro };
-}
-
 /**
  * QUANTO DA ARTE O QR OCUPA: ~8% do menor lado.
  *
@@ -240,22 +167,26 @@ export function geometriaDoSelo(
 }
 
 /**
- * O SELO DO LOTE: ONDE a placa pousa.
+ * O SELO DO LOTE: ONDE a placa pousa — o canto inferior esquerdo do ARQUIVO.
  *
- * ┌─ POR QUE NÃO É SIMPLESMENTE "O CANTO DO ARQUIVO" ───────────────────────┐
- * │ Na caneca, que é um retângulo cheio, o canto do arquivo serve. No        │
- * │ chaveiro recortado, o canto do arquivo é o lado de FORA da silhueta, e   │
- * │ ali o QR vai parar na sucata do corte. Código que não fica na peça é     │
- * │ pior que código em cima do nome.                                         │
+ * ┌─ O QUE SAIU DAQUI, E POR QUÊ ───────────────────────────────────────────┐
+ * │ Havia uma leitura da arte numa grade 96×96 para achar o canto da PEÇA    │
+ * │ (a silhueta de tinta), e não do arquivo: num chaveiro recortado, o canto │
+ * │ do arquivo é papel que o corte leva embora. A ideia era boa e o resultado│
+ * │ não: exigir que a placa ficasse "cercada de tinta" num escudo com o nome │
+ * │ embaixo mandou o QR para o MEIO do escudo, em cima da âncora — e o       │
+ * │ cliente foi claro: "sempre no canto, nunca no meio da arte, independente │
+ * │ da dimensão".                                                            │
  * │                                                                          │
- * │ Então o canto é o da PEÇA (a tinta), medido em `MapaDaArte.dentro`, e é  │
- * │ sempre o mesmo: embaixo à ESQUERDA, como no print do cliente. Não há     │
- * │ busca por "canto mais vazio" — isso já mandou o QR para lugares que      │
- * │ ninguém previa. Os outros cantos só entram se ali não couber nada.       │
+ * │ Então o canto é o do arquivo, sempre o mesmo, sem olhar o conteúdo. Quem │
+ * │ grava um recorte já posiciona o QR na peça no software do laser — o      │
+ * │ print que motivou a placa mostra exatamente isso, o QR como objeto à     │
+ * │ parte, arrastado para onde cabe. O que a plataforma garante é que ele    │
+ * │ está no arquivo, legível, e num lugar previsível.                        │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
- * Exportada porque `carimbarLote` a chama UMA vez por lote: é isso que mantém
- * as trinta peças de um pedido com o selo idêntico.
+ * Continua assíncrona e exportada pela mesma razão de sempre: `carimbarLote`
+ * a chama UMA vez por lote, e o lote inteiro sai com o selo idêntico.
  */
 export async function escolherSelo(
 	master: Buffer,
@@ -265,122 +196,11 @@ export async function escolherSelo(
 	const meta = await sharp(master).metadata();
 	const W = meta.width ?? 0;
 	const H = meta.height ?? 0;
+	if (!W || !H) return { left: 0, top: 0 };
 	const g = geometriaDoSelo(W, H, url);
-	/** O canto de baixo à esquerda do arquivo — o desfecho quando nada serve. */
-	const ultimoRecurso = (): Selo => ({
+	return {
 		left: Math.min(Math.max(0, W - g.lado), g.margemX),
 		top: Math.max(0, H - g.lado - g.margemY),
-	});
-	if (!W || !H) return { left: 0, top: 0 };
-
-	const mapa = await lerArte(master);
-	const porX = GRADE / W;
-	const porY = GRADE / H;
-	// O selo em células da grade, arredondado para cima: melhor exigir espaço a
-	// mais do que descobrir na peça que faltou.
-	const larguraEmCelulas = Math.max(1, Math.ceil(g.lado * porX));
-	const alturaEmCelulas = Math.max(1, Math.ceil(g.lado * porY));
-
-	const minX = Math.floor(g.margemX * porX);
-	const maxX = Math.floor((W - g.lado - g.margemX) * porX);
-	const minY = Math.floor(g.margemY * porY);
-	const maxY = Math.floor((H - g.lado - g.margemY) * porY);
-	if (maxX < minX || maxY < minY) return ultimoRecurso();
-
-	/** O bloco cabe inteiro DENTRO da peça? */
-	const cabe = (x: number, y: number): boolean => {
-		if (x < minX || y < minY || x > maxX || y > maxY) return false;
-		for (let dy = 0; dy < alturaEmCelulas; dy++) {
-			for (let dx = 0; dx < larguraEmCelulas; dx++) {
-				if (!mapa.dentro[(y + dy) * GRADE + (x + dx)]) return false;
-			}
-		}
-		return true;
-	};
-
-	/**
-	 * O RETÂNGULO DA PEÇA, que não é o do arquivo.
-	 *
-	 * Numa arte recortada — o chaveiro — a silhueta ocupa o meio e sobra papel
-	 * em volta. O canto do ARQUIVO ali é o lado de fora do corte. O canto que
-	 * interessa é o da tinta.
-	 */
-	let pMinX = GRADE;
-	let pMinY = GRADE;
-	let pMaxX = -1;
-	let pMaxY = -1;
-	for (let y = 0; y < GRADE; y++) {
-		for (let x = 0; x < GRADE; x++) {
-			if (!mapa.tinta[y * GRADE + x]) continue;
-			if (x < pMinX) pMinX = x;
-			if (x > pMaxX) pMaxX = x;
-			if (y < pMinY) pMinY = y;
-			if (y > pMaxY) pMaxY = y;
-		}
-	}
-	if (pMaxX < 0) return ultimoRecurso();
-
-	/**
-	 * DE UM CANTO DA PEÇA, O PRIMEIRO LUGAR QUE CABE.
-	 *
-	 * Num losango ou em qualquer silhueta recortada, a quina da caixa é papel
-	 * que o corte leva embora, então o selo anda da quina para dentro até o
-	 * primeiro bloco inteiramente dentro da peça — e para ali. Três caminhos
-	 * (diagonal e as duas bordas), e ganha o que entra mais PERTO da quina,
-	 * medido em pixels da arte e não em células: a grade é 96×96 seja qual for
-	 * a proporção, e na caneca 360° uma célula horizontal vale duas vezes e
-	 * meia uma vertical.
-	 */
-	const perto = (
-		quinaX: number,
-		quinaY: number,
-		passoX: number,
-		passoY: number,
-	): { x: number; y: number } | null => {
-		let melhor: { x: number; y: number; distPx: number } | null = null;
-		for (const [px, py] of [
-			[passoX, passoY],
-			[passoX, 0],
-			[0, passoY],
-		]) {
-			const passoPx = Math.hypot(px / porX, py / porY);
-			for (let k = 0; k < GRADE; k++) {
-				const x = quinaX + px * k;
-				const y = quinaY + py * k;
-				if (!cabe(x, y)) continue;
-				const distPx = k * passoPx;
-				if (!melhor || distPx < melhor.distPx) melhor = { x, y, distPx };
-				break;
-			}
-		}
-		return melhor;
-	};
-
-	/**
-	 * A quina de partida já nasce DENTRO da zona permitida.
-	 *
-	 * Sem isto, na caneca 360° a quina da peça caía na zona de emenda (os 10%
-	 * externos), e a única rota que saía dela era a diagonal — que troca altura
-	 * por largura: o QR terminava 11% acima da borda de baixo, e não a 1%. A
-	 * caminhada existe para silhueta recortada, não para pagar margem.
-	 */
-	const esq = Math.max(pMinX, minX);
-	const dir = Math.min(pMaxX - larguraEmCelulas + 1, maxX);
-	const baixo = Math.min(pMaxY - alturaEmCelulas + 1, maxY);
-	const cima = Math.max(pMinY, minY);
-	// Embaixo à esquerda é O canto. Os outros só entram se ali não couber nada
-	// dentro da peça — não há comparação de "mais vazio" entre eles.
-	const escolhido =
-		perto(esq, baixo, 1, -1) ??
-		perto(dir, baixo, -1, -1) ??
-		perto(esq, cima, 1, 1) ??
-		perto(dir, cima, -1, 1);
-
-	if (!escolhido) return ultimoRecurso();
-
-	return {
-		left: Math.max(0, Math.min(W - g.lado, Math.round(escolhido.x / porX))),
-		top: Math.max(0, Math.min(H - g.lado, Math.round(escolhido.y / porY))),
 	};
 }
 

@@ -122,13 +122,46 @@ export function camposDaPeca(
 	/** Os campos injetados com `substitute: true`, ainda com `{var}` dentro. */
 	moldes: Record<string, string>,
 	linha: PecaVariavel,
+	/**
+	 * Os NOMES das especificações do registro, na ordem do admin.
+	 *
+	 * ┌─ O SEGUNDO BUG DO NOME QUE NÃO CHEGA ───────────────────────────────────┐
+	 * │ Um registro com especificações troca a caixa de tema por campos com     │
+	 * │ nome próprio — e o prompt passa a usar `{frase}`, não `{tema}`. No lote │
+	 * │ personalizado o front não manda campo nenhum: a LISTA é o texto. Então  │
+	 * │ o nome da peça entrava em `tema`, `{frase}` ficava literal no prompt, o │
+	 * │ modelo lia "sem frase" e obedecia: três peças, três códigos, nenhum     │
+	 * │ nome. Igualzinho ao bug de cima, uma camada acima.                      │
+	 * │                                                                          │
+	 * │ O texto da linha vai para a PRIMEIRA especificação (a principal, a que  │
+	 * │ o admin pôs em cima) quando o cliente não a preencheu. As demais        │
+	 * │ (`{jogadores}`) ficam como vieram — vazias, de propósito.               │
+	 * └──────────────────────────────────────────────────────────────────────────┘
+	 */
+	especificacoes: readonly string[] = [],
 ): Record<string, string> {
 	const campos = { ...fields };
-	if (linha.tema) campos.tema = linha.tema;
+	if (linha.tema) {
+		campos.tema = linha.tema;
+		const principal = especificacoes[0];
+		if (principal && !campos[principal]?.trim()) campos[principal] = linha.tema;
+	}
 	for (const [nome, molde] of Object.entries(moldes)) {
 		campos[nome] = trocarVariaveis(molde, campos);
 	}
 	return campos;
+}
+
+/**
+ * Os nomes das especificações de um registro do banco, na ordem em que o admin
+ * as cadastrou. `[]` para registro sem especificações (caixa de tema padrão).
+ */
+export function nomesDasEspecificacoes(entry: { data?: unknown }): string[] {
+	const specs = (entry.data as { specs?: unknown } | undefined)?.specs;
+	if (!Array.isArray(specs)) return [];
+	return specs
+		.map((s) => (s as { name?: unknown })?.name)
+		.filter((n): n is string => typeof n === 'string' && n.trim() !== '');
 }
 
 /**
