@@ -97,7 +97,6 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(textModelsRoute);
 	app.register(toolAgentRoute);
 	app.register(toolBankRoute);
-	app.register(licensedArtLegacyRoute);
 	app.register(toolCollectionRoute);
 	app.register(toolBankSmartTemaRoute);
 	app.register(toolBankSummarizePromptRoute);
