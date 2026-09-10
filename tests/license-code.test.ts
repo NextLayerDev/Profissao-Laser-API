@@ -14,8 +14,10 @@ describe('a URL do QR aponta para o site DESTE ambiente', () => {
 	 */
 	const envOriginal = { ...process.env };
 	afterEach(() => {
-		process.env.NEXT_PUBLIC_SITE_URL = envOriginal.NEXT_PUBLIC_SITE_URL;
-		process.env.APP_URL = envOriginal.APP_URL;
+		for (const key of ['NEXT_PUBLIC_SITE_URL', 'APP_URL'] as const) {
+			if (envOriginal[key] === undefined) delete process.env[key];
+			else process.env[key] = envOriginal[key];
+		}
 	});
 
 	it('usa NEXT_PUBLIC_SITE_URL quando existe, sem barra dupla', () => {
