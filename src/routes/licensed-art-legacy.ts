@@ -2,10 +2,7 @@ import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { ErrorSchema } from '../types/error.js';
-import {
-	LEGACY_LICENSED_ART_CODE_HASHES,
-	LEGACY_LICENSED_ART_ORIGIN,
-} from './licensed-art-legacy-manifest.js';
+import { LEGACY_LICENSED_ART_BY_HASH } from './licensed-art-legacy-manifest.js';
 
 const codigoParams = z.object({ code: z.string().min(6).max(64) });
 const verificacaoSchema = z.object({
@@ -22,11 +19,23 @@ const verificacaoSchema = z.object({
 	issuedAt: z.string(),
 	checkedAt: z.string(),
 });
-const TIMEOUT_MS = 5_000;
 const normalizarCodigo = (code: string) =>
 	code.trim().toUpperCase().replace(/\s+/g, '');
 const hashCodigo = (code: string) =>
 	crypto.createHash('sha256').update(normalizarCodigo(code)).digest('hex');
+
+const snapshotSchema = verificacaoSchema.omit({ checkedAt: true });
+
+for (const [hash, snapshot] of LEGACY_LICENSED_ART_BY_HASH) {
+	if (
+		!/^[a-f0-9]{64}$/.test(hash) ||
+		hashCodigo(snapshot.code) !== hash ||
+		!snapshotSchema.safeParse(snapshot).success ||
+		snapshot.valid !== (snapshot.status === 'active')
+	) {
+		throw new Error('Manifesto de licenças legadas inválido.');
+	}
+}
 
 export async function licensedArtLegacyRoute(server: FastifyInstance) {
 	server.get(
@@ -38,74 +47,20 @@ export async function licensedArtLegacyRoute(server: FastifyInstance) {
 				response: {
 					200: verificacaoSchema,
 					404: ErrorSchema,
-					502: ErrorSchema,
 				},
 				tags: ['Licensed Art'],
 			},
 		},
 		async (request, reply) => {
 			const { code } = request.params as z.infer<typeof codigoParams>;
-			if (!LEGACY_LICENSED_ART_CODE_HASHES.has(hashCodigo(code))) {
+			const snapshot = LEGACY_LICENSED_ART_BY_HASH.get(hashCodigo(code));
+			if (!snapshot) {
 				return reply
 					.status(404)
 					.send({ message: 'Código não encontrado.', code: 'not_found' });
-			}
-			const controller = new AbortController();
-			const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-			let response: Response;
-			try {
-				response = await fetch(
-					`${LEGACY_LICENSED_ART_ORIGIN}/api/licensed-art/${encodeURIComponent(code)}`,
-					{
-						method: 'GET',
-						redirect: 'manual',
-						signal: controller.signal,
-						headers: { accept: 'application/json' },
-					},
-				);
-			} catch (err) {
-				request.log.error({ err }, 'verificador legado indisponível');
-				return reply
-					.status(502)
-					.send({
-						message: 'Não foi possível verificar esta licença agora.',
-						code: 'legacy_verifier_unavailable',
-					});
-			} finally {
-				clearTimeout(timeout);
-			}
-			if (response.status === 404)
-				return reply
-					.status(404)
-					.send({ message: 'Código não encontrado.', code: 'not_found' });
-			if (!response.ok)
-				return reply
-					.status(502)
-					.send({
-						message: 'Não foi possível verificar esta licença agora.',
-						code: 'legacy_verifier_unavailable',
-					});
-			let body: unknown;
-			try {
-				body = await response.json();
-			} catch {
-				body = null;
-			}
-			const verification = verificacaoSchema.safeParse(body);
-			if (
-				!verification.success ||
-				normalizarCodigo(verification.data.code) !== normalizarCodigo(code) ||
-				verification.data.valid !== (verification.data.status === 'active')
-			) {
-				return reply
-					.status(502)
-					.send({
-						message: 'Não foi possível verificar esta licença agora.',
-						code: 'legacy_verifier_unavailable',
-					});
 			}
 			reply.header('Cache-Control', 'public, max-age=60');
-			return reply.send(verification.data);
+			return reply.send({ ...snapshot, checkedAt: new Date().toISOString() });
 		},
 	);
 }
