@@ -1,9 +1,52 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	gerarCodigoLicenca,
 	hashCodigo,
 	normalizarCodigo,
+	urlPublicaDaPeca,
 } from '../src/lib/license-code.js';
+
+describe('a URL do QR aponta para o site DESTE ambiente', () => {
+	/**
+	 * No dev a env não estava setada e o QR de uma peça gerada ali abria a
+	 * página de PRODUÇÃO — onde o código não existe. "Peça não encontrada" numa
+	 * peça legítima é o pior desfecho para um selo de autenticidade.
+	 */
+	const envOriginal = { ...process.env };
+	afterEach(() => {
+		process.env.NEXT_PUBLIC_SITE_URL = envOriginal.NEXT_PUBLIC_SITE_URL;
+		process.env.APP_URL = envOriginal.APP_URL;
+		vi.restoreAllMocks();
+	});
+
+	it('usa NEXT_PUBLIC_SITE_URL quando existe, sem barra dupla', () => {
+		process.env.NEXT_PUBLIC_SITE_URL = 'https://dev.exemplo.com/';
+		expect(urlPublicaDaPeca('PL-ABC')).toBe('https://dev.exemplo.com/a/PL-ABC');
+	});
+
+	it('cai em APP_URL quando NEXT_PUBLIC_SITE_URL falta', () => {
+		process.env.NEXT_PUBLIC_SITE_URL = '';
+		process.env.APP_URL = 'https://app.exemplo.com';
+		expect(urlPublicaDaPeca('PL-ABC')).toBe('https://app.exemplo.com/a/PL-ABC');
+	});
+
+	it('sem nenhuma env, cai em produção — e AVISA no log', () => {
+		process.env.NEXT_PUBLIC_SITE_URL = '';
+		process.env.APP_URL = '';
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		expect(urlPublicaDaPeca('PL-ABC')).toBe(
+			'https://profissaolaser.com.br/a/PL-ABC',
+		);
+		expect(warn).toHaveBeenCalled();
+	});
+
+	it('escapa o código na URL', () => {
+		process.env.NEXT_PUBLIC_SITE_URL = 'https://dev.exemplo.com';
+		expect(urlPublicaDaPeca('PL A/B')).toBe(
+			'https://dev.exemplo.com/a/PL%20A%2FB',
+		);
+	});
+});
 
 describe('código de autenticidade da arte licenciada', () => {
 	it('sai no formato PL-XXXXX-XXXXX-XXXXX-XXXXX', () => {

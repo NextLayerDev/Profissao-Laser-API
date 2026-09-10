@@ -62,9 +62,35 @@ export function hashCodigo(codigo: string): string {
  * peça física. Uma vez queimada no acrílico, ela não muda mais — então o
  * endereço tem uma fonte só, e mudá-lo é uma decisão consciente e única.
  */
+/**
+ * A base pública do site DESTE ambiente.
+ *
+ * ┌─ POR QUE O FALLBACK PARA PRODUÇÃO É UM AVISO, NÃO UM SILÊNCIO ──────────┐
+ * │ No dev a env não estava setada, a URL caía em profissaolaser.com.br, e  │
+ * │ o QR de uma peça gerada no dev abria a página de PRODUÇÃO — onde o      │
+ * │ código não existe. Quem escaneou viu "peça não encontrada" numa peça    │
+ * │ legítima. O pior desfecho para um selo de autenticidade.                │
+ * │                                                                          │
+ * │ Aceita as duas envs que a casa usa (`NEXT_PUBLIC_SITE_URL`, `APP_URL`)  │
+ * │ e, se nenhuma existir, grita UMA vez no log antes de cair em produção — │
+ * │ o fallback continua existindo porque uma URL errada ainda é melhor do   │
+ * │ que um run derrubado, mas deixa de ser invisível.                       │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+const BASE_PRODUCAO = 'https://profissaolaser.com.br';
+let avisouFallback = false;
+function basePublicaDoSite(): string {
+	const configurada = process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL;
+	if (configurada) return configurada.replace(/\/+$/, '');
+	if (!avisouFallback) {
+		avisouFallback = true;
+		console.warn(
+			`[license-code] NEXT_PUBLIC_SITE_URL/APP_URL não configuradas — o QR das peças vai apontar para ${BASE_PRODUCAO}. Configure a env deste ambiente.`,
+		);
+	}
+	return BASE_PRODUCAO;
+}
+
 export function urlPublicaDaPeca(code: string): string {
-	const base = (
-		process.env.NEXT_PUBLIC_SITE_URL || 'https://profissaolaser.com.br'
-	).replace(/\/+$/, '');
-	return `${base}/a/${encodeURIComponent(code)}`;
+	return `${basePublicaDoSite()}/a/${encodeURIComponent(code)}`;
 }
