@@ -62,9 +62,22 @@ export function hashCodigo(codigo: string): string {
  * peça física. Uma vez queimada no acrílico, ela não muda mais — então o
  * endereço tem uma fonte só, e mudá-lo é uma decisão consciente e única.
  */
+/**
+ * A base pública do site DESTE ambiente.
+ *
+ * O QR é permanente depois de gravado. Sem uma origem configurada, usar
+ * produção como fallback carimba a peça de dev com um endereço que nunca vai
+ * encontrá-la. Por isso a configuração ausente falha antes de gerar a peça;
+ * `NEXT_PUBLIC_SITE_URL` (ou `APP_URL`) deve apontar ao frontend do ambiente.
+ */
+function basePublicaDoSite(): string {
+	const configurada = process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL;
+	if (configurada) return configurada.replace(/\/+$/, '');
+	throw new Error(
+		'[license-code] NEXT_PUBLIC_SITE_URL ou APP_URL deve apontar ao frontend deste ambiente antes de gerar um QR.',
+	);
+}
+
 export function urlPublicaDaPeca(code: string): string {
-	const base = (
-		process.env.NEXT_PUBLIC_SITE_URL || 'https://profissaolaser.com.br'
-	).replace(/\/+$/, '');
-	return `${base}/a/${encodeURIComponent(code)}`;
+	return `${basePublicaDoSite()}/a/${encodeURIComponent(code)}`;
 }
