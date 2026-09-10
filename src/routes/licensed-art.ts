@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { hashCodigo, normalizarCodigo } from '../lib/license-code.js';
 import { ampliarLoteLicenciado } from '../lib/licensed-piece.js';
 import { authenticateCustomer } from '../middleware/auth.js';
 import {
@@ -28,6 +29,117 @@ const verificacaoSchema = z.object({
 	issuedAt: z.string(),
 	checkedAt: z.string(),
 });
+
+const hashDeCodigoSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const TEMPO_LIMITE_VERIFICADOR_LEGADO_MS = 5_000;
+
+type VerificacaoPublica = z.infer<typeof verificacaoSchema>;
+
+/**
+ * QR gravado não pode ser refeito. Por um período de migração, alguns códigos
+ * históricos continuam apontando para produção, embora a licença tenha ficado
+ * no ambiente dev. A ponte é deliberadamente fechada: só hashes explicitamente
+ * configurados podem consultar o verificador público de dev.
+ *
+ * Não aceitamos URL com caminho, query, credencial ou protocolo não seguro. A
+ * env é uma origem, não uma URL livre que um código possa transformar em SSRF.
+ */
+function configuracaoDoVerificadorLegado(): {
+	origin: string;
+	hashesPermitidos: Set<string>;
+} | null {
+	const origemBruta = process.env.LICENSED_ART_LEGACY_ORIGIN?.trim();
+	const hashesBrutos = process.env.LICENSED_ART_LEGACY_CODE_HASHES?.trim();
+	if (!origemBruta || !hashesBrutos) return null;
+
+	let origem: URL;
+	try {
+		origem = new URL(origemBruta);
+	} catch {
+		return null;
+	}
+	if (
+		origem.protocol !== 'https:' ||
+		origem.username ||
+		origem.password ||
+		origem.pathname !== '/' ||
+		origem.search ||
+		origem.hash
+	) {
+		return null;
+	}
+
+	const hashes = hashesBrutos.split(/[\s,]+/).filter(Boolean);
+	if (
+		hashes.length === 0 ||
+		hashes.some((hash) => !hashDeCodigoSchema.safeParse(hash).success)
+	) {
+		return null;
+	}
+
+	return { origin: origem.origin, hashesPermitidos: new Set(hashes) };
+}
+
+/**
+ * Consulta o endpoint público legado sem repassar cabeçalhos da requisição que
+ * chegou à produção. Assim um token, cookie ou `x-forwarded-*` do visitante
+ * nunca cruza ambientes. `redirect: manual` também impede que a env configurada
+ * nos leve para outro host por redirecionamento.
+ */
+async function buscarVerificacaoLegada(
+	origin: string,
+	code: string,
+): Promise<VerificacaoPublica | null> {
+	const controller = new AbortController();
+	const timeout = setTimeout(
+		() => controller.abort(),
+		TEMPO_LIMITE_VERIFICADOR_LEGADO_MS,
+	);
+	let response: Response;
+	try {
+		response = await fetch(
+			`${origin}/api/licensed-art/${encodeURIComponent(code)}`,
+			{
+				method: 'GET',
+				redirect: 'manual',
+				signal: controller.signal,
+				headers: { accept: 'application/json' },
+			},
+		);
+	} finally {
+		clearTimeout(timeout);
+	}
+
+	// Um 404 no dev mantém o significado normal de "não encontrado". Todo o
+	// resto (inclusive redirect manual) é indisponibilidade do verificador.
+	if (response.status === 404) return null;
+	if (!response.ok) {
+		throw new Error(`verificador legado respondeu HTTP ${response.status}`);
+	}
+
+	let corpo: unknown;
+	try {
+		corpo = await response.json();
+	} catch {
+		throw new Error('verificador legado respondeu JSON inválido');
+	}
+	const verificacao = verificacaoSchema.safeParse(corpo);
+	if (!verificacao.success) {
+		throw new Error('verificador legado respondeu um payload inválido');
+	}
+	// O dev tem de atestar EXATAMENTE a peça pedida, e os dois campos que
+	// descrevem o veredito não podem se contradizer.
+	if (
+		normalizarCodigo(verificacao.data.code) !== normalizarCodigo(code) ||
+		verificacao.data.valid !== (verificacao.data.status === 'active')
+	) {
+		throw new Error('verificador legado respondeu uma licença inconsistente');
+	}
+
+	// `safeParse` remove chaves desconhecidas: a produção nunca espelha campos
+	// internos que um servidor remoto possa adicionar por acidente.
+	return verificacao.data;
+}
 
 const minhaArteSchema = z.object({
 	id: z.string(),
@@ -68,7 +180,11 @@ export async function licensedArtRoute(server: FastifyInstance) {
 				description:
 					'Verificação pública do QR gravado na peça. Sem autenticação.',
 				params: codigoParams,
-				response: { 200: verificacaoSchema, 404: ErrorSchema },
+				response: {
+					200: verificacaoSchema,
+					404: ErrorSchema,
+					502: ErrorSchema,
+				},
 				tags: ['Licensed Art'],
 			},
 		},
@@ -80,6 +196,25 @@ export async function licensedArtRoute(server: FastifyInstance) {
 			// "não existe" e "existe mas foi revogada" são coisas diferentes, e
 			// juntar as duas esconderia uma falsificação atrás de uma revogação.
 			if (!art) {
+				const legado = configuracaoDoVerificadorLegado();
+				if (legado?.hashesPermitidos.has(hashCodigo(code))) {
+					try {
+						const verificacao = await buscarVerificacaoLegada(
+							legado.origin,
+							code,
+						);
+						if (verificacao) {
+							reply.header('Cache-Control', 'public, max-age=60');
+							return reply.send(verificacao);
+						}
+					} catch (err) {
+						request.log.error({ err }, 'verificador legado indisponível');
+						return reply.status(502).send({
+							message: 'Não foi possível verificar esta licença agora.',
+							code: 'legacy_verifier_unavailable',
+						});
+					}
+				}
 				return reply
 					.status(404)
 					.send({ message: 'Código não encontrado.', code: 'not_found' });

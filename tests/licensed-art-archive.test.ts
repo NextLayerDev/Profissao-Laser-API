@@ -115,6 +115,17 @@ describe('arquivar peça licenciada', () => {
 		expect(chamou('eq', 'archived_at')).toBe(false);
 	});
 
+	it('falha explicitamente se o banco não puder verificar o QR', async () => {
+		proximoResultado = {
+			data: null,
+			error: { message: 'conexão indisponível' },
+		};
+
+		await expect(buscarPorCodigo('PL-AAAAA-BBBBB-CCCCC-DDDDD')).rejects.toThrow(
+			'buscarPorCodigo: conexão indisponível',
+		);
+	});
+
 	it('o dono entra no WHERE: id sozinho não arquiva peça alheia', async () => {
 		proximoResultado = { data: peca(), error: null };
 		await arquivarDoCliente('peca-1', 'aluno-1', true);

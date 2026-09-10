@@ -266,11 +266,12 @@ export async function buscarPorInvocacao(
 export async function buscarPorCodigo(
 	codigo: string,
 ): Promise<LicensedArt | null> {
-	const { data } = await supabase
+	const { data, error } = await supabase
 		.from(TABELA)
 		.select('*')
 		.eq('code_hash', hashCodigo(codigo))
 		.maybeSingle();
+	if (error) throw new Error(`buscarPorCodigo: ${error.message}`);
 	return (data as LicensedArt) ?? null;
 }
 
