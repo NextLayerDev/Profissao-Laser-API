@@ -65,30 +65,17 @@ export function hashCodigo(codigo: string): string {
 /**
  * A base pública do site DESTE ambiente.
  *
- * ┌─ POR QUE O FALLBACK PARA PRODUÇÃO É UM AVISO, NÃO UM SILÊNCIO ──────────┐
- * │ No dev a env não estava setada, a URL caía em profissaolaser.com.br, e  │
- * │ o QR de uma peça gerada no dev abria a página de PRODUÇÃO — onde o      │
- * │ código não existe. Quem escaneou viu "peça não encontrada" numa peça    │
- * │ legítima. O pior desfecho para um selo de autenticidade.                │
- * │                                                                          │
- * │ Aceita as duas envs que a casa usa (`NEXT_PUBLIC_SITE_URL`, `APP_URL`)  │
- * │ e, se nenhuma existir, grita UMA vez no log antes de cair em produção — │
- * │ o fallback continua existindo porque uma URL errada ainda é melhor do   │
- * │ que um run derrubado, mas deixa de ser invisível.                       │
- * └──────────────────────────────────────────────────────────────────────────┘
+ * O QR é permanente depois de gravado. Sem uma origem configurada, usar
+ * produção como fallback carimba a peça de dev com um endereço que nunca vai
+ * encontrá-la. Por isso a configuração ausente falha antes de gerar a peça;
+ * `NEXT_PUBLIC_SITE_URL` (ou `APP_URL`) deve apontar ao frontend do ambiente.
  */
-const BASE_PRODUCAO = 'https://profissaolaser.com.br';
-let avisouFallback = false;
 function basePublicaDoSite(): string {
 	const configurada = process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL;
 	if (configurada) return configurada.replace(/\/+$/, '');
-	if (!avisouFallback) {
-		avisouFallback = true;
-		console.warn(
-			`[license-code] NEXT_PUBLIC_SITE_URL/APP_URL não configuradas — o QR das peças vai apontar para ${BASE_PRODUCAO}. Configure a env deste ambiente.`,
-		);
-	}
-	return BASE_PRODUCAO;
+	throw new Error(
+		'[license-code] NEXT_PUBLIC_SITE_URL ou APP_URL deve apontar ao frontend deste ambiente antes de gerar um QR.',
+	);
 }
 
 export function urlPublicaDaPeca(code: string): string {

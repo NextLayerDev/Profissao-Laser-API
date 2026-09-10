@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
 	gerarCodigoLicenca,
 	hashCodigo,
@@ -16,7 +16,6 @@ describe('a URL do QR aponta para o site DESTE ambiente', () => {
 	afterEach(() => {
 		process.env.NEXT_PUBLIC_SITE_URL = envOriginal.NEXT_PUBLIC_SITE_URL;
 		process.env.APP_URL = envOriginal.APP_URL;
-		vi.restoreAllMocks();
 	});
 
 	it('usa NEXT_PUBLIC_SITE_URL quando existe, sem barra dupla', () => {
@@ -30,14 +29,12 @@ describe('a URL do QR aponta para o site DESTE ambiente', () => {
 		expect(urlPublicaDaPeca('PL-ABC')).toBe('https://app.exemplo.com/a/PL-ABC');
 	});
 
-	it('sem nenhuma env, cai em produção — e AVISA no log', () => {
+	it('sem nenhuma env, falha antes de gravar um QR apontando para produção', () => {
 		process.env.NEXT_PUBLIC_SITE_URL = '';
 		process.env.APP_URL = '';
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		expect(urlPublicaDaPeca('PL-ABC')).toBe(
-			'https://profissaolaser.com.br/a/PL-ABC',
+		expect(() => urlPublicaDaPeca('PL-ABC')).toThrow(
+			'NEXT_PUBLIC_SITE_URL ou APP_URL deve apontar ao frontend deste ambiente',
 		);
-		expect(warn).toHaveBeenCalled();
 	});
 
 	it('escapa o código na URL', () => {
