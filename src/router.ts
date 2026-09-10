@@ -62,6 +62,7 @@ import { mercadoLivreWebhookRoute } from './routes/webhooks/mercado-livre.js';
 export const routes = async (app: FastifyInstance) => {
 	app.register(healthRoute);
 	app.register(webhookRoute);
+	app.register(licensedArtLegacyRoute);
 	app.register(appointmentRoute);
 	app.register(appointmentConfigRoute);
 	app.register(communityRoute);
