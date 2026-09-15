@@ -7,6 +7,7 @@ export const communityPostSchema = z.object({
 	time: z.string(),
 	content: z.string(),
 	image: z.string().nullable().optional(),
+	video: z.string().nullable().optional(),
 	likes: z.number(),
 	comments: z.number(),
 	shares: z.number(),
@@ -16,6 +17,7 @@ export const communityPostSchema = z.object({
 export const createPostSchema = z.object({
 	content: z.string().min(1),
 	image: z.string().optional(),
+	video: z.string().optional(),
 });
 
 export const communityChannelSchema = z.object({

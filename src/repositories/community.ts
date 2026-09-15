@@ -68,6 +68,7 @@ class CommunityRepository {
 				createdAt: string;
 				content: string;
 				image: string | null;
+				video: string | null;
 			}) => ({
 				id: post.id,
 				author: post.authorName,
@@ -75,6 +76,7 @@ class CommunityRepository {
 				time: post.createdAt,
 				content: post.content,
 				image: post.image,
+				video: post.video,
 				likes: likeCounts.get(post.id) ?? 0,
 				comments: commentCounts.get(post.id) ?? 0,
 				shares: 0,
@@ -99,6 +101,7 @@ class CommunityRepository {
 				authorAvatar: data.authorAvatar,
 				content: data.content,
 				image: data.image ?? null,
+				video: data.video ?? null,
 			})
 			.select()
 			.single();

@@ -49,7 +49,6 @@ import {
 	createChannelSchema,
 	createCommentSchema,
 	createEventSchema,
-	createPostSchema,
 	createProjectSchema,
 	postCommentSchema,
 	projectCommentSchema,
@@ -88,8 +87,8 @@ export async function communityRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticateCommunity],
 			schema: {
-				description: 'Create a new community post.',
-				body: createPostSchema,
+				description:
+					'Create a new community post. Aceita multipart/form-data (campos: content, file = imagem ou vídeo) ou JSON { content, image?, video? }.',
 				response: {
 					201: z.object({ id: z.string() }).passthrough(),
 					400: ErrorSchema,

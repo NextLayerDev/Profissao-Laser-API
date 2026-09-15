@@ -39,12 +39,64 @@ export const getPostsController = async (
 	return reply.send(posts);
 };
 
+/**
+ * Teto por ARQUIVO do feed. O multipart é registrado globalmente com 1,5 GB
+ * (vídeo de aula, `server.ts`) — o que num post de aluno só serviria para
+ * carregar 1,5 GB em memória.
+ */
+const MAX_POST_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_POST_VIDEO_BYTES =
+	Number(process.env.COMMUNITY_MAX_VIDEO_BYTES) || 200 * 1024 * 1024;
+
+/**
+ * Lê o post de um multipart: campo `content` + arquivo `file` (imagem OU
+ * vídeo, decidido pelo mimetype). Um único campo porque o feed tem um único
+ * botão "Foto/Vídeo".
+ */
+export async function readPostMultipart(request: FastifyRequest) {
+	let content = '';
+	let image: string | undefined;
+	let video: string | undefined;
+
+	for await (const part of request.parts({
+		limits: { fileSize: MAX_POST_VIDEO_BYTES },
+	})) {
+		if (part.type === 'field' && part.fieldname === 'content') {
+			content = String(part.value);
+			continue;
+		}
+		if (part.type !== 'file' || part.fieldname !== 'file') continue;
+
+		const isVideo = part.mimetype.startsWith('video/');
+		const isImage = part.mimetype.startsWith('image/');
+		if (!isVideo && !isImage) {
+			throw new Error('Envie uma imagem ou um vídeo.');
+		}
+		const buffer = await part.toBuffer();
+		if (!isVideo && buffer.byteLength > MAX_POST_IMAGE_BYTES) {
+			throw new Error('Imagem grande demais (máx 10 MB).');
+		}
+		const ext = part.filename?.split('.').pop() ?? (isVideo ? 'mp4' : 'jpg');
+		const url = await uploadCommunityFile(
+			buffer,
+			`posts/${crypto.randomUUID()}.${ext}`,
+			part.mimetype,
+		);
+		if (isVideo) video = url;
+		else image = url;
+	}
+
+	return createPostSchema.parse({ content, image, video });
+}
+
 export const createPostController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
 ) => {
 	try {
-		const data = createPostSchema.parse(request.body);
+		const data = request.isMultipart()
+			? await readPostMultipart(request)
+			: createPostSchema.parse(request.body);
 		const userId = request.currentUser?.id ?? '';
 		const customer = request.currentCustomer;
 		const { data: post, error } = await communityService.createPost(data, {
