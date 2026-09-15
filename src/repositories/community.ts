@@ -530,6 +530,7 @@ class CommunityRepository {
 			title: string;
 			authorName: string;
 			img: string | null;
+			video: string | null;
 			description: string | null;
 			material: string | null;
 			technique: string | null;
@@ -546,6 +547,7 @@ class CommunityRepository {
 			author: p.authorName,
 			authorAvatar,
 			img: p.img,
+			video: p.video,
 			description: p.description,
 			material: p.material,
 			technique: p.technique,
@@ -587,6 +589,7 @@ class CommunityRepository {
 		if (data.title !== undefined) updates.title = data.title;
 		if (data.description !== undefined) updates.description = data.description;
 		if (data.img !== undefined) updates.img = data.img;
+		if (data.video !== undefined) updates.video = data.video;
 		if (data.material !== undefined) updates.material = data.material;
 		if (data.technique !== undefined) updates.technique = data.technique;
 
@@ -694,6 +697,7 @@ class CommunityRepository {
 				authorId: data.authorId,
 				authorName: data.author,
 				img: data.img ?? null,
+				video: data.video ?? null,
 				material: data.material ?? null,
 				technique: data.technique ?? null,
 			})

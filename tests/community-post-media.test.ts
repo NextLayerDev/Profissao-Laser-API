@@ -12,7 +12,10 @@ vi.mock('@/lib/sentry.js', () => ({
 vi.mock('@/services/community.js', () => ({ communityService: {} }));
 vi.mock('@/lib/external-auth.js', () => ({ isStaffRole: () => false }));
 
-import { readPostMultipart } from '@/controllers/community.js';
+import {
+	readPostMultipart,
+	readProjectMultipart,
+} from '@/controllers/community.js';
 
 /** Request fake com só o que readPostMultipart usa: `parts()`. */
 const fakeRequest = (parts: unknown[]) =>
@@ -24,9 +27,9 @@ const fakeRequest = (parts: unknown[]) =>
 		}),
 	}) as never;
 
-const field = (value: string) => ({
+const field = (value: string, fieldname = 'content') => ({
 	type: 'field',
-	fieldname: 'content',
+	fieldname,
 	value,
 });
 
@@ -76,5 +79,27 @@ describe('readPostMultipart', () => {
 
 	it('recusa post sem conteúdo', async () => {
 		await expect(readPostMultipart(fakeRequest([field('')]))).rejects.toThrow();
+	});
+});
+
+describe('readProjectMultipart', () => {
+	it('publica projeto com vídeo e ignora campos opcionais vazios', async () => {
+		const project = await readProjectMultipart(
+			fakeRequest([
+				field('Porta-copos', 'title'),
+				field('Tobias', 'author'),
+				field('', 'material'),
+				file('video/quicktime', 'corte.mov'),
+			]),
+		);
+		expect(project.video).toMatch(/\.mov$/);
+		expect(project.img).toBeUndefined();
+		expect(project.material).toBeUndefined();
+	});
+
+	it('recusa projeto sem título', async () => {
+		await expect(
+			readProjectMultipart(fakeRequest([field('Tobias', 'author')])),
+		).rejects.toThrow();
 	});
 });

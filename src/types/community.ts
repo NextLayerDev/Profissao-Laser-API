@@ -83,6 +83,7 @@ export const communityProjectSchema = z.object({
 	author: z.string(),
 	authorAvatar: z.string().nullable().optional(),
 	img: z.string().nullable().optional(),
+	video: z.string().nullable().optional(),
 	description: z.string().nullable().optional(),
 	material: z.string().nullable().optional(),
 	technique: z.string().nullable().optional(),
@@ -97,6 +98,7 @@ export const createProjectSchema = z.object({
 	description: z.string().optional(),
 	author: z.string().min(1),
 	img: z.string().optional(),
+	video: z.string().optional(),
 	material: z.string().optional(),
 	technique: z.string().optional(),
 });
@@ -105,6 +107,7 @@ export const updateProjectSchema = z.object({
 	title: z.string().min(1).optional(),
 	description: z.string().optional(),
 	img: z.string().optional(),
+	video: z.string().optional(),
 	material: z.string().optional(),
 	technique: z.string().optional(),
 });
