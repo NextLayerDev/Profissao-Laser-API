@@ -10,6 +10,7 @@ import {
 } from '../repositories/licensed-art.js';
 import { licensedBrandRepository } from '../repositories/licensed-brand.js';
 import { ErrorSchema } from '../types/error.js';
+import { verificacaoLegadaLocal } from './licensed-art-legacy.js';
 
 const codigoParams = z.object({ code: z.string().min(6).max(64) });
 
@@ -196,6 +197,12 @@ export async function licensedArtRoute(server: FastifyInstance) {
 			// "não existe" e "existe mas foi revogada" são coisas diferentes, e
 			// juntar as duas esconderia uma falsificação atrás de uma revogação.
 			if (!art) {
+				// QR legado auditado (manifesto embutido): resolve local, sem rede.
+				const legadoLocal = verificacaoLegadaLocal(code);
+				if (legadoLocal) {
+					reply.header('Cache-Control', 'public, max-age=60');
+					return reply.send(legadoLocal);
+				}
 				const legado = configuracaoDoVerificadorLegado();
 				if (legado?.hashesPermitidos.has(hashCodigo(code))) {
 					try {

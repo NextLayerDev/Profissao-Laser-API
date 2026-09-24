@@ -2,7 +2,10 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { formatCooldownMessage } from '../lib/appointment-cooldown.js';
 import { isStaffRole } from '../lib/external-auth.js';
 import { appointmentRepository } from '../repositories/appointment.js';
-import { appointmentConfigService } from '../services/appointment-config.js';
+import {
+	appointmentConfigService,
+	SlotUnavailableError,
+} from '../services/appointment-config.js';
 import {
 	createAppointmentSchema,
 	updateAppointmentStatusSchema,
@@ -117,22 +120,12 @@ export const createAppointmentController = async (
 			}
 		}
 
-		let technicianId = data.technicianId;
-		if (!technicianId) {
-			const techIds = await appointmentRepository.listTechnicianIds();
-			if (techIds.length > 0) {
-				const allBooked = await Promise.all(
-					techIds.map((id) => appointmentRepository.listByDate(data.date, id)),
-				);
-				const available = techIds.filter(
-					(_, i) => !allBooked[i].some((a) => a.time === data.time),
-				);
-				if (available.length > 0) {
-					technicianId =
-						available[Math.floor(Math.random() * available.length)];
-				}
-			}
-		}
+		const technicianId =
+			await appointmentConfigService.resolveBookingTechnician(
+				data.date,
+				data.time,
+				data.technicianId,
+			);
 
 		const appointment = await appointmentRepository.create({
 			...data,
@@ -140,6 +133,8 @@ export const createAppointmentController = async (
 		});
 		return reply.status(201).send(appointment);
 	} catch (err) {
+		if (err instanceof SlotUnavailableError)
+			return reply.status(409).send({ message: err.message });
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		if (message === 'Time slot already booked')
 			return reply.status(409).send({ message });
