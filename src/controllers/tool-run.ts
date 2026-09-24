@@ -1,35 +1,75 @@
 import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import sharp from 'sharp';
+import { aiRodaDeGraca, nadaAPagarNesteRun } from '../lib/atelie/ajustes.js';
 import { isStaffRole } from '../lib/external-auth.js';
 import { IMAGE_MODELS_CATALOG } from '../lib/image-models-catalog.js';
+import { garantirSemFundo } from '../lib/licensed-background.js';
+import {
+	camposDaPeca,
+	carimbarLote,
+	lerDadosVariaveis,
+	MAX_TIRAGEM,
+	nomesDasEspecificacoes,
+	type PecaVariavel,
+} from '../lib/licensed-piece.js';
+import {
+	deleteByUrl,
+	fetchToolOutput,
+	uploadToolOutput,
+} from '../lib/storage.js';
 import { TEXT_MODELS_CATALOG } from '../lib/text-models-catalog.js';
 import {
 	resolveCreation,
 	resolveVariationCount,
+	unidadesDaInvocacao,
+	variacoesAEntregar,
 } from '../lib/tool-creations.js';
 import {
 	type InputSpec,
 	loadPublishedToolDefinition,
+	type PipelineNode,
 	parseInlineToolDefinition,
 	type ToolDefinitionDoc,
 	ToolDefinitionLoadError,
 } from '../lib/tool-definitions.js';
 import {
 	coerceInputs,
+	comPipeline,
 	executeTool,
+	selecionarPipeline,
 	ToolEngineError,
 } from '../lib/tool-engine.js';
+import { isPreviewOnlyTool } from '../lib/tool-preview.js';
 import {
+	getToolVoxCost,
+	liberarInvocacao,
 	refundInvocation,
+	reservarInvocacao,
 	resolveToolBilling,
 	settleInvocation,
 } from '../lib/upvox-tools.js';
 import { imageSizePresetRepository } from '../repositories/image-size-preset.js';
+import {
+	anexarArtes,
+	anexarMaster,
+	apagarLoteSemArte,
+	atualizarTamanhoDoLote,
+	emitirLote,
+	listarLote,
+} from '../repositories/licensed-art.js';
+import {
+	declaracaoEmDia,
+	type StatusDaDeclaracao,
+} from '../repositories/licensed-seller.js';
 import { toolBankRepository } from '../repositories/tool-bank.js';
 import { registerCoreBlocks } from '../tool-blocks/index.js';
 import type { ToolBankEntry } from '../types/tool-bank.js';
-import { bankImageSizeSchema, resolveImageSizePx } from '../types/tool-bank.js';
+import {
+	BANK_MODE_CARIMBO,
+	bankImageSizeSchema,
+	resolveImageSizePx,
+} from '../types/tool-bank.js';
 
 // Garante que os blocos curados estejam no registry (idempotente).
 registerCoreBlocks();
@@ -104,6 +144,17 @@ function validateUploadedFiles(
 		}
 
 		const spec = inputSpec[field];
+		// A foto de cada linha do lote personalizado (`piece_image_<i>`) nunca
+		// está no `input` da definition — é o run que a remapeia para
+		// `referencia`. Sem esta exceção, um lote com DUAS fotos caía em "Arquivo
+		// inesperado" (o fallback abaixo só perdoa um arquivo sozinho) — com
+		// estorno, mas caía. Medido: "cada peça diferente" nunca passou com foto.
+		if (/^piece_image_\d+$/.test(field)) {
+			if (!ALLOWED_IMAGE_MIME.has(mimes[field] ?? '')) {
+				return `Tipo de arquivo não suportado em '${field}' (envie PNG/JPG/WEBP).`;
+			}
+			continue;
+		}
 		// Fieldname genérico com UM input de imagem: é o fallback legado do motor
 		// (`coerceInputs`), então precisa continuar passando aqui.
 		if (!spec) {
@@ -161,7 +212,7 @@ function buildFileMeta(
 /** Resolve um path do registro do banco: `data.x` → entry.data.x; senão coluna. */
 function resolveBankPath(entry: ToolBankEntry, path: string): unknown {
 	if (path.startsWith('data.')) {
-		return (entry.data ?? {})[path.slice('data.'.length)];
+		return entry.data?.[path.slice('data.'.length)];
 	}
 	return (entry as unknown as Record<string, unknown>)[path];
 }
@@ -220,17 +271,45 @@ function validateModelId(
 const IMAGE_GEN_BLOCKS = new Set(['ai.generate_image', 'ai.image_studio']);
 
 /**
+ * Os blocos que SABEM gerar N variações — não os que recebem o override.
+ *
+ * A diferença entre as duas listas é o que impede "cobrar 4 e entregar 1":
+ * `ai.image_studio` está em `IMAGE_GEN_BLOCKS` (recebe modelo/tamanho do admin)
+ * mas o schema dele não declara `variation_count`, então o `z.object` faz
+ * `strip` e o número some sem um ruído sequer. Só `ai.generate_image`
+ * (`blocks/ai.ts`: `variation_count` declarado, N chamadas ao modelo) entrega.
+ *
+ * Ensinar o Estúdio a fazer N é uma mudança legítima — e no dia em que ela
+ * acontecer, o id entra aqui junto com o schema, no mesmo commit.
+ */
+const BLOCOS_QUE_FAZEM_VARIACOES = new Set(['ai.generate_image']);
+
+/** `true` se algum nó deste fluxo sabe honrar `variation_count > 1`. */
+function pipelineEntregaVariacoes(
+	nodes: readonly { block: string }[],
+): boolean {
+	return nodes.some((n) => BLOCOS_QUE_FAZEM_VARIACOES.has(n.block));
+}
+
+/**
  * Injeta overrides per-tool nos `params` dos nós de IA do pipeline:
  *   - `ai.generate_image` / `ai.image_studio`
  *                          ← `definition.model` / `system_prompt` / `image_*`
  *                          ← `definition.creations[creation_id]` (Passo 1)
- *                          ← `definition.return_variations` via `variation_count`
+ *                          ← `variationCount` (já resolvido e RECONCILIADO com
+ *                             o que a invocação pagou — ver `executarRun`)
  *                          ← `definition.raw_prompt` (sem intermediação)
  *   - `ai.text`           ← `definition.text_model` / `text_system_prompt`
  *
- * `fields` carrega `creation_id` e `variation_count` (multipart strings do
- * request). A validação aqui é ANTES do gate de billing → erro 400 rejeita sem
- * cobrar (sem refund necessário).
+ * `variationCount` chega PRONTO de propósito: quem o resolve precisa rodar
+ * antes do gate de billing (para recusar sem cobrar) e ser comparado com o
+ * `voxes_spent` da invocação depois dele (para não gerar N tendo cobrado 1).
+ * Calculá-lo aqui dentro, como era antes, escondia o número do único lugar que
+ * tem a resposta do upvox na mão.
+ *
+ * `fields` carrega `creation_id` (multipart string do request). A validação
+ * aqui é ANTES do gate de billing → erro 400 rejeita sem cobrar (sem refund
+ * necessário).
  *
  * Fast-path: sem nenhum override setado, devolve o doc intacto (zero impacto
  * retrocompatível nas ~100 tools publicadas).
@@ -258,6 +337,7 @@ const IMAGE_GEN_BLOCKS = new Set(['ai.generate_image', 'ai.image_studio']);
 function injectModelOverrides(
 	doc: ToolDefinitionDoc,
 	fields: Record<string, string>,
+	variationCount: number,
 	bankSizeOverride?: { width: number; height: number },
 	clientSizeOverride?: { width: number; height: number } | 'native',
 ): ToolDefinitionDoc {
@@ -299,16 +379,17 @@ function injectModelOverrides(
 	const hasSize =
 		typeof w === 'number' && typeof h === 'number' && w > 0 && h > 0;
 
-	// ── return_variations (Passo 3): valida variation_count contra o allowlist.
-	// Default = 1º elemento; sem return_variations = [1]. ──
-	const allowedVariations = doc.return_variations ?? [1];
-	const variationCount = resolveVariationCount(
-		fields.variation_count,
-		allowedVariations,
-	);
-
 	const useRawPrompt = !!doc.raw_prompt;
 
+	/**
+	 * `variationCount > 1` ENTRA AQUI, e a ausência dele era um cobra-N-entrega-1
+	 * silencioso: a injeção do `variation_count` mora dentro deste `if`, então
+	 * uma tool com `return_variations` mas SEM modelo/system prompt/tamanho/
+	 * raw_prompt fixados na Fábrica cobrava 2× ou 4× e o número nunca chegava ao
+	 * bloco — o motor gerava uma imagem e liquidava a invocação cheia. Era
+	 * anterior a este trabalho e não aparecia porque a única tool com Passo 3
+	 * publicada (`prompts_magicos`) por acaso também fixa o modelo.
+	 */
 	const hasImageOverride =
 		!!toolModel ||
 		!!toolSystemPrompt ||
@@ -326,9 +407,15 @@ function injectModelOverrides(
 		return doc;
 	}
 
-	return {
-		...doc,
-		pipeline: (doc.pipeline ?? []).map((n) => {
+	/**
+	 * Aplica os overrides a UM pipeline. Extraída porque a tool pode ter mais de
+	 * um fluxo (`pipelines`), e o modelo/tamanho/system prompt que o admin fixou
+	 * na Fábrica valem para a ferramenta INTEIRA — não só para o fluxo padrão.
+	 * Sem isto, o Ateliê geraria a arte com o modelo escolhido e ajustaria com
+	 * outro, em silêncio.
+	 */
+	const aplicar = (nodes: ToolDefinitionDoc['pipeline'] = []) =>
+		nodes.map((n) => {
 			if (IMAGE_GEN_BLOCKS.has(n.block) && hasImageOverride) {
 				const params: Record<string, unknown> = { ...(n.params ?? {}) };
 				if (toolModel) params.model = toolModel;
@@ -355,7 +442,21 @@ function injectModelOverrides(
 				};
 			}
 			return n;
-		}),
+		});
+
+	return {
+		...doc,
+		pipeline: aplicar(doc.pipeline),
+		...(doc.pipelines
+			? {
+					pipelines: Object.fromEntries(
+						Object.entries(doc.pipelines).map(([nome, nos]) => [
+							nome,
+							aplicar(nos),
+						]),
+					),
+				}
+			: {}),
 	};
 }
 
@@ -374,17 +475,145 @@ function injectModelOverrides(
  * settle/refund. Billing é AUTORITATIVO no upvox; o motor não dá run grátis a
  * tool cobrada sem invocation válida.
  */
-export const toolRunController = async (
+
+/** O que a resposta devolve ao front quando a arte é licenciada. */
+interface IssuedArtLicense {
+	code: string;
+	featureKey: string;
+	licensorName: string | null;
+	issuedAt: string;
+}
+
+/**
+ * Prompt licenciado é prompt que carrega `feature_key` no `data`.
+ *
+ * O gatilho é o DADO e não uma flag na definition: o staff amarra a marca ao
+ * prompt, e nenhuma configuração de tool pode desligar a emissão por engano.
+ */
+/**
+ * O QUE FALTA, em uma frase — porque a tela precisa instruir, não só barrar.
+ *
+ * As quatro razões são de fato diferentes, e mandar "declaração pendente" para
+ * todas deixaria o aluno adivinhando qual botão apertar.
+ */
+const MOTIVO_DO_PORTAO: Record<StatusDaDeclaracao, string> = {
+	sem_canal:
+		'Antes de gerar arte de marca, cadastre os canais onde você vende.',
+	termo_pendente:
+		'Antes de gerar arte de marca, leia e aceite o termo de uso do licenciamento.',
+	lista_mudou:
+		'Sua lista de canais mudou depois do último aceite. Confirme o termo de novo para continuar.',
+	termo_mudou:
+		'O termo de uso do licenciamento foi atualizado. Leia e aceite a nova versão para continuar.',
+	ok: 'Declaração em dia.',
+};
+
+function licenseFeatureKeyOf(entry?: ToolBankEntry): string | null {
+	const bruto = (entry?.data as Record<string, unknown> | undefined)
+		?.feature_key;
+	if (typeof bruto !== 'string') return null;
+	const chave = bruto.trim().toLowerCase();
+	// Mesma gramática do resto da casa. Fora do formato é erro de cadastro, e
+	// tratamos como "não licenciado" — melhor não emitir do que emitir com marca
+	// inválida.
+	return /^[a-z0-9]+:[a-z0-9-]+$/.test(chave) ? chave : null;
+}
+
+/** O `mode` do registro do banco, como o admin cadastrou (`data.mode`). */
+function bankModeOf(entry?: ToolBankEntry): string | null {
+	const bruto = (entry?.data as Record<string, unknown> | undefined)?.mode;
+	return typeof bruto === 'string' && bruto.trim() ? bruto.trim() : null;
+}
+
+/**
+ * A arte enviada pelo aluno, normalizada em PNG.
+ *
+ * "Como está" é a promessa do modo só-licenciar — sem redimensionar, sem tirar
+ * fundo, sem passar por modelo. A única transformação é o contêiner: o master
+ * sobe para o CDN como `.png` e o carimbo compõe sobre alfa, então um JPEG
+ * vira PNG uma vez, sem perda de pixel. Conteúdo que o sharp não lê é erro do
+ * cliente (400), não do motor.
+ */
+async function normalizarPng(buf: Buffer): Promise<Buffer> {
+	try {
+		return await sharp(buf).png().toBuffer();
+	} catch {
+		throw new ToolEngineError(400, 'A imagem enviada não pôde ser lida.');
+	}
+}
+
+/**
+ * Tira do pipeline TODO nó que escreve arquivo ou devolve imagem crua.
+ *
+ * Numa rodada licenciada a única saída em alta resolução permitida é a peça
+ * CARIMBADA. Enquanto o master cru subisse para o CDN — cuja URL é pública,
+ * permanente e sem expiração — ou voltasse em base64 no JSON, a "arte genérica
+ * sem código" continuaria existindo, e com ela o buraco inteiro da volumetria.
+ *
+ * Mesmo mecanismo do `skipInPreview`, com o propósito invertido: lá o corte
+ * garante que o caminho grátis não deixa rastro; aqui, que o caminho pago não
+ * entrega o original.
+ */
+function semSaidaCrua(doc: ToolDefinitionDoc): ToolDefinitionDoc {
+	const corta = (nos?: PipelineNode[]) =>
+		(nos ?? []).filter((n) => !n.block.startsWith('output.'));
+	return {
+		...doc,
+		...(doc.pipeline ? { pipeline: corta(doc.pipeline) } : {}),
+		...(doc.pipelines
+			? {
+					pipelines: Object.fromEntries(
+						Object.entries(doc.pipelines).map(([k, v]) => [k, corta(v)]),
+					),
+				}
+			: {}),
+	};
+}
+
+/** Nome de gente da marca, para a tela pública não mostrar `clube:corinthians`. */
+function licensorNameOf(entry?: ToolBankEntry): string | null {
+	const bruto = (entry?.data as Record<string, unknown> | undefined)
+		?.licensor_name;
+	return typeof bruto === 'string' && bruto.trim() ? bruto.trim() : null;
+}
+
+/**
+ * Um "respondedor": ou a resposta HTTP normal, ou frames SSE.
+ *
+ * Existe para que a rota de STREAMING e a normal compartilhem o MESMO caminho
+ * de billing (gate → executa → settle/refund). Duplicar o controller para ter
+ * SSE duplicaria justamente a parte perigosa — a que mexe em voxxy.
+ */
+interface Respondedor {
+	erro(status: number, message: string): unknown;
+	ok(payload: unknown): unknown;
+	progresso?: (ev: Record<string, unknown>) => void;
+}
+
+async function executarRun(
 	request: FastifyRequest,
-	reply: FastifyReply,
-) => {
+	res: Respondedor,
+): Promise<unknown> {
 	const customerId = request.currentCustomer?.id;
 	const authHeader = request.headers.authorization;
 	let invocationId: string | null = null;
+	/**
+	 * Peças licenciadas ALÉM da primeira que a invocação comprou. `null` quando
+	 * a invocação é anterior à coluna — e aí a tiragem é de uma peça só.
+	 */
+	let gateLicenseUnits: number | null = null;
+	/**
+	 * Gerações que a invocação pagou. Num lote uniforme é sempre 1 (a arte é uma
+	 * só, copiada N vezes). Num lote com DADOS VARIÁVEIS é N, porque ali cada
+	 * peça é uma chamada de modelo própria.
+	 */
+	let gateUnits: number | null = null;
+	/** Recibo que ESTE run tomou (ver `reservarInvocacao`); devolvido no `finally`. */
+	let reservado: string | null = null;
 
 	try {
 		if (!customerId) {
-			return reply.status(403).send({ message: 'Customer not found' });
+			return res.erro(403, 'Customer not found');
 		}
 
 		const { key } = request.params as ToolRunParams;
@@ -409,24 +638,80 @@ export const toolRunController = async (
 			}
 		}
 
+		/**
+		 * ┌─ "400 ANTES DO PORTÃO REJEITA SEM COBRAR" ERA MENTIRA ──────────────┐
+		 * │ Três comentários deste arquivo diziam isso, e o desenho inteiro da  │
+		 * │ ordem das validações se apoiava nele. A cobrança NÃO acontece aqui: │
+		 * │ ela já aconteceu no `/invoke`, no cliente, ANTES deste request      │
+		 * │ existir (`use-run-tool.ts` debita e só então chama o motor). Todo   │
+		 * │ 400 devolvido antes do portão deixava a invocação `pending` com o   │
+		 * │ voxxy debitado — e o front não estorna, e o upvox não tem reaper:   │
+		 * │ `pending` é terminal na prática. Medido: 7 valores inválidos de     │
+		 * │ `variation_count` = 7 invocações presas.                            │
+		 * │                                                                      │
+		 * │ `recusar` é a saída de erro correta destas validações: responde o   │
+		 * │ 400 E devolve o dinheiro. O upvox escopa o refund ao DONO da        │
+		 * │ invocação, então um id forjado/alheio simplesmente não estorna nada. │
+		 * └──────────────────────────────────────────────────────────────────────┘
+		 */
+		const reciboDoCliente = fields.invocation_id?.trim() || undefined;
+
+		/**
+		 * A TRAVA DE RECIBO, tomada aqui no começo por dois motivos que se
+		 * reforçam. Ver `reservarInvocacao` para o furo que ela fecha (o mesmo
+		 * recibo passando no portão K vezes em paralelo, K× o fornecedor por uma
+		 * cobrança). E, tomada ANTES das validações, ela é o que torna o estorno
+		 * do `recusar` seguro: só estornamos um recibo que é comprovadamente
+		 * NOSSO, nunca um que está sendo usado por um run legítimo em voo.
+		 */
+		if (reciboDoCliente) {
+			if (!reservarInvocacao(reciboDoCliente)) {
+				return res.erro(
+					409,
+					'Esta geração já está sendo processada. Aguarde o resultado — não é preciso gerar de novo.',
+				);
+			}
+			reservado = reciboDoCliente;
+		}
+
+		const recusar = async (status: number, message: string) => {
+			if (reservado) {
+				await refundInvocation(customerId, reservado, authHeader);
+				invocationId = null;
+			}
+			return res.erro(status, message);
+		};
+
 		// ── definition: inline draft (preview de staff) OU published por key ──
 		const isStaff = isStaffRole(request.currentRole);
 		let doc: ToolDefinitionDoc;
 		let runtime = 'blocks_v1';
 		let billed = true;
+		/**
+		 * A MINA DO DIA DA PUBLICAÇÃO. `TOOL_PREVIEW_KEYS` faz o upvox APAGAR a
+		 * tool da resposta de entitlements de quem não é testador — e o motor
+		 * decide se cobra com `isToolBilled`, que é exatamente "está na lista de
+		 * entitlements?". Enquanto a definition é `draft`, o escudo é o 404 da
+		 * carga. No instante em que a tool for PUBLICADA ainda listada na env, o
+		 * escudo some e ela passa a rodar `mode:'free'` — de graça, para todo
+		 * mundo, com o fornecedor no nosso bolso.
+		 *
+		 * Publicar e tirar da env são dois passos em sistemas diferentes, feitos
+		 * por gente com pressa. Isto transforma a janela entre eles num erro
+		 * barulhento em vez de numa torneira aberta.
+		 */
+		let publicadaAindaEmPreview = false;
 
 		if (fields.definition) {
 			// Preview de rascunho: só staff, e NÃO cobra (sem invocation).
 			if (!isStaff) {
-				return reply
-					.status(403)
-					.send({ message: 'inline_definition_forbidden' });
+				return recusar(403, 'inline_definition_forbidden');
 			}
 			try {
 				// Valida a forma da definition inline (JSON + estrutura) antes de rodar.
 				doc = parseInlineToolDefinition(fields.definition);
 			} catch {
-				return reply.status(400).send({ message: 'definition inválida' });
+				return recusar(400, 'definition inválida');
 			}
 			runtime =
 				(doc as { engine_runtime?: string }).engine_runtime ?? 'blocks_v1';
@@ -439,32 +724,46 @@ export const toolRunController = async (
 			);
 			doc = row.definition;
 			runtime = row.engine_runtime;
+			publicadaAindaEmPreview =
+				row.status === 'published' && isPreviewOnlyTool(key);
 		}
 
 		if (runtime !== 'blocks_v1') {
-			return reply.status(400).send({
-				message: `engine_runtime '${runtime}' não suportado (MVP: blocks_v1)`,
-			});
+			return recusar(
+				400,
+				`engine_runtime '${runtime}' não suportado (MVP: blocks_v1)`,
+			);
 		}
 
 		// ── banco do admin (opcional): injeta o registro escolhido nos inputs ──
 		const bank = doc.bank;
 		let selectedBankEntry: ToolBankEntry | undefined;
+		/**
+		 * OS MOLDES CRUS DOS CAMPOS COM `{variável}`, guardados ANTES de trocar.
+		 *
+		 * A injeção do banco roda UMA vez, aqui, e depois `fields.prompt` já é
+		 * texto pronto — o `{tema}` deixou de existir. Num lote com dados
+		 * variáveis isso significava que as 30 peças herdavam o mesmo prompt e
+		 * saíam sem o nome de ninguém: a lista era lida, era cobrada, era gravada
+		 * no rótulo de cada peça, e não chegava na arte. Medido em produção com
+		 * duas peças, MARINA e JOAO — as duas saíram só com o escudo.
+		 *
+		 * Guardando o molde, a rodada de cada peça refaz a troca com o texto DELA.
+		 */
+		const moldesComVariavel: Record<string, string> = {};
 		if (bank?.enabled) {
 			const bankEntryId = fields.bank_entry_id;
 			if (!bankEntryId) {
 				// Staff em preview (billed=false) pode testar sem escolher um item.
 				if (billed) {
-					return reply
-						.status(400)
-						.send({ message: 'Escolha um item do banco.' });
+					return recusar(400, 'Escolha um item do banco.');
 				}
 			} else {
 				const entry = await toolBankRepository.findById(bankEntryId, key, {
 					activeOnly: !isStaff,
 				});
 				if (!entry) {
-					return reply.status(400).send({ message: 'Item do banco inválido.' });
+					return recusar(400, 'Item do banco inválido.');
 				}
 				selectedBankEntry = entry;
 				const injectMap: Record<
@@ -475,13 +774,40 @@ export const toolRunController = async (
 					const value = resolveBankPath(entry, rule.from);
 					if (value === undefined || value === null) continue;
 					let str = typeof value === 'string' ? value : JSON.stringify(value);
-					if (rule.substitute) str = substituteVars(str, fields);
 					const name = inputName.startsWith('input.')
 						? inputName.slice('input.'.length)
 						: inputName;
+					if (rule.substitute) {
+						moldesComVariavel[name] = str;
+						str = substituteVars(str, fields);
+					}
 					fields[name] = str;
 				}
 			}
+		}
+
+		/**
+		 * SÓ LICENCIAR: o registro do banco com `mode: 'carimbo'`.
+		 *
+		 * ┌─ POR QUE ISTO NÃO É UM PROMPT ──────────────────────────────────────┐
+		 * │ Tentou-se: um registro "Licenciar Arte" pedindo ao modelo que        │
+		 * │ reproduzisse a referência "exatamente". Não tem como dar certo: o    │
+		 * │ pipeline licenciado injeta o escudo como imagem 1 SEMPRE, e modelo   │
+		 * │ de imagem reinterpreta por natureza. Quem só queria o código na arte │
+		 * │ que já tinha recebia outra arte.                                     │
+		 * │                                                                      │
+		 * │ Então este modo não gera nada. O arquivo enviado É o master: entra   │
+		 * │ como está, recebe o(s) código(s) e o carimbo, e sai. Billing, portão │
+		 * │ do vendedor, tiragem, estorno — tudo igual à rodada gerada; só o     │
+		 * │ `executeTool` some do caminho.                                       │
+		 * └──────────────────────────────────────────────────────────────────────┘
+		 */
+		const modoCarimbo = bankModeOf(selectedBankEntry) === BANK_MODE_CARIMBO;
+		if (modoCarimbo && !licenseFeatureKeyOf(selectedBankEntry)) {
+			return recusar(
+				400,
+				'Este modelo de licenciamento não tem marca vinculada.',
+			);
 		}
 
 		// Tamanho escolhido pelo CLIENTE na hora da geração (`image_size`) — vence
@@ -495,13 +821,11 @@ export const toolRunController = async (
 			try {
 				parsedSize = JSON.parse(fields.image_size);
 			} catch {
-				return reply
-					.status(400)
-					.send({ message: 'image_size inválido (JSON).' });
+				return recusar(400, 'image_size inválido (JSON).');
 			}
 			const parsed = bankImageSizeSchema.safeParse(parsedSize);
 			if (!parsed.success) {
-				return reply.status(400).send({ message: 'image_size inválido.' });
+				return recusar(400, 'image_size inválido.');
 			}
 			try {
 				clientSize = await resolveImageSizePx(parsed.data, async (id) =>
@@ -510,19 +834,108 @@ export const toolRunController = async (
 			} catch (err) {
 				const message =
 					err instanceof Error ? err.message : 'image_size inválido.';
-				return reply.status(400).send({ message });
+				return recusar(400, message);
 			}
 		}
 
-		// Override per-tool do modelo + system prompt, creations/variation_count/
-		// raw_prompt, e tamanho (cliente > creation_id > banco > tool) para
-		// `ai.generate_image`/`ai.image_studio`.
-		doc = injectModelOverrides(
-			doc,
-			fields,
-			bankImageSize(selectedBankEntry),
-			clientSize,
-		);
+		/**
+		 * QUANTAS VARIAÇÕES O CLIENTE PEDIU (Passo 3). É só o PEDIDO: o número
+		 * que o motor vai de fato entregar sai depois do portão, reconciliado
+		 * com o que a invocação pagou (`variacoesAEntregar`).
+		 */
+		const allowedVariations = doc.return_variations ?? [1];
+		let variationCount: number;
+		try {
+			variationCount = resolveVariationCount(
+				fields.variation_count,
+				allowedVariations,
+			);
+		} catch (err) {
+			const message =
+				err instanceof ToolEngineError
+					? err.message
+					: 'Quantidade de variações inválida.';
+			return recusar(400, message);
+		}
+		// Só licenciar não gera: "variação" não quer dizer nada aqui, e aceitar
+		// N cobraria N gerações de um modelo que não roda.
+		if (modoCarimbo && variationCount > 1) {
+			return recusar(400, 'Só licenciar entrega uma arte por rodada.');
+		}
+
+		/**
+		 * QUAL FLUXO. A validação continua antes do portão — não porque "400
+		 * aqui não cobra" (não é verdade; ver `recusar`), mas porque não faz
+		 * sentido consultar o upvox para um pedido que já sabemos malformado.
+		 * O estorno de quem já pagou é responsabilidade do `recusar`.
+		 *
+		 * `doc` aqui ainda é o CRU, sem os overrides — e pode ser: a seleção de
+		 * fluxo olha os NOMES dos pipelines e `nadaAPagarNesteRun` olha
+		 * `block`/`params.mode`, e o override só mexe em model/system_prompt/
+		 * tamanho/raw_prompt/variation_count dos nós de imagem.
+		 */
+		const flow = fields.flow?.trim() || undefined;
+		let doFluxo: PipelineNode[];
+		try {
+			doFluxo = selecionarPipeline(doc, flow);
+		} catch (err) {
+			const message =
+				err instanceof ToolEngineError ? err.message : 'fluxo inválido';
+			return recusar(400, message);
+		}
+
+		/**
+		 * NÃO COBRAR POR TRABALHO QUE NÃO CUSTOU.
+		 *
+		 * Ver `nadaAPagarNesteRun`. O caso real é `flow=ajustar&modo=ampliar`, que
+		 * é `resize` Lanczos na nossa CPU e tem rota grátis pronta — a tela já
+		 * manda por ela; esta guarda é o que garante que ela seja a ÚNICA porta.
+		 * E `recusar` devolve o voxxy de quem chegou aqui já debitado.
+		 */
+		if (billed && nadaAPagarNesteRun(doFluxo, fields)) {
+			return recusar(
+				400,
+				'Este ajuste é feito aqui mesmo, sem gastar voxxy — ele não passa por esta rota. Use o ajuste pela tela.',
+			);
+		}
+
+		/**
+		 * VALIDA O PASSO 1 ANTES DE QUALQUER TRABALHO. `resolveCreation` roda de
+		 * novo dentro do `injectModelOverrides` (é puro e barato); aqui ele existe
+		 * só para que um `creation_id` ausente/inválido saia como 400 COM estorno,
+		 * em vez de escapar pelo catch externo — que só conhecia
+		 * `ToolDefinitionLoadError` e transformava este 400 em **HTTP 500**, com
+		 * mensagem de usuário e voxxy preso.
+		 */
+		// Só licenciar não tem Passo 1: a arte já vem no tamanho dela.
+		if (!modoCarimbo) {
+			try {
+				resolveCreation(doc, fields.creation_id);
+			} catch (err) {
+				const message =
+					err instanceof ToolEngineError
+						? err.message
+						: 'Tipo de criação inválido.';
+				return recusar(400, message);
+			}
+		}
+
+		/**
+		 * A LISTA DE DADOS VARIÁVEIS, se houver.
+		 *
+		 * Validada aqui, antes do portão, pelo mesmo motivo das outras: não faz
+		 * sentido consultar o upvox por um pedido que já sabemos malformado. Quem
+		 * chegou aqui já debitado é estornado pelo `recusar`.
+		 */
+		let dadosVariaveis: PecaVariavel[] | null = null;
+		try {
+			dadosVariaveis = lerDadosVariaveis(fields.pieces);
+		} catch (err) {
+			return recusar(
+				400,
+				err instanceof Error ? err.message : 'Lista de peças inválida.',
+			);
+		}
 
 		// ── billing (autoritativo no upvox) ──
 		if (billed) {
@@ -533,62 +946,658 @@ export const toolRunController = async (
 				authHeader,
 			);
 			if (gate.mode === 'reject') {
-				return reply.status(gate.status).send({ message: gate.message });
+				return recusar(gate.status, gate.message);
+			}
+			if (gate.mode === 'free' && publicadaAindaEmPreview) {
+				console.error(
+					`[tool-run] ${key} está PUBLICADA e ainda em TOOL_PREVIEW_KEYS — o upvox a esconde dos entitlements e o motor rodaria de graça. Tire a key da env nos DOIS serviços.`,
+				);
+				return recusar(402, 'billing_required');
 			}
 			invocationId = gate.mode === 'paid' ? gate.invocationId : null;
+			gateLicenseUnits = gate.mode === 'paid' ? gate.licenseUnits : null;
+			gateUnits = gate.mode === 'paid' ? gate.units : null;
+
+			/**
+			 * ┌─ PAGOU POR UMA, PEDIU QUATRO ───────────────────────────────────────┐
+			 * │ O `/invoke` do upvox debita `vox_cost × variation_count` e devolve  │
+			 * │ um id. O run conferia `variation_count` só contra                   │
+			 * │ `return_variations` da definition — o allowlist do que a tool PODE  │
+			 * │ entregar, nunca do que ESTE run pagou. Bastava pedir 1 no `/invoke` │
+			 * │ e 4 aqui: o motor aceitava, chamava o fornecedor quatro vezes e     │
+			 * │ liquidava a invocação de uma. Medido ao vivo nos Prompts Mágicos    │
+			 * │ (publicado): US$ 1,20 de fornecedor por clique, repetível.          │
+			 * └──────────────────────────────────────────────────────────────────────┘
+			 *
+			 * O motor ENTREGA O QUE FOI PAGO — não recusa. A recusa (409) fechava a
+			 * fraude e abria a falha oposta: qualquer deriva entre as duas chamadas
+			 * (aba com bundle velho, retry, segunda aba) virava erro num run
+			 * legítimo já cobrado — e isso foi observado com um cliente real. Ver a
+			 * caixa em `variacoesAEntregar`.
+			 *
+			 * A pergunta ao upvox só acontece com `variationCount > 1`: com uma
+			 * variação não há o que reconciliar, e assim a esmagadora maioria dos
+			 * runs (toda tool sem `return_variations`, todo 1×) não ganha nem uma
+			 * chamada de rede nem uma superfície nova de falha.
+			 */
+			if (gate.mode === 'paid' && variationCount > 1) {
+				// O upvox agora GUARDA quantas unidades a rodada comprou. Só quando
+				// a invocação é anterior à coluna é que voltamos a inferir pelo valor
+				// pago — e aí o `vox_cost` precisa ser buscado, uma ida a menos ao
+				// upvox no caminho quente de todo mundo.
+				// "Tem número guardado?", não "é exatamente null": uma invocação
+				// anterior à coluna chega com o campo ausente, e tratar `undefined`
+				// como "sei o número" faria o motor entregar sem conferir nada.
+				const temUnidades = typeof gate.units === 'number' && gate.units >= 1;
+				const voxCost = temUnidades
+					? null
+					: await getToolVoxCost(customerId, key, authHeader);
+				const pagas = unidadesDaInvocacao({
+					units: gate.units,
+					voxesSpent: gate.voxesSpent,
+					quotaConsumed: gate.quotaConsumed,
+					voxCost,
+				});
+				const entregar = variacoesAEntregar(
+					variationCount,
+					pagas,
+					allowedVariations,
+				);
+				if (pagas === null) {
+					// Indeterminado, e só possível em invocação anterior à coluna
+					// `units` (cota do plano, conta ilimitada, preço mexido no meio do
+					// caminho). Entrega o pedido — ver `variacoesPagas`.
+					console.warn(
+						`[tool-run] ${key}: ${variationCount} variações sem conferência possível (voxes_spent=${gate.voxesSpent}, quota=${gate.quotaConsumed}, vox_cost=${voxCost ?? 'desconhecido'}).`,
+					);
+				} else if (entregar < variationCount) {
+					// Log alto: se isto aparecer em volume, é bug de cliente (invoke e
+					// run derivando N de fontes diferentes), não fraude.
+					console.warn(
+						`[tool-run] ${key}: pedido de ${variationCount} variações sobre invocação de ${pagas} (voxes_spent=${gate.voxesSpent}, vox_cost=${voxCost}) — entregando ${entregar}.`,
+					);
+				}
+				variationCount = entregar;
+			}
+		}
+
+		/**
+		 * COBRAR N E ENTREGAR 1 — a mesma falha do furo, virada do avesso.
+		 *
+		 * Os overrides só chegam nos nós de imagem, e nem todo bloco de imagem
+		 * sabe fazer N (`ai.image_studio` não sabe: o Zod dele faz `strip` da
+		 * chave). Uma tool que declare `return_variations` e rode num bloco
+		 * desses cobraria 2× ou 4× e devolveria uma imagem só, em silêncio.
+		 * Aqui isso vira recusa COM ESTORNO: é erro de configuração do admin,
+		 * e o único desfecho aceitável é o aluno não pagar por ele.
+		 */
+		if (variationCount > 1 && !pipelineEntregaVariacoes(doFluxo)) {
+			console.error(
+				`[tool-run] ${key}: return_variations pede ${variationCount}, mas nenhum bloco do fluxo '${flow ?? 'padrão'}' sabe gerar variações. Corrija a definition.`,
+			);
+			return recusar(
+				409,
+				'Esta ferramenta ainda não entrega mais de uma variação por vez. Escolha 1 e tente de novo — nada foi cobrado.',
+			);
+		}
+
+		// Override per-tool do modelo + system prompt, creations/variation_count/
+		// raw_prompt, e tamanho (cliente > creation_id > banco > tool) para
+		// `ai.generate_image`/`ai.image_studio`. DEPOIS do portão de propósito: o
+		// `variationCount` que entra aqui é o RECONCILIADO, não o pedido.
+		// Só licenciar nunca chega nos nós de imagem — e o override resolveria o
+		// `creation_id` de novo, que aqui não existe.
+		if (!modoCarimbo) {
+			doc = injectModelOverrides(
+				doc,
+				fields,
+				variationCount,
+				bankImageSize(selectedBankEntry),
+				clientSize,
+			);
 		}
 
 		// Falha rápida em arquivo inválido (defense-in-depth; mimetype é spoofável).
 		// Valida CADA arquivo enviado CONTRA O SEU INPUT: input de imagem exige
 		// mimetype de imagem; input `type:'file'` valida por extensão. Refund se já
 		// houver invocação pendente, pra não deixá-la presa.
+		//
+		// No modo só-licenciar a `referencia` é a própria arte: valida como imagem
+		// mesmo que a definition um dia deixe de declará-la (ela é config da
+		// GERAÇÃO, e este modo não gera).
 		const fileError = validateUploadedFiles(
-			doc.input ?? {},
+			modoCarimbo
+				? { ...(doc.input ?? {}), referencia: { type: 'image' } }
+				: (doc.input ?? {}),
 			files,
 			fileMimes,
 			fileNames,
 		);
 		if (fileError) {
-			if (invocationId) {
-				await refundInvocation(customerId, invocationId, authHeader);
+			return recusar(400, fileError);
+		}
+
+		/**
+		 * RODADA LICENCIADA EXIGE INVOCAÇÃO PAGA.
+		 *
+		 * Sem invocação, `emitirLicenca` recebe `invocation_id` nulo — e aí a
+		 * pré-checagem é pulada E o unique parcial do banco (`where invocation_id
+		 * is not null`) não se aplica. Cada retentativa emitiria um código novo,
+		 * de graça, sem idempotência nenhuma: uma torneira de licenças.
+		 *
+		 * Dois caminhos chegavam aqui: tool fora dos entitlements do cliente
+		 * (`gate.mode === 'free'`) e o preview de definition inline do staff
+		 * (`billed === false`, que nem passa pelo gate).
+		 *
+		 * Com tiragem isso deixa de ser um código órfão por clique e vira N.
+		 */
+		const featureKey = licenseFeatureKeyOf(selectedBankEntry);
+		if (featureKey && !invocationId) {
+			return recusar(
+				402,
+				'Arte licenciada precisa de uma rodada cobrada — o código de autenticidade nasce dela.',
+			);
+		}
+		/**
+		 * ┌─ O PORTÃO DO VENDEDOR ──────────────────────────────────────────────┐
+		 * │ Quem gera arte de marca declara ONDE vende, e assina que não faz    │
+		 * │ produto sem licenciamento. É a outra metade do relatório que vai    │
+		 * │ para a mesa do clube: a volumetria diz quantas peças saíram, a      │
+		 * │ declaração diz onde elas aparecem.                                  │
+		 * │                                                                     │
+		 * │ A checagem é AQUI, no motor, pelo mesmo motivo que a emissão é: se  │
+		 * │ vivesse só na tela, bastaria falar direto com a rota.               │
+		 * │                                                                     │
+		 * │ E é ANTES do `executeTool` — declaração vencida não pode custar uma │
+		 * │ chamada de modelo. Sai por `recusar`, nunca por `res.erro`: o voxxy │
+		 * │ já foi debitado no `/invoke` antes deste request existir, e         │
+		 * │ `recusar` é quem estorna.                                           │
+		 * └─────────────────────────────────────────────────────────────────────┘
+		 */
+		if (featureKey) {
+			const declaracao = await declaracaoEmDia(customerId);
+			if (!declaracao.ok) {
+				return recusar(403, MOTIVO_DO_PORTAO[declaracao.status]);
 			}
-			return reply.status(400).send({ message: fileError });
+		}
+
+		// O master não pode escapar cru: nem para o CDN, nem no JSON da resposta.
+		const docRun = featureKey ? semSaidaCrua(doc) : doc;
+
+		/**
+		 * LOTE COM DADOS VARIÁVEIS: só faz sentido licenciado.
+		 *
+		 * Fora de uma rodada licenciada não há lote nem peça — a lista não teria
+		 * onde pousar, e aceitá-la em silêncio faria o motor rodar o modelo N
+		 * vezes cobrando por uma.
+		 */
+		if (dadosVariaveis && !featureKey) {
+			return recusar(
+				400,
+				'Lista de peças só existe em arte licenciada — esta ferramenta não emite peças.',
+			);
+		}
+
+		/**
+		 * A LISTA ENTREGUE É A QUE FOI PAGA, nunca a que foi pedida.
+		 *
+		 * Cada linha da lista é uma chamada de modelo própria: é a diferença entre
+		 * copiar uma arte 30 vezes e gerar 30 artes. Então a conta que vale aqui é
+		 * `gate.units` (gerações compradas), não `licenseUnits`.
+		 *
+		 * "Não sei" (invocação anterior à coluna) entrega UMA peça, pela mesma
+		 * razão já escrita para a tiragem: código a mais é dívida com um terceiro.
+		 * O run não é recusado — o aluno recebe arte e recebe código, só recebe
+		 * menos peças do que pediu.
+		 */
+		if (dadosVariaveis) {
+			const pagas = gateUnits === null ? 1 : Math.max(1, gateUnits);
+			if (dadosVariaveis.length > pagas) {
+				dadosVariaveis = dadosVariaveis.slice(0, pagas);
+			}
 		}
 
 		// ── executa o pipeline ──
 		let output: Record<string, unknown>;
+		// A bag do run: o buffer da arte mora aqui e NUNCA é projetado no output
+		// de uma tool licenciada. É por ela que o carimbo pega o master.
+		let bag: Record<string, unknown> = {};
+		/**
+		 * A arte PRÓPRIA de cada peça do lote com dados variáveis, por
+		 * `piece_index` (base 1). Vazio no lote uniforme, onde a arte é uma só.
+		 */
+		const artesDaPeca = new Map<number, Buffer>();
+		/**
+		 * A chave da bag onde o master do modo só-licenciar mora. O `doc` real
+		 * aponta `licensing.master` para a saída do modelo (`gen.png`), que aqui
+		 * não existe — `carimbarLote` recebe um doc de mentira apontando para cá,
+		 * o mesmo truque de `ampliarLoteLicenciado`.
+		 */
+		const CHAVE_UPLOAD = 'upload.png';
 		try {
-			const bag = coerceInputs(
-				doc.input ?? {},
-				fields,
-				files,
-				buildFileMeta(fileMimes, fileNames),
-			);
-			output = await executeTool(doc, bag, { customerId, authHeader });
+			const meta = buildFileMeta(fileMimes, fileNames);
+			if (modoCarimbo) {
+				if (dadosVariaveis) {
+					// Sem geração não há o que fazer com um nome sozinho: cada linha
+					// precisa da PRÓPRIA arte, e o texto vira só o rótulo da peça.
+					for (let i = 0; i < dadosVariaveis.length; i++) {
+						const propria = files[`piece_image_${i}`];
+						if (!propria) {
+							return recusar(
+								400,
+								`A peça ${i + 1} não tem arte. No modo só licenciar, cada peça precisa do próprio arquivo.`,
+							);
+						}
+						res.progresso?.({
+							etapa: 'peca',
+							atual: i + 1,
+							total: dadosVariaveis.length,
+							rotulo: dadosVariaveis[i].tema,
+						});
+						artesDaPeca.set(i + 1, await normalizarPng(propria));
+					}
+				} else {
+					const arte = files.referencia;
+					if (!arte) {
+						return recusar(400, 'Envie a arte pronta que você quer licenciar.');
+					}
+					bag = { [CHAVE_UPLOAD]: await normalizarPng(arte) };
+				}
+				output = {};
+			} else if (dadosVariaveis) {
+				/**
+				 * UMA RODADA POR LINHA. Não há atalho possível: um nome diferente é
+				 * um prompt diferente, e um prompt diferente é uma arte diferente.
+				 *
+				 * Serial de propósito. Paralelizar aqui multiplicaria por N a
+				 * concorrência que o fornecedor vê vinda de um cliente só, e o ganho
+				 * de relógio não paga o risco de 429 no meio de um lote pago. O
+				 * progresso ao vivo é o que torna a espera legível.
+				 */
+				const chave = doc.licensing?.master;
+				if (!chave) {
+					return recusar(
+						503,
+						'Esta ferramenta não está configurada para emitir peças.',
+					);
+				}
+				for (let i = 0; i < dadosVariaveis.length; i++) {
+					const linha = dadosVariaveis[i];
+					res.progresso?.({
+						etapa: 'peca',
+						atual: i + 1,
+						total: dadosVariaveis.length,
+						rotulo: linha.tema,
+					});
+
+					// O texto da linha manda no `tema` (e na especificação principal
+					// do registro, quando há) E refaz o prompt a partir do molde cru —
+					// sem a segunda metade, a peça sai sem o nome dela.
+					const campos = camposDaPeca(
+						fields,
+						moldesComVariavel,
+						linha,
+						selectedBankEntry ? nomesDasEspecificacoes(selectedBankEntry) : [],
+					);
+
+					// A foto da linha entra como `referencia`. As fotos das OUTRAS
+					// linhas ficam de fora — senão o fallback de imagem única do
+					// `coerceInputs` teria N candidatas e a peça sairia com a foto
+					// de outra pessoa.
+					const arquivosDaPeca: Record<string, Buffer> = {};
+					for (const [nome, buf] of Object.entries(files)) {
+						if (!nome.startsWith('piece_image_')) arquivosDaPeca[nome] = buf;
+					}
+					const propria = files[`piece_image_${i}`];
+					if (propria) {
+						arquivosDaPeca.referencia = propria;
+						meta.referencia = meta[`piece_image_${i}`] ?? {};
+					}
+
+					const rodada = await executeTool(
+						docRun,
+						coerceInputs(doc.input ?? {}, campos, arquivosDaPeca, meta),
+						{ customerId, authHeader, onProgress: res.progresso },
+						flow,
+					);
+					const arte = rodada.bag[chave];
+					if (!Buffer.isBuffer(arte)) {
+						throw new Error(
+							`a peça ${i + 1} não produziu imagem em '${chave}'`,
+						);
+					}
+					artesDaPeca.set(i + 1, arte);
+					output = rodada.output;
+					bag = rodada.bag;
+				}
+			} else {
+				const entrada = coerceInputs(doc.input ?? {}, fields, files, meta);
+				const rodada = await executeTool(
+					docRun,
+					entrada,
+					{
+						customerId,
+						authHeader,
+						onProgress: res.progresso,
+					},
+					flow,
+				);
+				output = rodada.output;
+				bag = rodada.bag;
+			}
 		} catch (err) {
 			if (invocationId) {
 				await refundInvocation(customerId, invocationId, authHeader);
 			}
 			if (err instanceof ToolEngineError) {
-				return reply.status(err.status).send({ message: err.message });
+				return res.erro(err.status, err.message);
 			}
 			const message = err instanceof Error ? err.message : 'Unknown error';
-			return reply.status(500).send({ message });
+			return res.erro(500, message);
+		}
+
+		// ── arte licenciada: código, carimbo e a peça ──
+		//
+		// A regra mora AQUI, no motor, e não num bloco do pipeline: se fosse
+		// bloco, um admin editando a definition poderia removê-lo e a arte da
+		// marca sairia sem código — indistinguível de uma pirata, que é
+		// exatamente a falha que este produto existe para evitar. O editor visual
+		// da Fábrica, aliás, apaga fluxos nomeados em silêncio ao salvar.
+		//
+		// O gatilho é o dado, não a configuração: prompt com `feature_key` é
+		// prompt licenciado.
+		let license: IssuedArtLicense | undefined;
+		if (featureKey) {
+			/**
+			 * A TIRAGEM É A QUE FOI PAGA, nunca a que foi pedida.
+			 *
+			 * `gate.licenseUnits` são as peças ALÉM da primeira que a invocação
+			 * comprou. Se o número não puder ser lido (invocação anterior à coluna),
+			 * o lote é de UMA peça.
+			 *
+			 * A assimetria contra as variações é deliberada. Lá, "não sei" entrega o
+			 * pedido, porque uma variação a menos custa ao aluno uma repetição. Aqui
+			 * "não sei" entrega uma peça, porque um código de licença a mais é dívida
+			 * com um terceiro cujo contrato é o produto inteiro. Nenhum dos dois
+			 * recusa a rodada: o aluno recebe arte e recebe código, só recebe menos
+			 * códigos.
+			 */
+			const compradas =
+				gateLicenseUnits === null ? 0 : Math.max(0, gateLicenseUnits);
+			/**
+			 * Num lote com dados variáveis a tiragem É a lista: cada linha virou
+			 * uma arte, e uma arte sem código seria justamente a peça sem licença.
+			 * O `licenseUnits` da invocação continua sendo `N − 1`, mas quem manda
+			 * aqui é o que de fato foi gerado.
+			 */
+			const tiragem = dadosVariaveis
+				? dadosVariaveis.length
+				: Math.min(1 + compradas, MAX_TIRAGEM);
+			const batchId = crypto.randomUUID();
+			const subidas: string[] = [];
+
+			try {
+				/**
+				 * SEM FUNDO DE VERDADE, antes do carimbo.
+				 *
+				 * Nos formatos de recorte (`Creation.transparent`) o modelo devolve
+				 * a arte opaca com frequência — fundo branco ou o xadrez falso de
+				 * transparência. Gravada assim, a máquina queima a placa inteira. O
+				 * removedor roda aqui, dentro do `try`: se falhar, o lote é estornado
+				 * como qualquer outra falha, em vez de entregar peça com fundo.
+				 */
+				const criacao = doc.creations?.find((c) => c.id === fields.creation_id);
+				// Só licenciar entrega a arte como veio — fundo incluso, se tiver.
+				if (!modoCarimbo && criacao?.transparent) {
+					const ctxFundo = { customerId, authHeader };
+					if (dadosVariaveis) {
+						for (const [indice, arte] of artesDaPeca) {
+							artesDaPeca.set(indice, await garantirSemFundo(arte, ctxFundo));
+						}
+					} else {
+						const chave = doc.licensing?.master;
+						const master = chave ? bag[chave] : undefined;
+						if (chave && Buffer.isBuffer(master)) {
+							bag[chave] = await garantirSemFundo(master, ctxFundo);
+						}
+					}
+				}
+
+				const pecas = await emitirLote({
+					customerId,
+					featureKey,
+					licensorName: licensorNameOf(selectedBankEntry),
+					toolKey: key,
+					// A rodada cobrada é a unidade de idempotência: reenvio devolve os
+					// MESMOS códigos em vez de emitir um segundo lote.
+					invocationId: invocationId ?? null,
+					promptTitle: selectedBankEntry?.title ?? null,
+					batchId,
+					tamanho: tiragem,
+					rotulos: dadosVariaveis?.map((l) => l.tema) ?? undefined,
+				});
+
+				const lote = await carimbarLote({
+					doc: modoCarimbo
+						? ({ licensing: { master: CHAVE_UPLOAD } } as ToolDefinitionDoc)
+						: doc,
+					bag,
+					artes: dadosVariaveis ? artesDaPeca : undefined,
+					customerId,
+					batchId: pecas[0]?.batch_id ?? batchId,
+					pecas: pecas.map((a) => ({
+						id: a.id,
+						code: a.code,
+						piece_index: a.piece_index,
+					})),
+					// O diário é preenchido DURANTE o carimbo. Esperar o retorno para
+					// saber o que apagar só funciona quando dá certo — e é justamente
+					// quando dá errado que a limpeza precisa da lista.
+					subidas,
+				});
+				await anexarArtes(
+					lote.entregues.map((e) => ({ id: e.id, previewUrl: e.url })),
+				);
+
+				/**
+				 * A ARTE-MÃE FICA GUARDADA, e o endereço dela nunca sai daqui.
+				 *
+				 * É o que permite ampliar a tiragem depois sem rodar o modelo de
+				 * novo — que importa porque a tiragem é escolhida ANTES de a arte
+				 * existir, e ninguém encomenda 50 peças no escuro.
+				 *
+				 * Best-effort: falhar aqui custa a possibilidade de ampliar, não o
+				 * lote que o aluno acabou de pagar.
+				 */
+				//
+				// LOTE COM DADOS VARIÁVEIS NÃO TEM ARTE-MÃE, e por isso não pode ser
+				// ampliado: "mais 20 iguais a estas" não quer dizer nada quando cada
+				// peça leva o nome de uma pessoa. Sem `master_path`, a biblioteca já
+				// esconde o botão sozinha.
+				if (lote.master) {
+					try {
+						const masterUrl = await uploadToolOutput(
+							`arte-licenciada-master/${customerId}`,
+							lote.master,
+							`${batchId}.png`,
+							'image/png',
+						);
+						await anexarMaster(pecas[0]?.batch_id ?? batchId, masterUrl);
+					} catch (err) {
+						console.error('[tool-run] arte-mãe não pôde ser guardada:', err);
+					}
+				}
+
+				// O output projetado é DESCARTADO: numa rodada licenciada quem manda
+				// na resposta é o motor, não a definition. Assim nenhuma chave
+				// esquecida no `output` devolve o master por acidente.
+				output = {
+					primary: lote.entregues[0]?.url,
+					preview: lote.thumb,
+					pieces: lote.entregues.map((e) => ({
+						index: e.index,
+						code: e.code,
+						url: e.url,
+						...(dadosVariaveis?.[e.index - 1]?.tema
+							? { label: dadosVariaveis[e.index - 1].tema }
+							: {}),
+					})),
+					count: lote.entregues.length,
+				};
+
+				const primeira = pecas[0];
+				license = {
+					code: primeira.code,
+					featureKey: primeira.feature_key,
+					licensorName: primeira.licensor_name,
+					issuedAt: primeira.created_at,
+				};
+			} catch (err) {
+				/**
+				 * TUDO OU NADA. Um lote entregue pela metade não tem meio-termo
+				 * possível: `refundInvocation` é tudo-ou-nada e só sai de `pending`,
+				 * então "estorno parcial" não existe como primitiva. Meio lote cobrado
+				 * cheio seria pior.
+				 *
+				 * Os arquivos já subidos são apagados — um PNG órfão no CDN é lixo
+				 * barato, e deixá-lo seria uma peça com código que o aluno não pagou.
+				 */
+				console.error('[tool-run] lote licenciado falhou:', err);
+				await Promise.all(subidas.map((u) => deleteByUrl(u).catch(() => {})));
+				/**
+				 * E AS LINHAS TAMBÉM SOMEM. `emitirLote` grava ANTES do carimbo, então
+				 * um erro no meio deixava peças com código, sem arquivo e sem dono —
+				 * estornadas para o aluno, mas contadas na volumetria da marca.
+				 *
+				 * `apagarLoteSemArte` não toca em peça que já tem `preview_url`: essa
+				 * foi entregue, e o QR dela pode estar gravado em acrílico.
+				 */
+				await apagarLoteSemArte(batchId, customerId).catch((e) =>
+					console.error('[tool-run] lote falho não pôde ser limpo:', e),
+				);
+				if (invocationId) {
+					await refundInvocation(customerId, invocationId, authHeader);
+				}
+				return res.erro(
+					503,
+					'Não foi possível emitir as peças licenciadas. Nada foi cobrado — tente de novo.',
+				);
+			}
 		}
 
 		if (invocationId) {
 			await settleInvocation(customerId, invocationId, authHeader);
 		}
-		return reply.status(201).send({ id: crypto.randomUUID(), output });
+		return res.ok({ id: crypto.randomUUID(), output, license });
 	} catch (err) {
-		if (invocationId && customerId) {
-			await refundInvocation(customerId, invocationId, authHeader);
+		/**
+		 * ┌─ ESTORNAR PELO RECIBO, NÃO PELO PORTÃO ─────────────────────────────┐
+		 * │ Este `catch` estornava por `invocationId` — que só é atribuído DEPOIS │
+		 * │ do portão de billing. A carga da definition acontece ANTES dele, e    │
+		 * │ `loadPublishedToolDefinition` lança `ToolDefinitionLoadError` direto  │
+		 * │ para cá. Resultado medido ao vivo: `/invoke` debitou, o run tomou 404 │
+		 * │ `tool_not_found`, e a invocação ficou `pending` PARA SEMPRE — não há  │
+		 * │ reaper em lugar nenhum (65 invocações presas em produção, a mais      │
+		 * │ antiga de junho). Numa tool de 12 voxxys isso é o pior desfecho do    │
+		 * │ sistema: o aluno paga e não recebe nada.                              │
+		 * │                                                                       │
+		 * │ `reservado` é o recibo que o CLIENTE mandou e que este run tomou para  │
+		 * │ si na trava — é a mesma prova de posse que o `recusar` já usa para     │
+		 * │ estornar com segurança. Um id forjado ou alheio não estorna nada: o    │
+		 * │ upvox só transiciona `pending → refunded` para o dono da invocação.    │
+		 * │ E estornar um recibo já liquidado é inofensivo (o upvox responde       │
+		 * │ conflito e `refundInvocation` engole), então a ordem `invocationId ??  │
+		 * │ reservado` nunca estorna duas vezes.                                   │
+		 * └───────────────────────────────────────────────────────────────────────┘
+		 */
+		const paraEstornar = invocationId ?? reservado;
+		if (paraEstornar && customerId) {
+			await refundInvocation(customerId, paraEstornar, authHeader);
 		}
 		if (err instanceof ToolDefinitionLoadError) {
-			return reply.status(err.status).send({ message: err.message });
+			return res.erro(err.status, err.message);
+		}
+		/**
+		 * `ToolEngineError` carrega o STATUS que o erro merece — e sem este ramo
+		 * ele caía no 500 abaixo. Medido: `creation_id` ausente (um 400 puro,
+		 * "Escolha um tipo de criação.") saía como **HTTP 500** com a mensagem de
+		 * usuário dentro. Erro de cliente vestido de falha de servidor é o pior
+		 * dos dois mundos: o front não sabe tratar e o monitoramento acorda gente
+		 * à toa.
+		 */
+		if (err instanceof ToolEngineError) {
+			return res.erro(err.status, err.message);
 		}
 		const message = err instanceof Error ? err.message : 'Unknown error';
-		return reply.status(500).send({ message });
+		return res.erro(500, message);
+	} finally {
+		// O recibo volta SEMPRE — inclusive quando o run explode no meio. Sem
+		// isto, um erro deixaria o `invocation_id` travado até o processo cair,
+		// e o aluno não conseguiria nem repetir a geração que ele já pagou.
+		if (reservado) liberarInvocacao(reservado);
+	}
+}
+
+/**
+ * `POST /api/tool-run/:key` — resposta única, como sempre foi.
+ */
+export const toolRunController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) =>
+	executarRun(request, {
+		erro: (status, message) => reply.status(status).send({ message }),
+		ok: (payload) => reply.status(201).send(payload),
+	});
+
+/**
+ * `POST /api/tool-run/:key/stream` — o MESMO run, transmitido ao vivo.
+ *
+ * Existe porque um time de agentes leva de 20 s a 2 min, e uma tela parada
+ * nesse tempo é indistinguível de travada. Os eventos vêm dos blocos, via
+ * `ctx.onProgress`, e o motor carimba de qual nó saíram.
+ *
+ * O encanamento SSE é o mesmo já provado em `controllers/tool-agent.ts`:
+ * `reply.hijack()` + `writeHead` + um `send` que ENGOLE erro de socket morto.
+ * Engolir é deliberado: o aluno já pagou, o bloco grava o resultado antes de
+ * responder, e derrubar o run porque o cliente fechou a aba jogaria fora um
+ * trabalho cobrado para economizar centavos.
+ */
+export const toolRunStreamController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	reply.hijack();
+	const raw = reply.raw;
+	raw.writeHead(200, {
+		'Content-Type': 'text/event-stream; charset=utf-8',
+		'Cache-Control': 'no-cache, no-transform',
+		Connection: 'keep-alive',
+		'X-Accel-Buffering': 'no',
+	});
+	const send = (event: string, data: unknown) => {
+		if (raw.writableEnded) return;
+		try {
+			raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+		} catch {
+			// socket caiu no meio do run — ignora; o finally encerra.
+		}
+	};
+
+	try {
+		await executarRun(request, {
+			erro: (status, message) => send('erro', { status, message }),
+			ok: (payload) => send('done', payload),
+			progresso: (ev) => send('progresso', ev),
+		});
+	} catch (err) {
+		console.error('[tool-run/stream] erro:', err);
+		send('erro', {
+			status: 500,
+			message: err instanceof Error ? err.message : 'Unknown error',
+		});
+	} finally {
+		if (!raw.writableEnded) raw.end();
 	}
 };
 
@@ -610,7 +1619,33 @@ const PREVIEW_MAX_SIDE = 900;
  * (ou só LEEM coleção) e devolvem o SVG inline como data URL — nenhum deles
  * toca storage. É o que torna o orçamento ao vivo possível sem cobrar.
  */
-function skipInPreview(block: string): boolean {
+/**
+ * ┌─ A EXCEÇÃO POR MODO, E POR QUE ELA NÃO É UM FURO ───────────────────────┐
+ * │ `ai.image_studio` é UM bloco com sete caminhos, e eles não têm o mesmo   │
+ * │ custo: `variacao` e `vetorizavel` chamam o fornecedor; `ampliar` é       │
+ * │ Lanczos do sharp, na nossa CPU, sem sair da máquina. Cortar o bloco      │
+ * │ inteiro do preview (o que a regra por prefixo fazia) proibia de graça a  │
+ * │ única operação que É de graça — e o Ajuste "Ampliar" ficaria sem rota    │
+ * │ possível: cobrada não pode (é local) e grátis não existia.               │
+ * │                                                                          │
+ * │ A exceção é do tamanho de um furo de agulha: SÓ este bloco, SÓ nos modos │
+ * │ que o catálogo (`lib/atelie/ajustes.ts`) declara como locais, e SÓ       │
+ * │ quando o modo dá para ser sabido antes de rodar. Modo indecifrável       │
+ * │ (referência à saída de outro nó, campo ausente) conta como pago e o nó   │
+ * │ continua fora — a dúvida pende sempre para o lado de não dar de graça    │
+ * │ uma chamada ao fornecedor.                                               │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Exportada para teste: é a função que separa o que é grátis do que é pago, e
+ * a ORDEM importa (a exceção precisa ser avaliada antes da regra por prefixo).
+ * Uma garantia dessas exercitada só por acidente não é garantia.
+ */
+export function skipInPreview(
+	node: { block: string; params?: Record<string, unknown> },
+	fields: Record<string, string>,
+): boolean {
+	const block = node.block;
+	if (aiRodaDeGraca(block, node.params, fields)) return false;
 	return (
 		block.startsWith('output.') ||
 		block.startsWith('ai.') ||
@@ -618,7 +1653,20 @@ function skipInPreview(block: string): boolean {
 		block.endsWith('.save') ||
 		block === 'image.upscale' ||
 		// removedor híbrido pode cair na IA (Gemini) em fundo complexo — nunca no preview.
-		block === 'image.removeBackground'
+		block === 'image.removeBackground' ||
+		/**
+		 * O CLIPE NÃO É IA E MESMO ASSIM NÃO PODE RODAR AQUI. Ele não chama
+		 * fornecedor nenhum — o que ele gasta é MÁQUINA: ~2 s de CPU e ~480 MB de
+		 * pico por vídeo. Nesta rota, que não cobra e não cria invocação, isso é
+		 * um `ffmpeg` de graça por clique, com teto de 2 em voo por aluno.
+		 *
+		 * Hoje ele já não roda por SORTE ESTRUTURAL: no Ateliê o nó de imagem que
+		 * o alimenta é `ai.*`, some do pipeline antes dele, e a referência vira
+		 * string literal que o Zod reprova. Sorte não é portão — qualquer
+		 * definition futura que ponha o clipe depois de uma fonte de imagem local
+		 * (`collection.image`, `image.input`) ganharia ffmpeg grátis.
+		 */
+		block === 'video.ad_clip'
 	);
 }
 
@@ -630,6 +1678,28 @@ function skipInPreview(block: string): boolean {
  * `authenticateVectorizacao` da rota; staff pode mandar `definition` inline
  * (preview de rascunho da Fábrica).
  */
+/**
+ * ┌─ A TORNEIRA DO PREVIEW ─────────────────────────────────────────────────┐
+ * │ `POST /api/tool-run/:key/preview` não cobra, não cria invocação e não    │
+ * │ tinha limite nenhum (`grep rateLimit` no repo: zero ocorrências). Com o  │
+ * │ Ajuste "Ampliar" — que roda aqui de propósito, porque é sharp local —    │
+ * │ uma requisição de 200 bytes devolve uma imagem de até 24 MP em base64.   │
+ * │ Medido: capinha 1080×1920 ampliada 4× = 3674×6532, **36,3 MB de resposta │
+ * │ e 822 ms de CPU**, por clique, repetível à vontade.                      │
+ * │                                                                          │
+ * │ O teto de megapixels limita o tamanho de UMA resposta, nunca a           │
+ * │ frequência. Isto limita a frequência do jeito mais barato que existe:    │
+ * │ N em voo por aluno. O uso normal é sequencial (a tela faz debounce e     │
+ * │ aborta o preview anterior), então 2 já é folga — e um preview recusado   │
+ * │ é um quadro perdido no slider, não um erro de trabalho.                  │
+ * │                                                                          │
+ * │ Como a trava de recibo, isto é DESTE PROCESSO. Limite de borda           │
+ * │ (rate limit no gateway) continua sendo o remédio definitivo.             │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+const PREVIEWS_EM_VOO_POR_ALUNO = 2;
+const previewsEmVoo = new Map<string, number>();
+
 export const toolPreviewController = async (
 	request: FastifyRequest,
 	reply: FastifyReply,
@@ -639,6 +1709,13 @@ export const toolPreviewController = async (
 	if (!customerId) {
 		return reply.status(403).send({ message: 'Customer not found' });
 	}
+	const emVoo = previewsEmVoo.get(customerId) ?? 0;
+	if (emVoo >= PREVIEWS_EM_VOO_POR_ALUNO) {
+		return reply
+			.status(429)
+			.send({ message: 'Muitas pré-visualizações ao mesmo tempo.' });
+	}
+	previewsEmVoo.set(customerId, emVoo + 1);
 	try {
 		const { key } = request.params as ToolRunParams;
 
@@ -679,8 +1756,18 @@ export const toolPreviewController = async (
 		}
 
 		// Override per-tool do modelo + system prompt para `ai.generate_image`.
-		doc = injectModelOverrides(doc, fields);
+		// `variationCount = 1` fixo: o preview corta todo nó `ai.*` que chama
+		// fornecedor (`skipInPreview`), então não há variação nenhuma para gerar —
+		// e o preview não cobra, logo não há cobrança para reconciliar.
+		doc = injectModelOverrides(doc, fields, 1);
 
+		/**
+		 * Reduz cada imagem ENVIADA (preview é rápido; não precisa da resolução
+		 * cheia). Vale só para o que veio no multipart — a imagem que o
+		 * `collection.image` busca na galeria chega inteira, e é isso que faz o
+		 * Ajuste "Ampliar" ter sentido aqui: ampliar 2× uma miniatura de 900 px
+		 * devolveria menos pixel do que o original tem, com cara de resultado.
+		 */
 		// Reduz cada imagem enviada (preview é rápido; não precisa da resolução cheia).
 		// Só IMAGEM: um input `type:'file'` (DXF/SVG) passa intacto — mandar um DXF
 		// pro sharp só queima CPU pra cair no catch e devolver o buffer original.
@@ -701,14 +1788,20 @@ export const toolPreviewController = async (
 				.catch(() => buf);
 		}
 
-		// Pipeline de preview: sem nós de saída/IA.
-		const previewDoc: ToolDefinitionDoc = {
-			...doc,
-			pipeline: (doc.pipeline ?? []).filter((n) => !skipInPreview(n.block)),
-		};
-		if ((previewDoc.pipeline ?? []).length === 0) {
+		// Pipeline de preview: sem nós de saída/IA — do fluxo pedido.
+		let escolhidos: PipelineNode[];
+		try {
+			escolhidos = selecionarPipeline(doc, fields.flow);
+		} catch (err) {
+			const message =
+				err instanceof ToolEngineError ? err.message : 'fluxo inválido';
+			return reply.status(400).send({ message });
+		}
+		const rodam = escolhidos.filter((n) => !skipInPreview(n, fields));
+		if (rodam.length === 0) {
 			return reply.status(200).send({ preview: null });
 		}
+		const previewDoc = comPipeline(doc, fields.flow, rodam);
 
 		const bag = coerceInputs(
 			doc.input ?? {},
@@ -716,10 +1809,18 @@ export const toolPreviewController = async (
 			small,
 			buildFileMeta(fileMimes, fileNames),
 		);
-		const output = await executeTool(previewDoc, bag, {
-			customerId,
-			authHeader,
-		});
+		const { output } = await executeTool(
+			previewDoc,
+			bag,
+			{
+				customerId,
+				authHeader,
+				// O bloco não decide se roda (quem filtrou foi o `skipInPreview`);
+				// decide o quanto trabalha de graça. Ver `MAX_MP_AMPLIAR_PREVIEW`.
+				preview: true,
+			},
+			fields.flow,
+		);
 		const preview =
 			(output.preview as string | undefined) ??
 			(output.primary as string | undefined) ??
@@ -738,5 +1839,9 @@ export const toolPreviewController = async (
 		}
 		const message = err instanceof Error ? err.message : 'Unknown error';
 		return reply.status(500).send({ message });
+	} finally {
+		const n = (previewsEmVoo.get(customerId) ?? 1) - 1;
+		if (n <= 0) previewsEmVoo.delete(customerId);
+		else previewsEmVoo.set(customerId, n);
 	}
 };

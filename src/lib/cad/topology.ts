@@ -180,6 +180,17 @@ export interface Diagnostic {
 	severity: DiagSeverity;
 	/** PT-BR e ACIONÁVEL: o que está errado e o que fazer no CAD. */
 	message: string;
+	/**
+	 * A MESMA coisa dita para o CLIENTE FINAL, quando o diagnóstico é público.
+	 *
+	 * `message` é escrita para quem opera a máquina — e alguns diagnósticos saem
+	 * no orçamento que o profissional manda para o cliente dele. Lá, "o feixe não
+	 * vaza direito … Aumente o furo ou avise o cliente" faz o cliente ler um
+	 * recado sobre ele mesmo, em jargão de chão de fábrica. Quando este campo
+	 * existe, é ele que vai no documento do cliente; a `message` continua sendo a
+	 * do operador.
+	 */
+	publicMessage?: string;
 	count?: number;
 	ids?: string[];
 }
@@ -1212,6 +1223,10 @@ export function diagnose(
 					`${furos.length} furo(s) menores que ${mm(minimo)} mm (${fator}× a espessura de ${mm(t)} mm) — ` +
 					`o menor tem ${mm(menor)} mm. Nessa proporção o feixe não vaza direito: o furo sai cônico, ` +
 					'fecha de novo no acrílico ou carboniza no MDF. Aumente o furo ou avise o cliente.',
+				publicMessage:
+					`O desenho tem ${furos.length} furo(s) pequenos para a espessura de ${mm(t)} mm ` +
+					`(o menor tem ${mm(menor)} mm). Furos nessa proporção podem sair com a borda ` +
+					'irregular ou fechar durante o corte. Se o encaixe for justo, vale aumentar o furo.',
 			});
 		}
 	}

@@ -40,7 +40,7 @@ async function main() {
 		args.prompt ??
 		'Mandala ornamental circular simétrica, linhas pretas finas sobre fundo branco, alto contraste, estilo gravação a laser, sem cinza.';
 	const tag = args.model ? ` [${args.model}]` : ' [default Gemini]';
-	console.log('gerando 1 imagem de teste' + tag + '...');
+	console.log(`gerando 1 imagem de teste${tag}...`);
 	const { png } = await generateToolImage(prompt, [], undefined, {
 		model: args.model,
 		systemPromptOverride: args.systemPrompt,
@@ -52,7 +52,7 @@ async function main() {
 		`_smoke-${Date.now()}.png`,
 		'image/png',
 	);
-	console.log('UPLOAD_OK_URL=' + url);
+	console.log(`UPLOAD_OK_URL=${url}`);
 	process.exit(0);
 }
 main().catch((e) => {

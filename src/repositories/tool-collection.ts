@@ -260,6 +260,36 @@ class ToolCollectionRepository {
 		return (data as CollectionEntry) ?? null;
 	}
 
+	/**
+	 * OS FILHOS DE UM REGISTRO — as artes que saíram daquela arte.
+	 *
+	 * Método próprio, e não `list({filters})`, por um motivo concreto: o filtro
+	 * genérico só aceita campo declarado como FACETA, e `parent_id` não pode ser
+	 * faceta. Faceta vira contagem por opção na tela (`facetCounts`), e um
+	 * `parent_id` facetado produziria um dicionário com uma entrada por arte da
+	 * base — uma parede de milhares de chips que ninguém filtra por nome.
+	 *
+	 * A visibilidade continua sendo a do `scoped` (o aluno vê o que é dele),
+	 * então isto não abre nada: só responde "o que saiu daqui" para quem já
+	 * podia ver o "daqui".
+	 */
+	async listChildren(
+		parentId: string,
+		toolKey: string,
+		collection: string,
+		viewer: ListCollectionOpts['viewer'],
+		limit = 60,
+	): Promise<CollectionEntry[]> {
+		// `@>` de contenção sobre `data`, o mesmo operador do filtro de faceta —
+		// é o que o índice GIN da tabela atende.
+		const { data, error } = await this.scoped(toolKey, collection, viewer)
+			.contains('data', { parent_id: parentId })
+			.order('created_at', { ascending: true })
+			.limit(Math.min(Math.max(1, limit), MAX_PAGE_SIZE));
+		if (error) throw new Error(error.message);
+		return (data ?? []) as unknown as CollectionEntry[];
+	}
+
 	async create(input: {
 		toolKey: string;
 		collection: string;
@@ -355,6 +385,43 @@ class ToolCollectionRepository {
 			.single();
 		if (error) throw new Error(error.message);
 		return data as CollectionEntry;
+	}
+
+	/**
+	 * UPDATE condicionado ao valor ATUAL de um campo do jsonb — compare-and-swap.
+	 *
+	 * Existe porque "ler, conferir o teto, escrever" é uma corrida trivial: duas
+	 * requisições simultâneas leem o mesmo contador, as duas passam no teto e as
+	 * duas gastam uma chamada paga ao modelo. Aqui a condição vira `WHERE` do
+	 * próprio UPDATE, então o Postgres decide — só uma das duas casa.
+	 *
+	 * Devolve `null` quando ninguém casou (alguém chegou primeiro). Não é erro:
+	 * é a resposta da disputa, e quem chama trata como "tente de novo".
+	 */
+	async updateIfFieldEquals(
+		id: string,
+		toolKey: string,
+		collection: string,
+		campo: string,
+		esperado: string | null,
+		patch: { data: Record<string, unknown> },
+	): Promise<CollectionEntry | null> {
+		let q = supabase
+			.from(TABLE)
+			.update({ ...patch, updated_at: new Date().toISOString() })
+			.eq('id', id)
+			.eq('tool_key', toolKey)
+			.eq('collection', collection);
+		// Campo ainda inexistente no jsonb vem como NULL, e `=` nunca casa com
+		// NULL — o primeiro uso de um contador cairia sempre no ramo "perdeu a
+		// disputa" sem este ramo.
+		q =
+			esperado === null
+				? q.is(`data->>${campo}`, null)
+				: q.eq(`data->>${campo}`, esperado);
+		const { data, error } = await q.select().maybeSingle();
+		if (error) throw new Error(error.message);
+		return (data as CollectionEntry | null) ?? null;
 	}
 
 	async remove(id: string, toolKey: string, collection: string): Promise<void> {

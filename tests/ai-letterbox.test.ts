@@ -64,7 +64,7 @@ describe('letterbox p/ corrigir proporção', () => {
 	});
 
 	it('após o letterbox a proporção bate com a entrada', async () => {
-		const entrada = await img(128, 128, blob);
+		const _entrada = await img(128, 128, blob);
 		const saida = await img(220, 120, blob);
 		const corrigida = await letterbox(saida, 1);
 		const m = await sharp(corrigida).metadata();

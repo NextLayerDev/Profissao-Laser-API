@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
 	toolPreviewController,
 	toolRunController,
+	toolRunStreamController,
 } from '../controllers/tool-run.js';
 import { authenticateVectorizacao } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
@@ -55,6 +56,38 @@ export async function toolRunRoute(server: FastifyInstance) {
 			},
 		},
 		toolRunController,
+	);
+
+	/**
+	 * O MESMO run, transmitido ao vivo por SSE.
+	 *
+	 * Existe para ferramenta longa: um time de agentes leva de 20 s a 2 min, e
+	 * tela parada nesse tempo é indistinguível de tela travada. Compartilha o
+	 * controller — e portanto o caminho de billing — com a rota acima.
+	 *
+	 * Sem `schema` de resposta de propósito: a resposta é hijackada (SSE), então
+	 * o serializador do Fastify nunca chega a rodar. Declarar um schema aqui
+	 * daria a falsa impressão de que ele valida alguma coisa.
+	 */
+	server.post(
+		'/api/tool-run/:key/stream',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Igual a `POST /api/tool-run/:key`, mas transmite o progresso por',
+					'Server-Sent Events. Eventos: `progresso` (cada passo do pipeline e',
+					'cada agente), `done` (a saída completa) e `erro`.',
+					'',
+					'O socket cair NÃO cancela o run: o trabalho já foi cobrado e os',
+					'blocos que persistem gravam antes de responder.',
+				].join('\n'),
+				tags: ['Tools'],
+				security: [{ bearerAuth: [] }],
+				params: z.object({ key: z.string() }),
+			},
+		},
+		toolRunStreamController,
 	);
 
 	// Preview NÃO cobrado (feedback ao vivo dos sliders no estúdio): roda o

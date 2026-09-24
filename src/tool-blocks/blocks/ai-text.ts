@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { extractJson } from '../../lib/llm-json.js';
 import { openrouter } from '../../lib/openrouter.js';
 import {
 	resolveTextModel,
@@ -48,38 +49,6 @@ const aiTextSchema = z.object({
 });
 
 type AiTextParams = z.infer<typeof aiTextSchema>;
-
-/**
- * Extrai JSON de uma resposta de LLM. Modelos teimam em embrulhar o objeto em
- * cerca de markdown mesmo quando o `response_format` foi aceito, então tentamos
- * o parse direto e depois o primeiro bloco `{...}`/`[...]` do texto.
- */
-function extractJson(text: string): unknown | undefined {
-	const direct = tryParse(text);
-	if (direct !== undefined) return direct;
-
-	const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-	if (fenced?.[1]) {
-		const parsed = tryParse(fenced[1]);
-		if (parsed !== undefined) return parsed;
-	}
-
-	const start = text.search(/[[{]/);
-	if (start === -1) return undefined;
-	const open = text[start];
-	const close = open === '{' ? '}' : ']';
-	const end = text.lastIndexOf(close);
-	if (end <= start) return undefined;
-	return tryParse(text.slice(start, end + 1));
-}
-
-function tryParse(raw: string): unknown | undefined {
-	try {
-		return JSON.parse(raw.trim());
-	} catch {
-		return undefined;
-	}
-}
 
 async function complete(
 	model: TextModelEntry,

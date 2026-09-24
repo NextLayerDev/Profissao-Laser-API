@@ -22,7 +22,35 @@ async function upload(
 	return `https://${BUNNY_CDN_HOSTNAME}/${fullPath}`;
 }
 
-async function deleteByUrl(url: string): Promise<void> {
+/**
+ * Traz de volta um arquivo que `upload` colocou lá.
+ *
+ * Serve à arte-mãe de um lote licenciado: para AMPLIAR a tiragem sem rodar o
+ * modelo de novo, o motor precisa dos pixels originais.
+ *
+ * ┌─ O QUE "PRIVADO" SIGNIFICA AQUI ─────────────────────────────────────────┐
+ * │ O Bunny não tem URL assinada nem expiração. O endereço da arte-mãe é      │
+ * │ público para quem o tiver — o que protege é ele NUNCA ser serializado ao  │
+ * │ cliente: fica só na coluna `master_path` e nesta função. O caminho carrega │
+ * │ um UUID, então não é adivinhável, mas é permanente. Se um dia isso não    │
+ * │ bastar, o caminho é storage assinado, não um remendo aqui.                │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ */
+export async function fetchToolOutput(url: string): Promise<Buffer> {
+	const res = await axios.get<ArrayBuffer>(url, {
+		responseType: 'arraybuffer',
+		timeout: 60_000,
+	});
+	return Buffer.from(res.data);
+}
+
+/**
+ * Apaga um arquivo do storage pela URL pública que `upload` devolveu.
+ *
+ * Exportado porque a entrega de um LOTE é tudo-ou-nada: se a peça 37 falhar,
+ * as 36 que já subiram viram lixo com código que ninguém pagou.
+ */
+export async function deleteByUrl(url: string): Promise<void> {
 	const prefix = `https://${BUNNY_CDN_HOSTNAME}/`;
 	if (!url.startsWith(prefix)) return;
 	const filePath = url.slice(prefix.length);

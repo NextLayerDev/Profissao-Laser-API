@@ -37,6 +37,18 @@ for (const [hash, snapshot] of LEGACY_LICENSED_ART_BY_HASH) {
 	}
 }
 
+/**
+ * Resolve um QR legado auditado a partir do manifesto embutido, sem rede.
+ * Devolve `null` quando o código não está no registro local.
+ */
+export function verificacaoLegadaLocal(
+	code: string,
+): z.infer<typeof verificacaoSchema> | null {
+	const snapshot = LEGACY_LICENSED_ART_BY_HASH.get(hashCodigo(code));
+	if (!snapshot) return null;
+	return { ...snapshot, checkedAt: new Date().toISOString() };
+}
+
 export async function licensedArtLegacyRoute(server: FastifyInstance) {
 	server.get(
 		'/api/licensed-art/:code',
@@ -53,14 +65,14 @@ export async function licensedArtLegacyRoute(server: FastifyInstance) {
 		},
 		async (request, reply) => {
 			const { code } = request.params as z.infer<typeof codigoParams>;
-			const snapshot = LEGACY_LICENSED_ART_BY_HASH.get(hashCodigo(code));
-			if (!snapshot) {
+			const verificacao = verificacaoLegadaLocal(code);
+			if (!verificacao) {
 				return reply
 					.status(404)
 					.send({ message: 'Código não encontrado.', code: 'not_found' });
 			}
 			reply.header('Cache-Control', 'public, max-age=60');
-			return reply.send({ ...snapshot, checkedAt: new Date().toISOString() });
+			return reply.send(verificacao);
 		},
 	);
 }

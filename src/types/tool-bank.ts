@@ -11,6 +11,14 @@ import { mmToPx } from '../lib/laser-prep.js';
 /** Campos livres do registro (definidos pela tool via `bank.fields`). */
 export const toolBankDataSchema = z.record(z.string(), z.unknown());
 
+/**
+ * `data.mode` do registro licenciado que NÃO gera: o aluno envia a arte pronta
+ * e o motor só emite o código e carimba o QR. Lido em `tool-run` e criado por
+ * marca em `licensed-stamp-entry`. Os outros modos (`texto`, `imagem`,
+ * `texto_imagem`) são convenção do front, não do motor.
+ */
+export const BANK_MODE_CARIMBO = 'carimbo';
+
 const pxDim = z.number().int().min(64).max(4096);
 
 /**

@@ -77,11 +77,130 @@ export function nearestAspectRatioPreset(
 	return best;
 }
 
-/** Maior `resolution` aceito pelo modelo (prioriza nitidez). */
+/**
+ * A MENOR faixa que já cobre o tamanho pedido — não a maior que o modelo aceita.
+ *
+ * ┌─ POR QUE ISTO MUDOU, E O QUE CUSTAVA ───────────────────────────────────┐
+ * │ Esta função pedia SEMPRE o topo ('4K'), "priorizando nitidez". Só que o  │
+ * │ `sharp.resize(outW, outH)` lá embaixo SEMPRE roda: o que vinha a mais    │
+ * │ era comprado e jogado fora no mesmo pipeline. Pagávamos pixel para       │
+ * │ deletar pixel.                                                          │
+ * │                                                                          │
+ * │ Medido no `POST /v1/images` real, aspecto 4:5, mesmo prompt:             │
+ * │   gemini-3.1-flash-image  1K  928×1152   US$ 0,0675                     │
+ * │                           2K  1856×2304  US$ 0,1024                     │
+ * │                           4K  3712×4608  US$ 0,1527   ← o que pedíamos  │
+ * │   gemini-3-pro-image      1K              US$ 0,1399                     │
+ * │                           2K              US$ 0,1399  (mesmo preço!)    │
+ * │                           4K              US$ 0,2465                     │
+ * │                                                                          │
+ * │ Um post 1080×1350 (1,46 MP) cabe em 2K (4,2 MP) com folga. Pedir 2K em  │
+ * │ vez de 4K é 33% mais barato no flash e 43% no pro, e a imagem que chega  │
+ * │ na tela é a MESMA — porque ela é reduzida para 1080×1350 de qualquer     │
+ * │ jeito. Nitidez não se perde: reduzir de 1856 para 1080 é downscale.      │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * A faixa é ÁREA, não lado: medido, `1K` ≈ 1024², `2K` ≈ 2048², `4K` ≈ 4096²
+ * (cada degrau é 4× os pixels do anterior). O provedor gasta essa área NA
+ * PROPORÇÃO que a gente pedir — 2K em 4:5 volta 1856×2304, em 9:16 volta
+ * 1536×2752, em 4:3 volta 2400×1792. Todas ≈ 4,2 MP.
+ *
+ * ┌─ POR QUE ÁREA SOZINHA NÃO BASTA (e voltava a inventar pixel) ───────────┐
+ * │ A proporção que a gente pede não é a do alvo: é o PRESET mais próximo   │
+ * │ (`nearestAspectRatioPreset`). Quando o alvo não casa com nenhum preset, │
+ * │ "a área cobre" NÃO implica "os dois lados cobrem", e aí o               │
+ * │ `sharp.resize(fit:'cover')` lá embaixo vira AMPLIAÇÃO — exatamente o    │
+ * │ que esta função existe para evitar.                                     │
+ * │                                                                          │
+ * │ Caso concreto e vivo: `prompts_magicos` tem a criação "copo 360°" de    │
+ * │ 2905×1122 (2,59:1). O preset mais próximo é 16:9, e 2K em 16:9 é        │
+ * │ 2752×1536 — 2752 < 2905, então o lado longo é ampliado. Pela área,      │
+ * │ 3,26 MP < 4,19 MP, "cabia". Não cabia.                                  │
+ * │                                                                          │
+ * │ Por isso a conta agora é sobre os DOIS LADOS da entrega nativa estimada │
+ * │ (área da faixa distribuída na proporção pedida), e não sobre a área.    │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * Sem tamanho pedido (o chamador não sabe o alvo), cai no comportamento
+ * antigo — o topo — porque aí não dá para provar que sobra pixel.
+ */
 const RESOLUTION_PRIORITY = ['4K', '2K', '1K', '512'];
-function bestResolution(allowed?: readonly string[]): string | undefined {
+/** Área nominal de cada faixa, em pixels. */
+const RESOLUTION_AREA: Record<string, number> = {
+	'512': 512 * 512,
+	'1K': 1024 * 1024,
+	'2K': 2048 * 2048,
+	'4K': 4096 * 4096,
+};
+
+/**
+ * Entrega nativa ESTIMADA de uma faixa numa dada proporção: a área da faixa
+ * distribuída em `ratio` (= largura/altura). Bate com o medido dentro de ~2%
+ * (o provedor arredonda para múltiplos de 32/64), e a comparação abaixo é
+ * `>=` sobre lados, então o erro de arredondamento só nos deixa mais
+ * conservadores — nunca menos.
+ */
+export function ladosNativosDaFaixa(
+	area: number,
+	ratio: number,
+): { w: number; h: number } {
+	if (!(area > 0) || !(ratio > 0) || !Number.isFinite(ratio)) {
+		return { w: 0, h: 0 };
+	}
+	return { w: Math.sqrt(area * ratio), h: Math.sqrt(area / ratio) };
+}
+
+function bestResolution(
+	allowed?: readonly string[],
+	outW?: number,
+	outH?: number,
+	/**
+	 * A proporção que VAI ser pedida (o preset escolhido, ex.: `'16:9'`).
+	 * Ausente = o provedor decide o formato sozinho; aí a melhor estimativa é
+	 * que ele entregue no formato do alvo, e a conta degenera exatamente na
+	 * comparação de área que existia antes.
+	 */
+	aspectPreset?: string,
+): string | undefined {
 	if (!allowed?.length) return undefined;
-	return RESOLUTION_PRIORITY.find((r) => allowed.includes(r));
+	const maior = RESOLUTION_PRIORITY.find((r) => allowed.includes(r));
+	if (!outW || !outH || outW <= 0 || outH <= 0) return maior;
+
+	const ratio =
+		aspectPreset && aspectPreset !== 'auto'
+			? parseAspectRatioPreset(aspectPreset)
+			: outW / outH;
+
+	// Da menor para a maior: a primeira em que NENHUM DOS DOIS LADOS precisa ser
+	// ampliado é a que compramos.
+	const menorQueCobre = [...RESOLUTION_PRIORITY].reverse().find((r) => {
+		if (!allowed.includes(r)) return false;
+		const nativo = ladosNativosDaFaixa(RESOLUTION_AREA[r] ?? 0, ratio);
+		return nativo.w >= outW && nativo.h >= outH;
+	});
+	// Nenhuma cobre (alvo gigante): o topo é o melhor que dá, e o resize vira
+	// upscale — que é o que já acontecia antes desta função existir.
+	return menorQueCobre ?? maior;
+}
+
+/**
+ * Fração de ÁREA que o `fit:'cover'` vai jogar fora, em %, dada a saída nativa
+ * do modelo e o alvo. `cover` escala pelo MAIOR fator e apara o excedente
+ * centralizado — então o que sobra da imagem original é o retângulo do alvo
+ * inscrito na nativa. Só para log: a decisão de cortar já foi tomada.
+ */
+export function pctDescartadoNoCover(
+	nativeW: number,
+	nativeH: number,
+	outW: number,
+	outH: number,
+): number {
+	if (nativeW <= 0 || nativeH <= 0 || outW <= 0 || outH <= 0) return 0;
+	const escala = Math.max(outW / nativeW, outH / nativeH);
+	const usadaW = Math.min(nativeW, outW / escala);
+	const usadaH = Math.min(nativeH, outH / escala);
+	const mantida = (usadaW * usadaH) / (nativeW * nativeH);
+	return Number(((1 - mantida) * 100).toFixed(2));
 }
 
 /** `quality:'high'` quando o modelo aceita — senão omite (deixa o provider
@@ -95,6 +214,18 @@ interface UnifiedImagesResponse {
 	error?: { message?: string };
 	data?: Array<{ b64_json?: string; media_type?: string }>;
 }
+
+/**
+ * Lead das referências na rota `/v1/images`.
+ *
+ * O `TEXT_LEAD` fala em "as imagens ACIMA" porque no `/chat/completions` as
+ * refs são content-parts que vêm antes do texto DENTRO da mesma mensagem. Aqui
+ * elas viajam num campo separado (`input_references`), então não existe "acima"
+ * — mesma intenção, palavra certa. Reaproveitar o TEXT_LEAD literal mandaria o
+ * modelo procurar uma imagem numa posição que não existe.
+ */
+const REFS_LEAD_UNIFIED =
+	'Siga EXATAMENTE estas instruções. O texto abaixo é autoritativo; as imagens de referência enviadas são apenas referência de assunto/estilo quando o texto permitir:';
 
 /**
  * Gera via o endpoint dedicado `POST /v1/images` da OpenRouter (Unified Image
@@ -129,14 +260,19 @@ async function generateViaUnifiedImagesApi(opts: {
 		prompt,
 		output_format: 'png',
 	};
+	let aspectPreset: string | undefined;
 	if (outW && outH && entry.apiAspectRatios?.length) {
-		body.aspect_ratio = nearestAspectRatioPreset(
-			outW,
-			outH,
-			entry.apiAspectRatios,
-		);
+		aspectPreset = nearestAspectRatioPreset(outW, outH, entry.apiAspectRatios);
+		body.aspect_ratio = aspectPreset;
 	}
-	const resolution = bestResolution(entry.apiResolutions);
+	// A faixa depende da proporção que acabamos de escolher: é ela que decide
+	// como o provedor distribui os pixels da faixa entre largura e altura.
+	const resolution = bestResolution(
+		entry.apiResolutions,
+		outW,
+		outH,
+		aspectPreset,
+	);
 	if (resolution) body.resolution = resolution;
 	const quality = bestQuality(entry.apiQuality);
 	if (quality) body.quality = quality;
@@ -291,12 +427,43 @@ async function downloadAsDataUrl(
  * `opts.rawPrompt` — quando true, manda SÓ a user message ao modelo: SEM system
  * prompt e SEM `TEXT_LEAD` (prefixo de refs). O sufixo `FORMATO OBRIGATÓRIO` de
  * dimensão CONTINUA sendo adicionado (é spec de formato, não intermediação de
- * estilo — vale pra todo modo). Além disso, se o modelo resolvido tiver
- * `unifiedImagesApi:true` no catálogo, a geração roteia pro endpoint dedicado
- * `POST /v1/images` da OpenRouter em vez do `/chat/completions`, o que dá
- * `aspect_ratio`/`resolution` REAIS (família Gemini) ou `quality` real
- * (família GPT) — não só uma instrução de texto. Escopado por tool (Prompts
- * Mágicos curados) — ai-extra não passa a flag e mantém o default.
+ * estilo — vale pra todo modo). Escopado por tool (Prompts Mágicos curados) —
+ * ai-extra não passa a flag e mantém o default.
+ *
+ * `opts.formatoReal` — roteia pro endpoint `POST /v1/images` quando o modelo
+ * tem `unifiedImagesApi:true`, o que faz o pedido de proporção/resolução virar
+ * PARÂMETRO em vez de frase.
+ *
+ * ┌─ POR QUE ISTO DEIXOU DE SER O MESMO INTERRUPTOR QUE `rawPrompt` ─────────┐
+ * │ As duas flags respondem perguntas diferentes:                            │
+ * │   `rawPrompt`   = "manda o texto do admin CRU?"   → decisão de ESTILO    │
+ * │   `formatoReal` = "pede o formato como PARÂMETRO?" → decisão de FORMATO  │
+ * │                                                                          │
+ * │ Amarradas, uma tool que quer aderência (system prompt) não conseguia     │
+ * │ pedir proporção de verdade. Foi exatamente o que aconteceu com o Ateliê  │
+ * │ (`ai.image_studio`): ele nunca passou `rawPrompt`, então caía SEMPRE no  │
+ * │ `/chat/completions`, onde a proporção é só uma frase no fim do prompt.   │
+ * │                                                                          │
+ * │ O preço disso, MEDIDO nos bytes (35 gerações frias, 2026-08-09):         │
+ * │   • modelo GPT, pedido 9:16 → voltava 1024×1024 QUADRADO, e o            │
+ * │     `fit:'cover'` jogava fora 43,75% da imagem (a alça da caneca some).  │
+ * │     Pela `/v1/images` o mesmo pedido volta 1024×1536 e o descarte cai    │
+ * │     pra 15,63% (e a 0,05% no `gpt-5.4-image-2`).                        │
+ * │   • modelo Gemini, pedido 9:16 → voltava 768×1376 e o resize AUMENTAVA   │
+ * │     pra 864×1536: 27% dos pixels finais eram inventados. Com             │
+ * │     `aspect_ratio`+`resolution` reais a saída já cobre o alvo e o resize │
+ * │     vira downscale — nenhum pixel inventado.                            │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * Default: segue `rawPrompt` (retrocompatível — os Prompts Mágicos, que já
+ * rodavam na rota nova, continuam byte a byte na mesma rota e com o mesmo
+ * corpo). Passar `formatoReal:false` explicitamente força o caminho legado.
+ *
+ * ATENÇÃO: `/v1/images` NÃO tem papel `system` — é um campo `prompt` só. Numa
+ * chamada com system prompt (Ateliê: aderência padrão e/ou o `style_system` do
+ * estilo escolhido), o system é DOBRADO no início do prompt. Sem isso, migrar
+ * o Ateliê pra cá apagaria o estilo em silêncio: trocaríamos um bug de formato
+ * por um bug de estilo.
  *
  * `opts.fit` — estratégia do sharp resize final (sempre roda, em ambas as
  * rotas, pra garantir o pixel exato pedido): `'fill'` (default, legado —
@@ -315,6 +482,7 @@ export async function generateToolImage(
 		width?: number;
 		height?: number;
 		rawPrompt?: boolean;
+		formatoReal?: boolean;
 		fit?: 'fill' | 'cover' | 'contain';
 	},
 ): Promise<GenImageResult> {
@@ -353,20 +521,34 @@ export async function generateToolImage(
 	const timeout = AbortSignal.timeout(GEN_TIMEOUT_MS);
 	const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
-	// `rawPrompt` + modelo com `unifiedImagesApi` (todo o catálogo atual) →
-	// rota nova (`POST /v1/images`, aspect_ratio/resolution/quality reais).
-	// Sem isso (tools legadas com system prompt/aderência, ou um modelo futuro
-	// sem a flag), mantém o `/chat/completions` de sempre — essa rota depende
-	// de mensagens system/user com ordenação específica que não existe na API
-	// nova (prompt único), então não vale a pena migrar esse caso agora.
-	const useUnifiedImagesApi =
-		!!opts?.rawPrompt && !!modelEntry?.unifiedImagesApi;
+	// Quem pede formato real (ou, por retrocompatibilidade, quem pede
+	// `rawPrompt`) vai pra `/v1/images` — desde que o modelo esteja marcado
+	// `unifiedImagesApi` no catálogo. Um modelo futuro sem a flag, ou um id
+	// fora do catálogo (`findImageModel` devolve undefined), cai no
+	// `/chat/completions` de sempre: melhor o formato-por-frase que um 404 no
+	// meio de uma invocação já cobrada.
+	const querFormatoReal = opts?.formatoReal ?? !!opts?.rawPrompt;
+	const useUnifiedImagesApi = querFormatoReal && !!modelEntry?.unifiedImagesApi;
 
 	let decoded: Buffer;
 	if (useUnifiedImagesApi) {
+		// `/v1/images` tem um campo `prompt` só — sem papel `system`. Com
+		// `rawPrompt` isso não muda nada (não havia system mesmo, e o corpo sai
+		// idêntico ao que os Prompts Mágicos já mandam hoje). Sem `rawPrompt`, o
+		// system precisa ser DOBRADO aqui, senão a aderência (e o `style_system`
+		// do estilo escolhido no Ateliê) sumiria ao trocar de rota.
+		const promptUnificado = opts?.rawPrompt
+			? text
+			: [
+					buildImageSystemPrompt(opts?.systemPromptOverride),
+					refs.length > 0 ? REFS_LEAD_UNIFIED : null,
+					text,
+				]
+					.filter(Boolean)
+					.join('\n\n');
 		decoded = await generateViaUnifiedImagesApi({
 			model,
-			prompt: text,
+			prompt: promptUnificado,
 			refs,
 			signal: combined,
 			// biome-ignore lint/style/noNonNullAssertion: useUnifiedImagesApi já checou modelEntry
@@ -555,6 +737,21 @@ export async function generateToolImage(
 						outW,
 						outH,
 						deviation: Number(deviation.toFixed(3)),
+						// Quanto do que o modelo desenhou o `cover` joga fora. É ESTE o
+						// número que dói (43,75% = a alça da caneca amputada), e ele não
+						// sai de cabeça a partir do `deviation`.
+						pctDescartado: pctDescartadoNoCover(
+							meta.width,
+							meta.height,
+							outW,
+							outH,
+						),
+						// Separa as duas causas possíveis, que pedem ações opostas:
+						// `true`  = o modelo TINHA `aspect_ratio` e ignorou (ou a chamada
+						//           não foi pela `/v1/images`) → investigar a rota;
+						// `false` = família GPT, que não expõe proporção em API nenhuma
+						//           → só o prompt influencia, o corte é o preço conhecido.
+						temControleDeFormato: !!modelEntry?.apiAspectRatios?.length,
 					},
 				);
 			}

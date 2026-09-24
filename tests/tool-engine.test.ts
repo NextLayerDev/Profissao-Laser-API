@@ -156,7 +156,7 @@ describe('executeTool', () => {
 			{ v: '7' },
 			null,
 		);
-		const out = await executeTool(
+		const { output: out } = await executeTool(
 			{
 				pipeline: [
 					{
