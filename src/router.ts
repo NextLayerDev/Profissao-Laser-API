@@ -65,6 +65,8 @@ import { mercadoLivreWebhookRoute } from './routes/webhooks/mercado-livre.js';
 export const routes = async (app: FastifyInstance) => {
 	app.register(healthRoute);
 	app.register(webhookRoute);
+	// GET /api/licensed-art/:code é servido por licensedArtRoute, que já cobre
+	// os QRs legados auditados (manifesto local) quando o código não está no banco.
 	app.register(appointmentRoute);
 	app.register(appointmentConfigRoute);
 	app.register(communityRoute);

@@ -81,14 +81,16 @@ export async function rasterizeSvgToPng(
 		MAX_RASTER,
 		Math.max(MIN_RASTER, opts.maxDim ?? 1200),
 	);
-	let pipe = sharp(Buffer.from(normalized), { failOn: 'none' }).resize(
-		target,
-		target,
-		{
-			fit: 'inside',
-			withoutEnlargement: false,
-		},
-	);
+	// `unlimited`: SVG de foto ditherizada passa fácil dos 10MB de XML (milhões
+	// de speckles) e o teto de segurança do librsvg abortava a rasterização —
+	// o que tornava esses vetores impossíveis de inverter.
+	let pipe = sharp(Buffer.from(normalized), {
+		failOn: 'none',
+		unlimited: true,
+	}).resize(target, target, {
+		fit: 'inside',
+		withoutEnlargement: false,
+	});
 	if (opts.flattenWhite) pipe = pipe.flatten({ background: '#ffffff' });
 	return pipe.png().toBuffer();
 }

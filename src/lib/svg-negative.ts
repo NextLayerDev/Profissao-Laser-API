@@ -15,12 +15,12 @@ import { rasterizeSvgToInkMask } from './svg-raster.js';
 // MENOS a arte original como furos, even-odd) que vazava em formas finas/
 // diagonais; (2) uma silhueta sólida chapada (preenchia a forma toda de uma
 // cor, sem detalhe interno) — o usuário rejeitou por perder o desenho
-// original. O consumidor ATUAL é `buildSilhouetteContourSvg`
-// (`svg-silhouette-contour.ts`), que usa a máscara só como CRITÉRIO de "que
-// pixel inverter": inverte os tons do raster original onde a máscara é
-// foreground, preserva onde não é — sem reconstrução vetorial, sem perder
-// detalhe. Detector de componentes conectados cai de volta pro raster negate
-// (imagem inteira) quando algum pedaço não funde à silhueta principal.
+// original. Consumidores ATUAIS: `buildSilhouetteContourSvg`
+// (`svg-silhouette-contour.ts`), que usa a máscara como CRITÉRIO de "que
+// pixel inverter" (negativo local, multi-componente aceito) e como contorno
+// fino traçado; e `invertSvgBoundedBySilhouette` (`svg-invert-bounded.ts`),
+// que usa a máscara dilatada como MOLDURA do complemento geométrico no
+// lugar do retângulo do viewBox.
 // ─────────────────────────────────────────────────────────────────────
 
 const clamp = (v: number, lo: number, hi: number) =>
@@ -286,6 +286,455 @@ export function computeSilhouetteMask(
 	sil = fillHoles(sil, W, H);
 	sil = dilateSquare(sil, W, H, borderR);
 	return sil;
+}
+
+export interface BboxSealResult {
+	sealed: Uint8Array;
+	/** Arestas do bbox onde o ASSUNTO é cortado pelo enquadramento. */
+	cropped: { top: boolean; bottom: boolean; left: boolean; right: boolean };
+	bbox: { x0: number; y0: number; x1: number; y1: number } | null;
+}
+
+/**
+ * Sela a tinta contra as arestas do BBOX DO CONTEÚDO — a borda original da
+ * foto antes da margem do padForTrace (que deixou o `sealAgainstEdges` da
+ * imagem inteira morto: a tinta nunca toca a borda). Uma aresta só é selada
+ * quando uma fração relevante dela tem tinta encostada (`minCoverage`) —
+ * i.e., o assunto é genuinamente CORTADO ali (busto saindo por baixo). Sem
+ * isso, área clara do assunto encostada no corte (camiseta estourada) é
+ * porta de entrada do flood e vira buraco branco no negativo.
+ */
+export function sealAgainstBboxEdges(
+	ink: Uint8Array,
+	W: number,
+	H: number,
+	opts: { band?: number; minCoverage?: number } = {},
+): BboxSealResult {
+	const band = opts.band ?? 8;
+	const minCoverage = opts.minCoverage ?? 0.2;
+	let x0 = W;
+	let y0 = H;
+	let x1 = -1;
+	let y1 = -1;
+	for (let y = 0; y < H; y++) {
+		const row = y * W;
+		for (let x = 0; x < W; x++) {
+			if (ink[row + x] !== 1) continue;
+			if (x < x0) x0 = x;
+			if (x > x1) x1 = x;
+			if (y < y0) y0 = y;
+			if (y > y1) y1 = y;
+		}
+	}
+	const cropped = { top: false, bottom: false, left: false, right: false };
+	if (x1 < 0) return { sealed: Uint8Array.from(ink), cropped, bbox: null };
+
+	const out = Uint8Array.from(ink);
+	const minDim = Math.min(W, H);
+	const depth = clamp(Math.round(minDim * 0.05), 4, 60);
+	const gap = clamp(Math.round(minDim * 0.04), 4, 48);
+
+	/** Sela uma aresta: `idx(pos, d)` anda da linha da aresta pra dentro. */
+	const sealEdge = (
+		len: number,
+		idx: (pos: number, d: number) => number,
+	): boolean => {
+		let touching = 0;
+		for (let pos = 0; pos < len; pos++) {
+			for (let d = 0; d < band; d++) {
+				if (ink[idx(pos, d)] === 1) {
+					touching++;
+					break;
+				}
+			}
+		}
+		if (touching / len < minCoverage) return false;
+		// Escora: da linha da aresta até a primeira tinta (a até `depth`).
+		for (let pos = 0; pos < len; pos++) {
+			for (let d = 0; d < depth; d++) {
+				if (ink[idx(pos, d)] === 1) {
+					for (let dd = 0; dd < d; dd++) out[idx(pos, dd)] = 1;
+					break;
+				}
+			}
+		}
+		// Ponte: vãos de até `gap` na linha da aresta.
+		let last = -1;
+		for (let pos = 0; pos < len; pos++) {
+			if (out[idx(pos, 0)] !== 1) continue;
+			if (last >= 0 && pos - last > 1 && pos - last - 1 <= gap) {
+				for (let p = last + 1; p < pos; p++) out[idx(p, 0)] = 1;
+			}
+			last = pos;
+		}
+		return true;
+	};
+
+	const bw = x1 - x0 + 1;
+	const bh = y1 - y0 + 1;
+	cropped.top = sealEdge(bw, (p, d) => (y0 + d) * W + (x0 + p));
+	cropped.bottom = sealEdge(bw, (p, d) => (y1 - d) * W + (x0 + p));
+	cropped.left = sealEdge(bh, (p, d) => (y0 + p) * W + (x0 + d));
+	cropped.right = sealEdge(bh, (p, d) => (y0 + p) * W + (x1 - d));
+	return { sealed: out, cropped, bbox: { x0, y0, x1, y1 } };
+}
+
+export interface PocketOptions {
+	/** Raio do fechamento mais forte que "testa" se o bolsão fecharia. */
+	closeR: number;
+	/** Área máxima de um bolsão absorvível, como fração da tela. */
+	maxAreaFraction?: number;
+	/** Fração máxima do perímetro do bolsão que pode dar pro fundo aberto. */
+	maxOpenFraction?: number;
+	/**
+	 * Exige que o bolsão contenha ILHA de silhueta (desenho flutuando dentro
+	 * dele, sem tocar as paredes). Separa "interior do assunto com traço
+	 * esparso" (ex.: peito de desenho a lápis com logos soltos — absorve) de
+	 * "vão vazio entre elementos separados" (ex.: espaçamento entre troféus
+	 * numa arte 360° — preserva). Medido: área e abertura NÃO separam esses
+	 * dois casos (5%/3% vs 4,2%/6%); a presença de ilhas separa.
+	 */
+	requireInkIsland?: boolean;
+}
+
+/**
+ * Absorve BOLSÕES de fundo na silhueta: regiões que só não são buraco porque
+ * escapam por um canal estreito entre traços (ex.: o vão entre a letra, a
+ * barra e o contorno fino da placa de um logo — o contorno traçado tem
+ * falhas e o flood do `fillHoles` vaza por elas, deixando "pedaços brancos"
+ * dentro do campo invertido).
+ *
+ * Critério em duas partes, pra NÃO engolir vales legítimos (ex.: os vãos
+ * entre as penas de um mascote, que devem ficar fora do campo):
+ *   1. fecharia sob um close mais forte (`closeR`) — i.e., o canal de escape
+ *      é estreito; e
+ *   2. o perímetro do bolsão é quase todo murado pela silhueta original
+ *      (`maxOpenFraction`) — um vale tem a boca aberta pro fundo (a fração
+ *      aberta é a ponte do close, não parede de verdade).
+ * Componentes grandes (`maxAreaFraction`) nunca são absorvidos.
+ */
+export function absorbEnclosedPockets(
+	sil: Uint8Array,
+	W: number,
+	H: number,
+	opts: PocketOptions,
+): Uint8Array {
+	const N = W * H;
+	const maxArea = Math.round(N * (opts.maxAreaFraction ?? 0.02));
+	const maxOpen = opts.maxOpenFraction ?? 0.15;
+
+	const filled = fillHoles(closeSquare(sil, W, H, opts.closeR), W, H);
+	// Candidatos: viraram frente sob o close forte, mas não são silhueta.
+	const cand = new Uint8Array(N);
+	let candCount = 0;
+	for (let i = 0; i < N; i++) {
+		if (filled[i] === 1 && sil[i] === 0) {
+			cand[i] = 1;
+			candCount++;
+		}
+	}
+	if (candCount === 0) return sil;
+
+	// Passo 1: componentes dos candidatos (tamanho, abertura do perímetro).
+	const label = new Int32Array(N).fill(-1);
+	const stack = new Int32Array(N);
+	const pixelsBySeed = new Map<number, number[]>();
+	const okBySeed = new Set<number>();
+	for (let seed = 0; seed < N; seed++) {
+		if (cand[seed] !== 1 || label[seed] >= 0) continue;
+		let sp = 0;
+		let size = 0;
+		let sealed = 0;
+		let open = 0;
+		const comp: number[] = [];
+		stack[sp++] = seed;
+		label[seed] = seed;
+		while (sp > 0) {
+			const i = stack[--sp];
+			size++;
+			if (size <= maxArea) comp.push(i);
+			const x = i % W;
+			const y = (i / W) | 0;
+			const nb = [
+				x > 0 ? i - 1 : -1,
+				x < W - 1 ? i + 1 : -1,
+				y > 0 ? i - W : -1,
+				y < H - 1 ? i + W : -1,
+			];
+			for (const j of nb) {
+				if (j < 0) {
+					open++; // borda da imagem conta como fundo aberto
+					continue;
+				}
+				if (cand[j] === 1) {
+					if (label[j] < 0) {
+						label[j] = seed;
+						stack[sp++] = j;
+					}
+				} else if (sil[j] === 1) {
+					sealed++;
+				} else {
+					open++;
+				}
+			}
+		}
+		const openFrac = open / Math.max(1, open + sealed);
+		if (size <= maxArea && openFrac <= maxOpen) {
+			okBySeed.add(seed);
+			pixelsBySeed.set(seed, comp);
+		}
+	}
+	if (okBySeed.size === 0) return sil;
+
+	// Passo 2 (opcional): quais bolsões contêm ILHA de silhueta — um
+	// componente de sil cujos vizinhos não-sil estão TODOS dentro de
+	// candidatos (não toca o fundo aberto nem a borda).
+	if (opts.requireInkIsland) {
+		const silLabel = new Int32Array(N).fill(-1);
+		const hasIsland = new Set<number>();
+		for (let seed = 0; seed < N; seed++) {
+			if (sil[seed] !== 1 || silLabel[seed] >= 0) continue;
+			let sp = 0;
+			let touchesOpen = false;
+			const candSeeds = new Set<number>();
+			stack[sp++] = seed;
+			silLabel[seed] = seed;
+			while (sp > 0) {
+				const i = stack[--sp];
+				const x = i % W;
+				const y = (i / W) | 0;
+				const nb = [
+					x > 0 ? i - 1 : -1,
+					x < W - 1 ? i + 1 : -1,
+					y > 0 ? i - W : -1,
+					y < H - 1 ? i + W : -1,
+				];
+				for (const j of nb) {
+					if (j < 0) {
+						touchesOpen = true;
+						continue;
+					}
+					if (sil[j] === 1) {
+						if (silLabel[j] < 0) {
+							silLabel[j] = seed;
+							stack[sp++] = j;
+						}
+					} else if (cand[j] === 1) {
+						candSeeds.add(label[j]);
+					} else {
+						touchesOpen = true;
+					}
+				}
+			}
+			if (!touchesOpen) {
+				for (const s of candSeeds) hasIsland.add(s);
+			}
+		}
+		for (const seed of [...okBySeed]) {
+			if (!hasIsland.has(seed)) okBySeed.delete(seed);
+		}
+	}
+
+	if (okBySeed.size === 0) return sil;
+	const out = Uint8Array.from(sil);
+	for (const seed of okBySeed) {
+		const comp = pixelsBySeed.get(seed);
+		if (comp) for (const i of comp) out[i] = 1;
+	}
+	return out;
+}
+
+/**
+ * Remove da silhueta os componentes cuja TINTA total é desprezível
+ * (≤ `maxInk` px²): 1-4 pontos de dither isolados no fundo da foto viram,
+ * cada um, uma mini-silhueta com anel — pontinhos pretos "sujeira" soltos no
+ * invertido. Um acessório pequeno de verdade (miçanga, ponto de letra) tem
+ * dezenas/centenas de px de tinta e passa ileso.
+ */
+export function dropLowInkComponents(
+	sil: Uint8Array,
+	ink: Uint8Array,
+	W: number,
+	H: number,
+	maxInk: number,
+): Uint8Array {
+	const N = W * H;
+	const out = Uint8Array.from(sil);
+	const label = new Int32Array(N).fill(-1);
+	const stack = new Int32Array(N);
+	const comp: number[] = [];
+	for (let seed = 0; seed < N; seed++) {
+		if (sil[seed] !== 1 || label[seed] >= 0) continue;
+		let sp = 0;
+		let inkCount = 0;
+		comp.length = 0;
+		stack[sp++] = seed;
+		label[seed] = seed;
+		while (sp > 0) {
+			const i = stack[--sp];
+			// Guarda os pixels só enquanto o componente ainda é "descartável" —
+			// passou de maxInk, é conteúdo de verdade e não precisamos da lista.
+			if (inkCount <= maxInk) comp.push(i);
+			if (ink[i] === 1) inkCount++;
+			const x = i % W;
+			const y = (i / W) | 0;
+			const nb = [
+				x > 0 ? i - 1 : -1,
+				x < W - 1 ? i + 1 : -1,
+				y > 0 ? i - W : -1,
+				y < H - 1 ? i + W : -1,
+			];
+			for (const j of nb) {
+				if (j >= 0 && sil[j] === 1 && label[j] < 0) {
+					label[j] = seed;
+					stack[sp++] = j;
+				}
+			}
+		}
+		if (inkCount <= maxInk) for (const i of comp) out[i] = 0;
+	}
+	return out;
+}
+
+export interface CarveOptions {
+	/** Distância (px) da tinta que ainda conta como "área desenhada". */
+	halo: number;
+	/** Área mínima (px²) de papel vazio que vale a pena escavar. */
+	minArea: number;
+}
+
+/**
+ * ESCAVA da silhueta o PAPEL VAZIO: regiões dentro de `sil` mais distantes
+ * que `halo` de qualquer tinta e maiores que `minArea`. É a regra que separa
+ * "vão de hachura/mecha" (célula minúscula entre traços — INVERTE, é o que
+ * preserva o detalhe do desenho) de "janela de fundo" (papel branco visto
+ * através da figura, ex.: o vão entre o antebraço levantado e o rosto — o
+ * fillHoles preenchia esses buracos fechados e o negativo pintava de preto
+ * o que o usuário lê como fundo). Medido num desenho a lápis real: janelas
+ * de 0,3-1,3% da tela contra vãos de hachura ≤0,02% — órdens de magnitude
+ * de folga.
+ *
+ * A borda da escavação fica na banda `dilate(tinta, halo)` — os traços que
+ * delimitam a janela ganham um rebordo fino de campo, o contorno interno.
+ *
+ * Células majoritariamente dentro de `sil ∧ ¬silBefore` (área ADICIONADA
+ * pela absorção de bolsões) são poupadas: a absorção já provou que ali é
+ * interior do assunto com desenho esparso (ex.: peito de camisa com logos)
+ * — escavar de volta desfaria a decisão.
+ */
+export function carveEmptyPaper(
+	sil: Uint8Array,
+	silBefore: Uint8Array,
+	ink: Uint8Array,
+	W: number,
+	H: number,
+	opts: CarveOptions,
+): Uint8Array {
+	const N = W * H;
+	// Halo suavizado: a dilatação por quadrado deixa o rebordo da escavação
+	// com cantos retos/degraus ("retângulos" no meio do desenho) — o filtro
+	// de maioria arredonda o halo antes de recortar as células.
+	const occ = smoothMask(
+		dilateSquare(ink, W, H, opts.halo),
+		W,
+		H,
+		Math.max(2, opts.halo >> 1),
+	);
+	const empty = new Uint8Array(N);
+	let any = 0;
+	for (let i = 0; i < N; i++) {
+		if (sil[i] === 1 && occ[i] !== 1) {
+			empty[i] = 1;
+			any++;
+		}
+	}
+	if (any === 0) return sil;
+
+	const out = Uint8Array.from(sil);
+	const label = new Int32Array(N).fill(-1);
+	const stack = new Int32Array(N);
+	for (let seed = 0; seed < N; seed++) {
+		if (empty[seed] !== 1 || label[seed] >= 0) continue;
+		let sp = 0;
+		let size = 0;
+		let absorbed = 0;
+		const comp: number[] = [];
+		stack[sp++] = seed;
+		label[seed] = seed;
+		while (sp > 0) {
+			const i = stack[--sp];
+			size++;
+			comp.push(i);
+			if (silBefore[i] === 0) absorbed++;
+			const x = i % W;
+			const y = (i / W) | 0;
+			const nb = [
+				x > 0 ? i - 1 : -1,
+				x < W - 1 ? i + 1 : -1,
+				y > 0 ? i - W : -1,
+				y < H - 1 ? i + W : -1,
+			];
+			for (const j of nb) {
+				if (j >= 0 && empty[j] === 1 && label[j] < 0) {
+					label[j] = seed;
+					stack[sp++] = j;
+				}
+			}
+		}
+		if (size >= opts.minArea && absorbed / size < 0.5) {
+			for (const i of comp) out[i] = 0;
+		}
+	}
+	return out;
+}
+
+/**
+ * Suaviza a máscara com um FILTRO DE MAIORIA em janela (2r+1)²: cada pixel
+ * vira o voto majoritário da vizinhança. Arredonda os degraus/chanfros que o
+ * kernel QUADRADO do close/dilate deixa em bordas diagonais (métrica
+ * Chebyshev) sem mudar a topologia — braços finos da silhueta sobrevivem
+ * porque já saem do pipeline com largura ≥ 2·border (> janela/2).
+ * Separável e O(N) como a morfologia: soma corrente por linha e por coluna.
+ */
+export function smoothMask(
+	m: Uint8Array,
+	W: number,
+	H: number,
+	r: number,
+): Uint8Array {
+	if (r <= 0) return Uint8Array.from(m);
+	const win = 2 * r + 1;
+
+	// Passada horizontal: contagem na janela da linha.
+	const rowCount = new Uint16Array(W * H);
+	for (let y = 0; y < H; y++) {
+		const row = y * W;
+		let count = 0;
+		for (let k = 0; k <= Math.min(r, W - 1); k++) count += m[row + k];
+		for (let x = 0; x < W; x++) {
+			rowCount[row + x] = count;
+			const rem = x - r;
+			if (rem >= 0) count -= m[row + rem];
+			const add = x + 1 + r;
+			if (add < W) count += m[row + add];
+		}
+	}
+
+	// Passada vertical: soma das contagens → total na janela 2D.
+	const out = new Uint8Array(W * H);
+	const half = (win * win) >> 1;
+	for (let x = 0; x < W; x++) {
+		let total = 0;
+		for (let k = 0; k <= Math.min(r, H - 1); k++) total += rowCount[k * W + x];
+		for (let y = 0; y < H; y++) {
+			out[y * W + x] = total > half ? 1 : 0;
+			const rem = y - r;
+			if (rem >= 0) total -= rowCount[rem * W + x];
+			const add = y + 1 + r;
+			if (add < H) total += rowCount[add * W + x];
+		}
+	}
+	return out;
 }
 
 /** Codifica uma máscara binária (1 = frente) num PNG 1-canal (0 = preto, 255 = branco). */
