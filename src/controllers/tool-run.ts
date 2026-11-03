@@ -825,7 +825,10 @@ async function executarRun(
 			}
 			const parsed = bankImageSizeSchema.safeParse(parsedSize);
 			if (!parsed.success) {
-				return recusar(400, 'image_size inválido.');
+				return recusar(
+					400,
+					'Resolução inválida: use valores inteiros de 64 a 4096 px por lado.',
+				);
 			}
 			try {
 				clientSize = await resolveImageSizePx(parsed.data, async (id) =>
