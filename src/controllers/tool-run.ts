@@ -491,26 +491,34 @@ export const toolRunController = async (
 		if (fields.image_size === 'native') {
 			clientSize = 'native';
 		} else if (fields.image_size) {
+			// O front já cobrou no upvox antes de chamar o motor (`invocation_id`
+			// pending): rejeitar aqui sem estornar deixava o aluno pago e sem arte.
+			const rejectSize = async (message: string) => {
+				if (billed && fields.invocation_id) {
+					await refundInvocation(customerId, fields.invocation_id, authHeader);
+				}
+				return reply.status(400).send({ message });
+			};
 			let parsedSize: unknown;
 			try {
 				parsedSize = JSON.parse(fields.image_size);
 			} catch {
-				return reply
-					.status(400)
-					.send({ message: 'image_size inválido (JSON).' });
+				return rejectSize('image_size inválido (JSON).');
 			}
 			const parsed = bankImageSizeSchema.safeParse(parsedSize);
 			if (!parsed.success) {
-				return reply.status(400).send({ message: 'image_size inválido.' });
+				return rejectSize(
+					'Resolução inválida: use valores inteiros de 64 a 4096 px por lado.',
+				);
 			}
 			try {
 				clientSize = await resolveImageSizePx(parsed.data, async (id) =>
 					imageSizePresetRepository.findById(id),
 				);
 			} catch (err) {
-				const message =
-					err instanceof Error ? err.message : 'image_size inválido.';
-				return reply.status(400).send({ message });
+				return rejectSize(
+					err instanceof Error ? err.message : 'image_size inválido.',
+				);
 			}
 		}
 
