@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
+	askCollectionEntryController,
 	collectionFacetsController,
 	collectionFeedbackController,
+	collectionLineageController,
 	collectionNearestController,
 	createCollectionEntryController,
 	deleteCollectionEntryController,
@@ -12,6 +14,7 @@ import {
 	listCollectionController,
 	reviewCollectionEntryController,
 	updateCollectionEntryController,
+	uploadCollectionImageController,
 } from '../controllers/tool-collection.js';
 import { authenticateCustomer } from '../middleware/auth.js';
 import { ErrorSchema } from '../types/error.js';
@@ -102,6 +105,40 @@ export async function toolCollectionRoute(app: FastifyInstance) {
 		importCollectionController,
 	);
 
+	app.post(
+		`${base}/upload-image`,
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Sobe uma imagem para um campo `type:image` desta coleção e devolve `{ url, width, height, palette }` (multipart/form-data, campo `file`, PNG/JPG/WEBP até 5 MB). Quem pode subir é quem pode criar registro aqui (`submissions.who`). A imagem é re-encodada (EXIF descartado) e há teto por hora. `palette` são as cores dominantes em hex, da maior área para a menor, para a tela sugerir as cores da marca a partir do logo — vem VAZIA quando a imagem é uma foto (as cores de uma foto não são as da marca) ou quando a extração falha.',
+				consumes: ['multipart/form-data'],
+				params: keyCollection,
+				tags: ['Coleções'],
+				security: [{ bearerAuth: [] }],
+				response: {
+					/**
+					 * `palette` PRECISA estar aqui: o serializador do fastify-zod
+					 * responde pelo schema, então chave que o controller manda e o
+					 * schema não declara é apagada da resposta em silêncio — a mesma
+					 * armadilha do `output` allow-list das definitions.
+					 */
+					200: z.object({
+						url: z.string(),
+						width: z.number(),
+						height: z.number(),
+						palette: z.array(z.object({ hex: z.string(), share: z.number() })),
+					}),
+					400: ErrorSchema,
+					403: ErrorSchema,
+					413: ErrorSchema,
+					429: ErrorSchema,
+				},
+			},
+		},
+		uploadCollectionImageController,
+	);
+
 	app.get(
 		base,
 		{
@@ -149,6 +186,22 @@ export async function toolCollectionRoute(app: FastifyInstance) {
 		getCollectionEntryController,
 	);
 
+	app.get(
+		`${base}/:id/lineage`,
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'A linhagem de um registro: `{ item, parent, children }`. `parent` sai de `data.parent_id` e `children` são os registros que apontam para este — é o que transforma a galeria numa árvore de iterações ("esta arte saiu daquela"). Um nível para cada lado.',
+				params: keyCollectionId,
+				tags: ['Coleções'],
+				security: [{ bearerAuth: [] }],
+				response: { 404: ErrorSchema, 500: ErrorSchema },
+			},
+		},
+		collectionLineageController,
+	);
+
 	app.patch(
 		`${base}/:id`,
 		{
@@ -194,6 +247,27 @@ export async function toolCollectionRoute(app: FastifyInstance) {
 			},
 		},
 		reviewCollectionEntryController,
+	);
+
+	app.post(
+		`${base}/:id/perguntar`,
+		{
+			preHandler: [authenticateCustomer],
+			schema: {
+				description:
+					'Pergunta sobre um registro (`{ pergunta }`), respondida a partir do conteúdo dele. Exige `collection.chat.enabled`; só o dono (ou staff) pergunta, e o teto de perguntas é `chat.maxPerguntas`. Devolve `{ resposta, restantes, total }`.',
+				params: keyCollectionId,
+				tags: ['Coleções'],
+				security: [{ bearerAuth: [] }],
+				response: {
+					400: ErrorSchema,
+					403: ErrorSchema,
+					404: ErrorSchema,
+					429: ErrorSchema,
+				},
+			},
+		},
+		askCollectionEntryController,
 	);
 
 	app.post(

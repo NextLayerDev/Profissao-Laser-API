@@ -1,6 +1,12 @@
 import * as Potrace from 'potrace';
 import sharp from 'sharp';
+import { borderStats, chromaKeyAlpha } from '../tool-blocks/lib/pixels.js';
 import type { VectorizeParams } from '../types/vector.js';
+import { classifyImage } from './image-classify.js';
+import {
+	SegmentationUnavailableError,
+	segmentForeground,
+} from './segment-foreground.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Vetorização EM CORES: imagens coloridas (logos, ilustrações) não podem ser
@@ -8,6 +14,17 @@ import type { VectorizeParams } from '../types/vector.js';
 // viram um borrão. Aqui quantizamos a imagem em K cores (k-means), geramos uma
 // máscara por cor, traçamos cada uma com o Potrace e montamos um SVG colorido
 // em camadas (maior área primeiro → detalhes por cima). Resultado fiel à arte.
+//
+// REMOÇÃO DE FUNDO: duas ferramentas, escolhidas pelo mesmo classificador
+// foto/logo já usado pro prompt P&B (`image-classify.ts`) — testado nos dois
+// sentidos, cada uma é ruim no caso da outra:
+//   FOTO → segmentação real (`segment-foreground.ts`, RMBG-1.4/BRIA). Ótima em
+//          objeto/produto fotografado; mas em arte flat confunde letras
+//          brancas com "fundo" e devolve texto fantasma.
+//   LOGO → chroma-key das bordas (`removeBackgroundIterative`). Ótimo em fundo
+//          sólido/degradê de estúdio; a segmentação erra feio nesse caso.
+// O chroma-key sempre roda por cima como limpeza final (barato, idempotente
+// quando não há mais nada de fundo pra remover).
 // ─────────────────────────────────────────────────────────────────────
 
 interface Centroid {
@@ -170,6 +187,199 @@ export interface ColorVectorizeOptions {
 }
 
 /**
+ * Remove o fundo em cima do raster (in place) rodando o chroma-key das
+ * bordas em VÁRIAS passadas — cada rodada recalcula a cor de referência só a
+ * partir do que ainda restou de borda opaca. Fundo de foto/estúdio quase
+ * sempre tem uma vinheta/degradê leve (mais escuro num canto); uma única
+ * passada com referência fixa só pega a região perto da mediana da borda e
+ * deixa um resto da mesma "família" de cor sem remover (ex.: canto mais
+ * escuro). A cada rodada a mediana persegue esse resto, sem precisar de uma
+ * tolerância larga o bastante pra também comer o sujeito.
+ *
+ * TRAVA (crítica): se a 1ª passada já remover o fundo de verdade, o que
+ * sobra encostado na borda pode ser o PRÓPRIO desenho (ex.: um elemento
+ * full-bleed que toca a borda) — sem essa trava, a passada seguinte trataria
+ * a cor dele como "o novo fundo" e comeria o elemento inteiro. Por isso só
+ * deixa avançar pra próxima passada se a nova referência for parecida com a
+ * anterior (mesma família de cor = perseguindo degradê); se a cor mudou
+ * demais, provavelmente não é mais fundo — para ali.
+ */
+function removeBackgroundIterative(
+	raster: Parameters<typeof borderStats>[0],
+	tolerance: number,
+	feather: number,
+	maxPasses = 4,
+): void {
+	// Cap mais largo que a tolerância pixel-a-pixel: uma vinheta de foto real
+	// pode variar bem mais que isso ponta-a-ponta (bordas: claro → escuro) sem
+	// deixar de ser "o mesmo fundo"; já uma cor de primeiro plano de verdade
+	// (ex.: uma barra colorida do próprio design) costuma saltar bem mais que
+	// isso a partir do fundo.
+	const driftCap = 0.35 * Math.sqrt(3) * 255;
+	let prevRef: { br: number; bgC: number; bb: number } | null = null;
+	for (let i = 0; i < maxPasses; i++) {
+		const stats = borderStats(raster);
+		if (stats.samples < 8) break;
+		if (prevRef) {
+			const dr = stats.br - prevRef.br;
+			const dg = stats.bgC - prevRef.bgC;
+			const db = stats.bb - prevRef.bb;
+			if (Math.sqrt(dr * dr + dg * dg + db * db) > driftCap) break;
+		}
+		const marked = chromaKeyAlpha(
+			raster,
+			stats.br,
+			stats.bgC,
+			stats.bb,
+			tolerance,
+			feather,
+		);
+		if (marked === 0) break;
+		prevRef = { br: stats.br, bgC: stats.bgC, bb: stats.bb };
+	}
+}
+
+/* ────────────────────────── Paleta dominante ────────────────────────── */
+
+export interface PaletteColor {
+	hex: string;
+	/** Fatia da área considerada (0–1, 4 casas). Serve para ordenar e para a UI. */
+	share: number;
+}
+
+export interface PaletteOptions {
+	/** Quantas cores devolver (1–12). */
+	colors?: number;
+	/** Descontar o fundo antes de contar. Ligado por padrão — ver abaixo. */
+	removeBackground?: boolean;
+	/** Dimensão de trabalho. Paleta não precisa de detalhe: menor = mais rápido. */
+	maxDim?: number;
+}
+
+/** Área mínima de um cluster para virar cor da paleta (0,5% do que foi contado). */
+const MIN_SHARE_PALETA = 0.005;
+
+/**
+ * As N cores dominantes de uma imagem, em hex, da maior área para a menor.
+ *
+ * É o k-means que já existia aqui (determinístico, sem random — ver `kmeans`)
+ * exposto sem o Potrace: para sugerir a paleta a partir do logo do aluno não é
+ * preciso vetorizar nada. Sem IA, sem rede, sem custo por chamada.
+ *
+ * O FUNDO É DESCONTADO por padrão porque logo quase sempre chega em cima de
+ * branco (ou do cinza do papel timbrado), e branco de fundo não é cor da marca:
+ * sem isso, a maior área da imagem — e portanto a "cor principal" sugerida —
+ * seria o fundo em quase todo logo enviado. Reusa `removeBackgroundIterative`,
+ * o mesmo chroma-key de bordas da vetorização em cores.
+ */
+export async function extractPalette(
+	buffer: Buffer,
+	opts: PaletteOptions = {},
+): Promise<PaletteColor[]> {
+	const maxDim = opts.maxDim ?? 320;
+	const quantas = Math.max(1, Math.min(Math.round(opts.colors ?? 5), 12));
+
+	const { data, info } = await sharp(buffer)
+		.resize({
+			width: maxDim,
+			height: maxDim,
+			fit: 'inside',
+			withoutEnlargement: true,
+		})
+		.ensureAlpha()
+		.raw()
+		.toBuffer({ resolveWithObject: true });
+
+	const { width, height } = info;
+	const npx = width * height;
+	if (!npx) return [];
+
+	const raster = {
+		data: new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength),
+		width,
+		height,
+		channels: 4 as const,
+	};
+	if (opts.removeBackground !== false) {
+		removeBackgroundIterative(raster, 0.16, 0.6, 3);
+	}
+
+	const step = Math.max(1, Math.floor(npx / 20000));
+	const colher = (ignorarAlpha: boolean): number[] => {
+		const out: number[] = [];
+		for (let i = 0; i < npx; i += step) {
+			if (!ignorarAlpha && data[i * 4 + 3] < 128) continue;
+			out.push(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]);
+		}
+		return out;
+	};
+
+	/**
+	 * FALLBACK contra a paleta PRETA. Se sobrar amostra nenhuma depois do
+	 * chroma-key, `kmeans` cai no guarda de `n === 0` e devolve preto — a marca
+	 * vermelha do aluno viraria uma paleta preta, sem erro nenhum.
+	 *
+	 * O caso extremo (logo de uma cor chapada, arte que sangra até a borda) já
+	 * está coberto uma camada abaixo: `chromaKeyAlpha` desiste quando marcaria
+	 * mais de 98,5% da imagem. Este guarda pega o resto — o resíduo depois do
+	 * feather, e imagens pequenas demais para a amostragem pegar algo. Quando
+	 * não sobrou nada, a leitura honesta é contar a imagem inteira.
+	 */
+	let amostra = colher(false);
+	if (amostra.length / 3 < 8) amostra = colher(true);
+	if (!amostra.length) return [];
+
+	const centroids = mergeNearCentroids(kmeans(amostra, quantas), 12 * 12);
+
+	// Conta sobre a MESMA amostra que alimentou o k-means: é o que faz `share`
+	// bater com o que o algoritmo enxergou (e não com a imagem inteira, que pode
+	// ter o fundo descontado).
+	const total = amostra.length / 3;
+	const counts = new Array<number>(centroids.length).fill(0);
+	for (let i = 0; i < total; i++) {
+		const r = amostra[i * 3];
+		const g = amostra[i * 3 + 1];
+		const b = amostra[i * 3 + 2];
+		let bi = 0;
+		let bd = Number.POSITIVE_INFINITY;
+		for (let c = 0; c < centroids.length; c++) {
+			const d = dist2(r, g, b, centroids[c]);
+			if (d < bd) {
+				bd = d;
+				bi = c;
+			}
+		}
+		counts[bi]++;
+	}
+
+	// Dois centróides podem cair no MESMO hex depois do arredondamento — somar as
+	// fatias evita devolver a mesma cor duas vezes na paleta.
+	const porHex = new Map<string, number>();
+	for (let c = 0; c < centroids.length; c++) {
+		if (!counts[c]) continue;
+		const hex = toHex(centroids[c]);
+		porHex.set(hex, (porHex.get(hex) ?? 0) + counts[c]);
+	}
+
+	const todas = [...porHex.entries()]
+		.map(([hex, n]) => ({ hex, share: n / total }))
+		.sort((a, b) => b.share - a.share || a.hex.localeCompare(b.hex));
+
+	// Corta o "confete" (anti-alias, ruído de JPEG) — mas nunca devolve lista
+	// vazia: uma paleta sem cor nenhuma é pior que uma paleta de uma cor só.
+	const relevantes = todas.filter((c) => c.share >= MIN_SHARE_PALETA);
+	const escolhidas = (relevantes.length ? relevantes : todas.slice(0, 1)).slice(
+		0,
+		quantas,
+	);
+
+	return escolhidas.map((c) => ({
+		hex: c.hex,
+		share: Number(c.share.toFixed(4)),
+	}));
+}
+
+/**
  * Vetoriza preservando as cores. `params.maxColors` controla quantas cores a
  * paleta terá (clampado pelo schema). Devolve o SVG colorido completo.
  */
@@ -180,7 +390,22 @@ export async function vectorizeColorImage(
 ): Promise<string> {
 	const maxDim = opts.maxDim ?? 900;
 
-	let pipeline = sharp(buffer)
+	// Só tenta segmentação real em FOTO (ver classificador no topo do arquivo).
+	// Heurística apenas (sem IA de visão): mantém o botão "Laser + UV" grátis e
+	// rápido — a heurística já bastou nos casos testados. Falha de carregar o
+	// motor nativo (onnxruntime ausente) não pode derrubar a vetorização: cai
+	// pro chroma-key, que já roda por cima de qualquer forma.
+	let workingBuffer = buffer;
+	const { kind } = await classifyImage(buffer, { allowAI: false });
+	if (kind === 'photo') {
+		try {
+			workingBuffer = await segmentForeground(buffer);
+		} catch (err) {
+			if (!(err instanceof SegmentationUnavailableError)) throw err;
+		}
+	}
+
+	let pipeline = sharp(workingBuffer)
 		.resize({ width: maxDim, height: maxDim, fit: 'inside' })
 		.ensureAlpha();
 	// Desfoque leve só se pedido (reduz ruído de JPEG antes de quantizar).
@@ -192,6 +417,21 @@ export async function vectorizeColorImage(
 	const { width, height } = info;
 	const channels = info.channels; // 4 (ensureAlpha)
 	const npx = width * height;
+
+	// `.ensureAlpha()` marca 100% opaco quando a entrada não tem alpha real (ex.:
+	// foto/JPEG, ou PNG "achatado" que saiu de uma geração de IA) — sem isso, o
+	// fundo vira só mais um cluster de cor e acaba desenhado como camada cheia
+	// (o "fundo branco" que aparecia no vetor). Chroma-key das bordas ANTES do
+	// k-means resolve — em várias passadas (ver `removeBackgroundIterative`)
+	// pra perseguir vinheta/degradê leve sem precisar de tolerância larga o
+	// bastante pra também comer o sujeito.
+	const raster = {
+		data: new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength),
+		width,
+		height,
+		channels: 4 as const,
+	};
+	removeBackgroundIterative(raster, 0.16, 0.6, 3);
 
 	// Amostra de pixels opacos p/ o k-means (cap ~20k).
 	const opaque: number[] = [];

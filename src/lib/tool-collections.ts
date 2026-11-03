@@ -42,6 +42,19 @@ export interface CollectionFieldSpec {
 	label?: string;
 	type: CollectionFieldType;
 	options?: (string | number)[];
+	/**
+	 * Rótulo humano de cada opção: `{ co2_100: 'CO2 100 W (1300×900)' }`.
+	 *
+	 * O valor gravado continua sendo o id — é ele que o motor lê, e trocar id por
+	 * rótulo quebraria todo registro existente. Isto é só a tela. Sem este campo,
+	 * a pergunta mais importante do perfil de custo ("Que máquina você tem?")
+	 * aparecia para o dono da marcenaria como `fibra_20 · co2_100 · psico_9 ·
+	 * simples_servicos` — id de banco de dados oferecido como resposta.
+	 *
+	 * O back IGNORA, como `hint` e `group`: opção fora de `options` continua
+	 * sendo recusada na validação, tenha rótulo ou não.
+	 */
+	optionLabels?: Record<string, string>;
 	required?: boolean;
 	facet?: CollectionFacet;
 	/** Unidade só de exibição (mm, W, bar). O valor guardado é o número puro. */
@@ -49,6 +62,16 @@ export interface CollectionFieldSpec {
 	min?: number;
 	max?: number;
 	placeholder?: string;
+	/**
+	 * Linha de ajuda embaixo do campo, e `group` é a seção do formulário. O back
+	 * IGNORA os dois — são enfeite de tela, e já é assim que a tela os lê
+	 * (`collection-form.ts` no front). Estão declarados aqui porque a declaração
+	 * de campo é gerada em código (`profileFieldsSpec`, `machineFieldsSpec`) e um
+	 * campo sem tipo para o `hint` obrigava a montar a spec como `unknown` —
+	 * exatamente o buraco por onde um nome de campo errado passa em silêncio.
+	 */
+	hint?: string;
+	group?: string;
 	/**
 	 * Aplicabilidade condicional: `{ operacao: 'corte' }` faz o campo só existir
 	 * (e só ser exigido) quando `data.operacao === 'corte'`. Aceita array para
@@ -58,9 +81,53 @@ export interface CollectionFieldSpec {
 	showIf?: Record<string, string | number | boolean | (string | number)[]>;
 }
 
+/**
+ * Perguntas sobre UM registro, respondidas a partir do próprio registro.
+ *
+ * Declarar isto é o que transforma um registro parado numa conversa: hoje o
+ * dossiê da Central de Inteligência, amanhã o que for. Nenhum código sabe o que
+ * é dossiê — a coleção diz quais campos viram contexto e o resto é genérico.
+ *
+ * `maxPerguntas` existe porque cada pergunta é uma chamada de modelo que NÃO é
+ * cobrada de novo: o aluno pagou pela análise, e a conversa vem inclusa. Sem
+ * teto, um registro vira chat ilimitado a custo nosso.
+ */
+export interface CollectionChatConfig {
+	enabled: boolean;
+	/**
+	 * Campos de `data` que viram contexto, NA ORDEM DE IMPORTÂNCIA: o teto de
+	 * caracteres corta o fim, então o resumo vem antes do dossiê cru.
+	 */
+	contextoDe?: string[];
+	maxPerguntas?: number;
+	/** Id do catálogo de texto. Ausente = o padrão de quem chama. */
+	modelo?: string;
+	/** Persona (o "quem é você"). As regras anti-invenção NÃO moram aqui. */
+	papel?: string;
+}
+
+/**
+ * Quem enxerga um registro. `public` = qualquer aluno logado; `owner` = só quem
+ * criou (e a equipe); `staff` = só a equipe, nem o dono (o repositório filtra
+ * `.neq('visibility','staff')` para todo não-staff).
+ */
+export type CollectionVisibility = 'public' | 'owner' | 'staff';
+
 export interface CollectionConfig {
 	label?: string;
 	fields: CollectionFieldSpec[];
+	/**
+	 * Visibilidade IMPOSTA aos registros desta coleção.
+	 *
+	 * O seed da Central de Custos já declarava isto (`perfis`, `links`, `leads`
+	 * são todos `'owner'`) — mas a declaração era só documentação: o tipo não
+	 * conhecia o campo e o back nunca a lia, então quem decidia a visibilidade
+	 * era o CLIENTE, no corpo do POST. Numa coleção de perfil de custo (salário,
+	 * preço de compra, margem) ou de identidade de marca, uma tela que esquecesse
+	 * de mandar `visibility:'owner'` criava o registro do aluno PÚBLICO, sem erro
+	 * e sem log. Ver `resolveVisibility`.
+	 */
+	visibility?: CollectionVisibility;
 	/** Quem cria registros e se passa por moderação. Ausente = só staff. */
 	submissions?: {
 		who?: 'admin' | 'student';
@@ -89,6 +156,8 @@ export interface CollectionConfig {
 	nearest?: { on: string[]; groupBy?: string[] };
 	/** Indexação no Cérebro da IA, com o texto montado pelo `template`. */
 	rag?: { enabled?: boolean; template?: string };
+	/** Conversa sobre um registro (ver `CollectionChatConfig`). */
+	chat?: CollectionChatConfig;
 	card?: Record<string, string>;
 	detail?: Record<string, unknown>;
 }
@@ -309,4 +378,228 @@ export function renderCollectionEntry(
 		.replace(/(\s·\s)+/g, ' · ')
 		.replace(/^[\s·]+|[\s·]+$/g, '')
 		.trim();
+}
+
+/* ────────────────────── Conversa sobre um registro ────────────────────── */
+
+/** Uma pergunta já feita, como fica gravada em `data.perguntas`. */
+export interface PerguntaRegistrada {
+	p: string;
+	r: string;
+	em: string;
+}
+
+/** Perguntas inclusas quando a coleção não diz outro número. */
+export const DEFAULT_MAX_PERGUNTAS = 8;
+
+/**
+ * Teto do contexto mandado ao modelo. Um dossiê completo passa de 50 KB, e
+ * mandar tudo custa token em TODA pergunta — a conversa é inclusa no preço da
+ * análise, então o custo dela é nosso.
+ */
+const MAX_CONTEXTO_CHARS = 24_000;
+
+/**
+ * Teto do histórico gravado, em caracteres do JSON serializado.
+ *
+ * Vale menos que o teto do campo (`textarea` = 20 000 em `fieldSchema`) e a
+ * folga é de propósito. O histórico mora DENTRO do registro, e o registro é
+ * revalidado inteiro a cada PATCH quando a coleção é `ownerEditable` — deixar
+ * ele passar do teto do campo não perderia a conversa, travaria a EDIÇÃO do
+ * dossiê inteiro, com um erro de validação em inglês sobre um campo que
+ * ninguém tentou mexer.
+ */
+const MAX_PERGUNTAS_CHARS = 16_000;
+
+/**
+ * Corta os turnos MAIS ANTIGOS até o histórico caber no campo.
+ *
+ * Perder o começo é o mal menor: só os últimos turnos voltam ao modelo
+ * (`MAX_TURNOS_HISTORICO`), e o contador que sustenta o teto de perguntas mora
+ * em outro campo justamente porque este aqui encolhe.
+ */
+export function podarPerguntas(
+	lista: PerguntaRegistrada[],
+	maxChars: number = MAX_PERGUNTAS_CHARS,
+): PerguntaRegistrada[] {
+	const podada = [...lista];
+	while (podada.length > 1 && JSON.stringify(podada).length > maxChars) {
+		podada.shift();
+	}
+	// Um único turno gigante ainda estouraria o campo: a resposta é cortada, não
+	// descartada — o aluno acabou de ler ela na tela.
+	if (podada.length === 1 && JSON.stringify(podada).length > maxChars) {
+		const unico = podada[0];
+		if (unico) {
+			const sobra = maxChars - JSON.stringify([{ ...unico, r: '' }]).length;
+			podada[0] = { ...unico, r: unico.r.slice(0, Math.max(0, sobra - 20)) };
+		}
+	}
+	return podada;
+}
+
+/**
+ * O histórico gravado no registro.
+ *
+ * Aceita string (o formato do contrato: JSON serializado dentro de um campo
+ * `textarea`) e array já desserializado — o jsonb devolve o que foi escrito, e
+ * um registro antigo gravado de outro jeito não pode derrubar a pergunta. Lixo
+ * vira lista vazia: perder o histórico é ruim, recusar a pergunta é pior.
+ */
+export function lerPerguntasChat(
+	data: Record<string, unknown>,
+): PerguntaRegistrada[] {
+	const bruto = data.perguntas;
+	let lista: unknown = bruto;
+
+	if (typeof bruto === 'string') {
+		if (!bruto.trim()) return [];
+		try {
+			lista = JSON.parse(bruto);
+		} catch {
+			return [];
+		}
+	}
+
+	if (!Array.isArray(lista)) return [];
+	return lista
+		.filter(
+			(item): item is Record<string, unknown> =>
+				!!item && typeof item === 'object',
+		)
+		.map((item) => ({
+			p: String(item.p ?? ''),
+			r: String(item.r ?? ''),
+			em: String(item.em ?? ''),
+		}))
+		.filter((item) => item.p !== '');
+}
+
+/**
+ * Monta o contexto que o modelo vai ler, a partir dos campos declarados em
+ * `chat.contextoDe`.
+ *
+ * Cada campo entra rotulado: sem o rótulo o modelo recebe dois blocos de texto
+ * colados e não sabe qual é o resumo e qual é o dossiê cru. O corte é do FIM
+ * para o começo (por isso a ordem de `contextoDe` importa) e nunca no meio de
+ * um rótulo — um cabeçalho pela metade confunde mais do que o campo ausente.
+ *
+ * Sem `contextoDe`, cai em todos os campos declarados: coleção que liga o chat
+ * sem escolher os campos ainda responde, só que com o registro inteiro.
+ */
+export function montarContextoChat(
+	config: CollectionConfig,
+	data: Record<string, unknown>,
+	maxChars: number = MAX_CONTEXTO_CHARS,
+): string {
+	/**
+	 * O histórico NUNCA entra no contexto, nem no fallback.
+	 *
+	 * Ele já volta ao modelo como turnos user/assistant. Se entrasse aqui também,
+	 * a resposta anterior viraria "material" — ou seja, fonte autorizada da
+	 * próxima —, e o modelo passaria a citar o que ele mesmo escreveu como se
+	 * estivesse no dossiê. Numa coleção que liga o chat sem escolher os campos,
+	 * isso aconteceria sozinho.
+	 */
+	const nomes = (
+		config.chat?.contextoDe?.length
+			? config.chat.contextoDe
+			: config.fields.map((f) => f.name)
+	).filter((n) => n !== 'perguntas' && n !== 'perguntas_feitas');
+
+	const partes: string[] = [];
+	let restante = maxChars;
+
+	for (const nome of nomes) {
+		const bruto = data[nome];
+		if (bruto === undefined || bruto === null || bruto === '') continue;
+
+		const texto = typeof bruto === 'string' ? bruto : JSON.stringify(bruto);
+		if (!texto.trim()) continue;
+
+		const spec = config.fields.find((f) => f.name === nome);
+		const cabecalho = `## ${spec?.label ?? nome}\n`;
+		// O `\n\n` que o `join` vai colocar também ocupa espaço.
+		const disponivel = restante - (partes.length ? 2 : 0);
+		// Menos que isto entraria só o rótulo, sem conteúdo nenhum embaixo.
+		if (disponivel <= cabecalho.length + 1) break;
+
+		const bloco = cabecalho + texto;
+		if (bloco.length <= disponivel) {
+			partes.push(bloco);
+			restante = disponivel - bloco.length;
+			continue;
+		}
+
+		partes.push(
+			`${cabecalho}${texto.slice(0, disponivel - cabecalho.length - 1)}…`,
+		);
+		break;
+	}
+
+	return partes.join('\n\n');
+}
+
+/** Quanto mais alto, mais fechado. Usado para escolher a opção mais restritiva. */
+const GRAU_DE_FECHAMENTO: Record<CollectionVisibility, number> = {
+	public: 0,
+	owner: 1,
+	staff: 2,
+};
+
+/**
+ * Visibilidade de um registro: o que a COLEÇÃO declara e o que quem escreve TEM
+ * DIREITO de pedir.
+ *
+ * `'staff'` é a que faltava, e a falta era um vazamento: `scoped()` no
+ * repositório já filtra `visibility='staff'` para quem não é staff na LEITURA,
+ * mas a escrita não deixava ninguém criar um registro assim — todo registro
+ * nascia `public` ou `owner`. Enquanto as coleções guardavam catálogo (materiais,
+ * receitas), isso não incomodava. Passou a incomodar quando uma coleção virou
+ * CONFIGURAÇÃO INTERNA: os system prompts dos agentes de pesquisa, que são o
+ * produto. Sem isto, `GET /api/tools/:key/c/agentes` entregaria os prompts para
+ * qualquer aluno logado.
+ *
+ * O `declarada` fecha o furo do outro lado: até aqui quem escolhia a
+ * visibilidade era SÓ o corpo do POST, então uma tela que esquecesse de mandar
+ * `visibility:'owner'` criava o perfil de custo (ou a marca) do aluno em
+ * `public` — sem erro e sem log, num dado que é salário, preço de compra e
+ * margem. Agora, para ALUNO, vale sempre a opção MAIS FECHADA entre o que a
+ * coleção declara e o que ele pediu: esquecer o campo passa a ser seguro, e
+ * quem quiser mais privacidade que o declarado continua conseguindo.
+ *
+ * Para STAFF nada do que já funcionava mudou: um pedido explícito
+ * (`public`/`owner`/`staff`) é obedecido como sempre foi — é assim que o roster
+ * de agentes nasce `'staff'`. O que muda é só o SILÊNCIO: sem pedido, staff
+ * herda o que a coleção declara em vez de cair em `public` — porque um registro
+ * de staff numa coleção declarada `'owner'` (um lead, um link de orçamento)
+ * nascer público é o mesmo bug, só que com outro autor.
+ *
+ * Aluno nunca recebe `'staff'`, nem que a coleção declare: o repositório
+ * esconde `'staff'` até do próprio dono, e o aluno perderia o acesso ao registro
+ * que ele acabou de criar. Nesse caso o teto dele é `'owner'`.
+ *
+ * Mora aqui, e não no controller, porque é decisão PURA — e porque importar o
+ * controller num teste arrasta o cliente Supabase junto.
+ */
+export function resolveVisibility(
+	pedido: unknown,
+	isStaff: boolean,
+	declarada?: CollectionVisibility,
+): CollectionVisibility {
+	if (isStaff) {
+		if (pedido === 'staff') return 'staff';
+		if (pedido === 'owner') return 'owner';
+		if (pedido === 'public') return 'public';
+		return declarada ?? 'public';
+	}
+
+	const pedidaPeloAluno: CollectionVisibility =
+		pedido === 'owner' ? 'owner' : 'public';
+	const daColecao: CollectionVisibility =
+		declarada === 'staff' ? 'owner' : (declarada ?? 'public');
+
+	return GRAU_DE_FECHAMENTO[daColecao] >= GRAU_DE_FECHAMENTO[pedidaPeloAluno]
+		? daColecao
+		: pedidaPeloAluno;
 }

@@ -23,7 +23,9 @@ import { knowledgeBaseRoute } from './routes/knowledge-base.js';
 import { laserLineTypeRoute } from './routes/laser-line-type.js';
 import { laserProductRoute } from './routes/laser-product.js';
 import { lessonRoute } from './routes/lesson.js';
-import { licensedArtLegacyRoute } from './routes/licensed-art-legacy.js';
+import { licensedArtRoute } from './routes/licensed-art.js';
+import { licensedBrandRoute } from './routes/licensed-brand.js';
+import { licensedSellerRoute } from './routes/licensed-seller.js';
 import { machineRoute } from './routes/machine.js';
 import { mentorshipRoute } from './routes/mentorship.js';
 import { mercadoLivreOAuthRoute } from './routes/mercado-livre-oauth.js';
@@ -39,6 +41,7 @@ import { provisioningRoute } from './routes/provisioning.js';
 import { publicQuoteRoute } from './routes/public-quote.js';
 import { purchaseRoute } from './routes/purchase.js';
 import { quizRoute } from './routes/quiz.js';
+import { quoteProfileRoutes } from './routes/quote-profile.js';
 import { roleRoute } from './routes/role.js';
 import { savedLessonRoute } from './routes/saved-lesson.js';
 import { supportChatRoute } from './routes/support-chat.js';
@@ -62,7 +65,8 @@ import { mercadoLivreWebhookRoute } from './routes/webhooks/mercado-livre.js';
 export const routes = async (app: FastifyInstance) => {
 	app.register(healthRoute);
 	app.register(webhookRoute);
-	app.register(licensedArtLegacyRoute);
+	// GET /api/licensed-art/:code é servido por licensedArtRoute, que já cobre
+	// os QRs legados auditados (manifesto local) quando o código não está no banco.
 	app.register(appointmentRoute);
 	app.register(appointmentConfigRoute);
 	app.register(communityRoute);
@@ -97,9 +101,15 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(textModelsRoute);
 	app.register(toolAgentRoute);
 	app.register(toolBankRoute);
+	app.register(licensedArtRoute);
+	app.register(licensedBrandRoute);
+	app.register(licensedSellerRoute);
 	app.register(toolCollectionRoute);
 	app.register(toolBankSmartTemaRoute);
 	app.register(toolBankSummarizePromptRoute);
+	// Perfil curto do Orçamento: seis perguntas → os 31 campos. Não cobra, não
+	// grava e não chama modelo — é cadastro, não cotação.
+	app.register(quoteProfileRoutes);
 	app.register(vectorLibraryRoute);
 	app.register(vectorSupportRoute);
 	app.register(faqRoute);

@@ -35,6 +35,14 @@ const aiGenerateImageSchema = z.object({
 	image2: optionalImage,
 	image3: optionalImage,
 	/**
+	 * A quarta vaga existe pela arte licenciada: o escudo da marca ocupa a
+	 * primeira (`marca.png`), e o aluno tem direito a TRÊS fotos — com três
+	 * vagas, a terceira foto chegava como `referencia3`, a definition não a
+	 * declarava e o motor recusava com "Arquivo inesperado". O gerador não
+	 * tem teto de referências; o teto era só deste schema.
+	 */
+	image4: optionalImage,
+	/**
 	 * Override do modelo OpenRouter (injetado pelo motor a partir de
 	 * `definition.model` na Fábrica de Tools). Ausente = default do env.
 	 * `.max(200)` casa com o upvox (evita payload absurdo pro OpenRouter).
@@ -72,12 +80,15 @@ export const aiGenerateImageBlock: ToolBlock<
 	id: 'ai.generate_image',
 	category: 'ai',
 	description:
-		'Gera uma imagem a partir de um texto (e até 3 imagens de referência opcionais) via Gemini Image.',
+		'Gera uma imagem a partir de um texto (e até 4 imagens de referência opcionais) via Gemini Image.',
 	paramsSchema: aiGenerateImageSchema,
 	async run(ctx, params) {
-		const refs = [params.image, params.image2, params.image3].filter(
-			(b): b is Buffer => Buffer.isBuffer(b),
-		);
+		const refs = [
+			params.image,
+			params.image2,
+			params.image3,
+			params.image4,
+		].filter((b): b is Buffer => Buffer.isBuffer(b));
 		const n = Math.max(1, Math.min(4, params.variation_count ?? 1));
 		// `rawPrompt` → `fit:'cover'` (crop sem distorção; sem o sufixo no prompt
 		// o modelo tende a quadrado e `fill` distorceria). Legado → `fit:'fill'`

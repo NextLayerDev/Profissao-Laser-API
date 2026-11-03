@@ -2,6 +2,7 @@ import sharp from 'sharp';
 import { z } from 'zod';
 import { ToolEngineError } from '../../lib/tool-errors.js';
 import { parseVectorizeParams, vectorizeImage } from '../../lib/vectorize.js';
+import { extractPalette } from '../../lib/vectorize-color.js';
 import type { ToolBlock } from '../types.js';
 
 /**
@@ -74,3 +75,61 @@ export const imageVectorizeBlock: ToolBlock<
 		return { svg };
 	},
 };
+
+/**
+ * Booleano vindo do motor/definition. `z.coerce.boolean()` seria armadilha
+ * (`Boolean('false') === true`); ausente vale `true`, que é o padrão útil.
+ */
+const removerFundo = z.preprocess(
+	(v) =>
+		v === undefined || v === null
+			? true
+			: v === true || v === 'true' || v === 1 || v === '1',
+	z.boolean(),
+);
+
+const imagePaletteSchema = z.object({
+	image: z.instanceof(Buffer),
+	/** Quantas cores devolver. Marca costuma caber em 3–5. */
+	colors: z.coerce.number().int().min(1).max(12).default(5),
+	/** Descontar o fundo antes de contar (logo em fundo branco é a regra). */
+	remove_background: removerFundo,
+});
+
+/**
+ * `image.palette` — as cores dominantes de uma imagem, em hex.
+ *
+ * Serve para sugerir a paleta da marca a partir do logo que o aluno acabou de
+ * subir: em vez de perguntar "qual é a sua cor primária?" (pergunta que quase
+ * ninguém sabe responder em hexadecimal), a tela lê do próprio logo e mostra
+ * para confirmar.
+ *
+ * É o k-means que já rodava na vetorização em cores, sem o Potrace — puro,
+ * local, sem IA e sem custo por chamada. `primary`/`secondary` saem por ÁREA
+ * (a cor que mais ocupa o logo é a cor da marca em praticamente todo logo real).
+ *
+ * ATENÇÃO ao publicar: `output` da definition é ALLOW-LIST. Chave emitida aqui
+ * e não listada lá é calculada e jogada fora sem erro nenhum.
+ */
+export const imagePaletteBlock: ToolBlock<z.infer<typeof imagePaletteSchema>> =
+	{
+		id: 'image.palette',
+		category: 'image',
+		description:
+			'Cores dominantes de uma imagem em hex (k-means local, sem IA). Devolve `colors`, `palette` (com a fatia de área), `primary` e `secondary`.',
+		paramsSchema: imagePaletteSchema,
+		async run(_ctx, params) {
+			const palette = await extractPalette(params.image, {
+				colors: params.colors,
+				removeBackground: params.remove_background,
+			});
+			return {
+				// `colors` é a lista crua de hex — é o formato que um prompt de imagem
+				// e um campo de texto da coleção conseguem consumir direto.
+				colors: palette.map((c) => c.hex),
+				palette,
+				primary: palette[0]?.hex ?? null,
+				secondary: palette[1]?.hex ?? null,
+			};
+		},
+	};

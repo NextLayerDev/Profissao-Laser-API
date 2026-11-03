@@ -6,6 +6,7 @@ import {
 	type CadMetrics,
 	diagnose,
 } from '../lib/cad/topology.js';
+import { escolherMarca, visualDaMarca } from '../lib/marca.js';
 import {
 	CPU_BUDGET_MS,
 	clientIp,
@@ -90,6 +91,12 @@ export interface PublicQuoteDeps {
 	findLink(slug: string): Promise<CollectionEntry | null>;
 	linkAtivo(entry: CollectionEntry): boolean;
 	listMateriais(ownerId: string): Promise<CollectionEntry[]>;
+	/**
+	 * A marca cadastrada pelo DONO do link (coleção `marca` do Estúdio de
+	 * Imagens). Só é chamada quando o link pede — ver `usar_marca` em
+	 * `infoDoLink`.
+	 */
+	findMarca(ownerId: string): Promise<CollectionEntry[]>;
 	loadToolDoc(): Promise<Record<string, unknown>>;
 	createLead(input: {
 		slug: string;
@@ -134,6 +141,20 @@ function num(v: unknown): number | undefined {
 	if (v === undefined || v === null || v === '') return undefined;
 	const n = typeof v === 'number' ? v : Number(String(v).replace(',', '.'));
 	return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Telefone reduzido ao que um `wa.me` aceita: só dígitos.
+ *
+ * Não é formatação — é allowlist, na mesma família de `saneiaUrl`. O dono do
+ * link digita este valor e ele acaba dentro de um `href` na página do CLIENTE
+ * FINAL dele. Um número curto demais para ser telefone (menos de 8 dígitos) sai
+ * como vazio: melhor a página não oferecer contato do que oferecer um link
+ * quebrado num documento que representa a empresa de alguém.
+ */
+function soDigitos(v: string, max: number): string {
+	const d = v.replace(/\D+/g, '').slice(0, max);
+	return d.length >= 8 ? d : '';
 }
 
 /** Erro com status HTTP e mensagem JÁ NEUTRA (nada aqui é para o visitante ler). */
@@ -230,6 +251,63 @@ const CAMPOS_LEAD: CampoLead[] = [
 	},
 ];
 
+/* ─────────────────── Identidade visual: link ou marca ─────────────────── */
+
+/**
+ * DE ONDE SAEM O LOGO E A COR DA PÁGINA PÚBLICA.
+ *
+ * O link sempre pediu `logo_url` e `cor` — que é exatamente o que a coleção
+ * `marca` (Estúdio de Imagens) já guarda. Pedir duas vezes é o que o cadastro
+ * único existe para acabar; mas trocar a origem por baixo de quem já tem link
+ * no ar seria mudar, sem aviso, uma página que os CLIENTES dele já viram.
+ *
+ * ┌─ A REGRA, e por que ela é um interruptor e não uma esperteza ────────────┐
+ * │ `usar_marca` AUSENTE ou `false` (todo link que existe hoje):             │
+ * │     comportamento idêntico ao de antes, byte a byte. Nem sequer          │
+ * │     consultamos a marca — não há leitura a mais, não há como o           │
+ * │     resultado mudar.                                                     │
+ * │                                                                          │
+ * │ `usar_marca: true` (o aluno ligou, sabendo o que ligou):                 │
+ * │     a MARCA MANDA, e o campo do link vira reserva do que a marca não     │
+ * │     tiver. A ordem é essa e não a inversa: quem liga o interruptor está  │
+ * │     dizendo "use a identidade da minha empresa", e uma cor velha         │
+ * │     esquecida no link não pode ganhar dessa frase — o aluno mudaria a    │
+ * │     cor da marca, veria a página continuar igual e não teria como        │
+ * │     descobrir por quê. A reserva serve ao caso real de a marca ainda não │
+ * │     ter logo: aí o logo que ele já tinha no link continua aparecendo, em │
+ * │     vez de a página ficar sem nada.                                      │
+ * │                                                                          │
+ * │ E se a leitura da marca falhar (a tool está em draft, o banco piscou), a │
+ * │ página cai na configuração do próprio link em vez de dar erro: um link   │
+ * │ público que sai do ar por causa de uma cor é uma troca péssima.          │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+async function visualDoLink(
+	d: Row,
+	ownerId: string,
+	deps: PublicQuoteDeps,
+): Promise<{ logo_url: string; cor: string; empresa: string }> {
+	// `empresa` só existe quando a marca é lida: o link nunca teve campo de nome
+	// da empresa (tem `titulo`, que é o título do documento, coisa diferente).
+	const doLink = { logo_url: txt(d.logo_url), cor: txt(d.cor), empresa: '' };
+	if (d.usar_marca !== true || !ownerId) return doLink;
+	try {
+		const daMarca = visualDaMarca(escolherMarca(await deps.findMarca(ownerId)));
+		return {
+			logo_url: daMarca.logo_url || doLink.logo_url,
+			cor: daMarca.cor || doLink.cor,
+			empresa: daMarca.nome,
+		};
+	} catch (e) {
+		console.warn(
+			`[public-quote] marca do dono não pôde ser lida, usando a configuração do link: ${
+				e instanceof Error ? e.message : String(e)
+			}`,
+		);
+		return doLink;
+	}
+}
+
 /* ────────────────────────────── GET /:slug ────────────────────────────── */
 
 /**
@@ -246,6 +324,8 @@ export async function infoDoLink(
 	titulo: string;
 	logo_url: string;
 	cor: string;
+	empresa: string;
+	whatsapp: string;
 	materiais: MaterialPublico[];
 	qtd_max: number;
 	campos_lead: CampoLead[];
@@ -266,14 +346,35 @@ export async function infoDoLink(
 	const materiais = ownerId
 		? materiaisDoLink(link, await deps.listMateriais(ownerId))
 		: [];
+	const visual = await visualDoLink(d, ownerId, deps);
 
 	return {
 		// Tudo que a PÁGINA vai renderizar passa pelo higienizador. O dono do link
 		// escolhe estes valores, mas quem os lê é o cliente FINAL dele, numa página
 		// no nosso domínio — então nem o dono pode injetar marcação aqui.
+		//
+		// A MARCA NÃO É EXCEÇÃO: ela é escrita pelo aluno em outra tela, o que a
+		// deixa exatamente tão suspeita quanto o que ele digitou aqui. Por isso
+		// `visualDoLink` devolve valor CRU e a higienização continua sendo a
+		// última coisa que acontece, num lugar só.
 		titulo: saneiaTexto(txt(d.titulo) || link.title || 'Orçamento', 120),
-		logo_url: saneiaUrl(d.logo_url),
-		cor: saneiaTexto(d.cor, 32),
+		logo_url: saneiaUrl(visual.logo_url),
+		cor: saneiaTexto(visual.cor, 32),
+		empresa: saneiaTexto(visual.empresa, 120),
+		/**
+		 * O WHATSAPP JÁ ESTAVA CADASTRADO NO LINK E A PÁGINA NUNCA O MOSTROU.
+		 *
+		 * O cliente final recebia o preço e não tinha para onde ir: o único botão
+		 * da página era "Recalcular". Um orçamento sem caminho para fechar o
+		 * pedido é um orçamento que morre na tela.
+		 *
+		 * Sai só o que vira link `wa.me`: DÍGITOS. Isso não é economia de bytes —
+		 * é a higienização. O valor é digitado pelo dono do link e renderizado
+		 * para terceiros no nosso domínio; deixá-lo passar como texto livre daria
+		 * a ele um campo arbitrário dentro de um `href`. Com dígitos, o pior
+		 * conteúdo possível é um número de telefone errado.
+		 */
+		whatsapp: soDigitos(txt(d.whatsapp), 15),
 		materiais,
 		qtd_max: Math.max(1, Math.min(100_000, num(d.qtd_max) ?? 50)),
 		campos_lead: d.pedir_lead === true ? CAMPOS_LEAD : [],
@@ -302,6 +403,29 @@ export interface RespostaEstimate {
 	pecas?: number;
 	resumo?: string;
 	avisos?: string[];
+	/**
+	 * `true` = a velocidade de corte saiu de um MODELO, não de uma medição na
+	 * máquina do profissional. O motor já marcava isso (`confidence 0,40`) e a
+	 * página do cliente final nunca contou — ele recebia um preço estimado com
+	 * cara de preço fechado.
+	 *
+	 * Não é vazamento: não diz de onde veio a estimativa, nem a confiança, nem a
+	 * velocidade. Diz só o que qualquer proposta honesta diz — "este número ainda
+	 * pode mudar".
+	 */
+	estimativa?: boolean;
+	/**
+	 * Desconto por quantidade JÁ aplicado no total (0–100).
+	 *
+	 * Sem ele a proposta não fechava: a página imprimia "10 peças · R$ 13,00
+	 * cada" ao lado de "R$ 123,50", e o cliente somava 10 × 13,00 = 130,00. O
+	 * desconto existia, era o motivo dos R$ 6,50 que faltavam, e a página não o
+	 * citava em lugar nenhum — parecia erro de conta de quem mandou o orçamento.
+	 *
+	 * Não é vazamento: o desconto de faixa é uma condição comercial que o
+	 * profissional CONCEDE ao cliente. Custo, markup e margem continuam fora.
+	 */
+	desconto_pct?: number;
 }
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -323,8 +447,12 @@ function montaResposta(input: {
 	metrics: CadMetrics;
 	resumo: string;
 	avisos: string[];
+	estimativa: boolean;
+	descontoPct: number;
 }): RespostaEstimate {
 	return {
+		estimativa: input.estimativa,
+		desconto_pct: r3(input.descontoPct),
 		price_unit_cents: Math.round(input.precoUnitCents),
 		price_total_cents: Math.round(input.precoTotalCents),
 		qtd: input.qtd,
@@ -530,7 +658,9 @@ async function executa(
 		// os NOMES DAS TAGS do arquivo — string escolhida por quem subiu o arquivo.
 		// Sem higienizar, um SVG hostil planta marcação na página do cliente final
 		// de outra pessoa. Ver `saneiaTexto`.
-		.map((w) => saneiaTexto(w.message));
+		// `publicMessage` quando existe — a `message` fala com o operador ("aumente
+		// o furo ou AVISE O CLIENTE"), e aqui quem lê é o cliente.
+		.map((w) => saneiaTexto(w.publicMessage ?? w.message));
 
 	/* 7. preço — mesmo motor determinístico da Central de Custos ----------- */
 	// Roda COMO O DONO (`customerId: ownerId`): é o perfil de custo, o catálogo
@@ -665,6 +795,11 @@ async function executa(
 		metrics,
 		resumo: `${material.nome} ${espessura} mm · ${qtd} un · ${r3(metrics.bbox.w)} × ${r3(metrics.bbox.h)} mm`,
 		avisos,
+		// Vem do `public` do bloco, que já é a saída pensada para o cliente final.
+		estimativa: pub.estimativa === true,
+		// Idem: `orcamentoPublico` já zera o desconto quando o pedido mínimo entra
+		// (aí o unitário publicado é o efetivo e a conta fecha sem ele).
+		descontoPct: pub.desconto_pct,
 	});
 }
 
@@ -825,6 +960,7 @@ export async function realPublicQuoteDeps(): Promise<PublicQuoteDeps> {
 		findLink: repo.findLinkBySlug,
 		linkAtivo: repo.linkAtivo,
 		listMateriais: (ownerId) => repo.listMateriais(ownerId),
+		findMarca: (ownerId) => repo.findMarca(ownerId),
 		loadToolDoc: () => repo.loadToolDocDirect(),
 		createLead: repo.createLead,
 		charge: upvox.chargeToolOwner,

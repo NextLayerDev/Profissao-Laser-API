@@ -1,3 +1,4 @@
+import { MARCA_COLECAO, MARCA_TOOL } from '../lib/marca.js';
 import { cache } from '../lib/redis.js';
 import { supabaseUpvox } from '../lib/supabase-upvox.js';
 import type { CollectionConfig } from '../lib/tool-collections.js';
@@ -129,6 +130,39 @@ export async function listMateriais(
 			sort: 'title',
 			page: 1,
 			pageSize: 200,
+		},
+	);
+	return achados.items;
+}
+
+/**
+ * A MARCA do dono do link — cadastrada uma vez no Estúdio de Imagens, reusada
+ * aqui em vez de o profissional cadastrar logo e cor de novo.
+ *
+ * `mineOnly` + viewer NÃO-STAFF, e os dois importam:
+ *  • não-staff é a mesma regra de `listMateriais` — o servidor lê como se
+ *    fosse o dono, nunca como administrador;
+ *  • `mineOnly` é o cinto: a coleção é `visibility:'owner'`, mas se um dia uma
+ *    linha nascer pública (foi assim que a galeria quase vazou), o filtro por
+ *    `owner_id` impede que a marca de OUTRO aluno apareça na página pública
+ *    deste. Aqui o estrago seria irreversível: logo alheio servido a clientes.
+ *
+ * `pageSize: 5` e não 1: quem escolhe é `escolherMarca` (lib/marca.ts), que
+ * descarta cadastro em branco antes de eleger o mais recente — com uma linha
+ * só, um rascunho vazio criado ontem apagaria a marca pronta.
+ */
+export async function findMarca(ownerId: string): Promise<CollectionEntry[]> {
+	if (!ownerId) return [];
+	const achados = await toolCollectionRepository.list(
+		MARCA_TOOL,
+		MARCA_COLECAO,
+		CONFIG_VAZIA,
+		{
+			viewer: { customerId: ownerId, isStaff: false },
+			mineOnly: true,
+			sort: 'recent',
+			page: 1,
+			pageSize: 5,
 		},
 	);
 	return achados.items;

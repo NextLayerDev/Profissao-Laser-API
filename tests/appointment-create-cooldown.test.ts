@@ -16,8 +16,14 @@ vi.mock('../src/repositories/appointment.js', () => ({
 	},
 }));
 
+// UPV-64: o controller resolve o técnico/valida o slot no servidor. Aqui só
+// interessa o intervalo mínimo, então o slot sempre está livre.
 vi.mock('../src/services/appointment-config.js', () => ({
-	appointmentConfigService: { checkClientCooldown: vi.fn() },
+	appointmentConfigService: {
+		checkClientCooldown: vi.fn(),
+		resolveBookingTechnician: async () => undefined,
+	},
+	SlotUnavailableError: class SlotUnavailableError extends Error {},
 }));
 
 import { createAppointmentController } from '../src/controllers/appointment.js';

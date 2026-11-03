@@ -139,6 +139,33 @@ describe('ai.generate_image', () => {
 			});
 		});
 
+		it('aceita QUATRO refs, na ordem — escudo da marca + 3 fotos do aluno', async () => {
+			// A arte licenciada põe o escudo em `image` e as fotos em image2..4.
+			// Com três vagas, a terceira foto era recusada antes de chegar aqui.
+			const escudo = Buffer.from('escudo');
+			const fotos = [Buffer.from('f1'), Buffer.from('f2'), Buffer.from('f3')];
+			await run({
+				prompt: 'caneca',
+				raw_prompt: true,
+				image: escudo,
+				image2: fotos[0],
+				image3: fotos[1],
+				image4: fotos[2],
+			});
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			const body = JSON.parse(init.body as string);
+			expect(body.input_references).toHaveLength(4);
+			expect(
+				body.input_references.map(
+					(r: { image_url: { url: string } }) => r.image_url.url,
+				),
+			).toEqual(
+				[escudo, ...fotos].map(
+					(b) => `data:image/png;base64,${b.toString('base64')}`,
+				),
+			);
+		});
+
 		it('passa aspect_ratio/resolution REAIS + sufixo FORMATO no raw_prompt com W×H', async () => {
 			// A dimensão vira parâmetro real (não só texto): o modelo compõe na
 			// proporção certa pra o sharp NÃO precisar cortar conteúdo depois.
@@ -155,7 +182,15 @@ describe('ai.generate_image', () => {
 			expect(body.prompt).toContain('2:1');
 			expect(body.prompt).not.toContain('autoritativo');
 			expect(body.aspect_ratio).toBe('16:9');
-			expect(body.resolution).toBe('4K');
+			/**
+			 * ERA '4K', E ERA DINHEIRO JOGADO FORA.
+			 *
+			 * 2000×1000 são 2,0 MP e cabem em `2K` (≈4,19 MP) com folga. Pedir `4K`
+			 * (≈16,8 MP) só entregava pixel para o `sharp.resize(2000, 1000)` do fim
+			 * do pipeline apagar — medido no provedor real: US$ 0,1527 contra
+			 * US$ 0,1024 no flash pela MESMA imagem final. Ver `bestResolution`.
+			 */
+			expect(body.resolution).toBe('2K');
 		});
 	});
 

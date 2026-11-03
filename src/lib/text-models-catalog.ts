@@ -25,7 +25,23 @@
  * ids mortos (`gpt-image-1`, `flux`, `sd`, `recraft`, `ideogram`) que só
  * quebravam em runtime, porque foram escritos de memória. NENHUMA entrada nova
  * entra aqui sem ser conferida contra `GET https://openrouter.ai/api/v1/models`
- * com a chave real. Os ids abaixo foram conferidos em 2026-07-29.
+ * com a chave real. Os ids abaixo foram conferidos em 2026-08-03.
+ *
+ * E há uma quinta coisa, aprendida do jeito caro: `webSearch`. Suportar tools
+ * NÃO implica funcionar com o plugin de busca do OpenRouter.
+ *
+ * ┌─ POR QUE NÃO HÁ DEEPSEEK AQUI (não readicione sem testar) ───────────────┐
+ * │ `deepseek/deepseek-v4-pro` e `deepseek-v4-flash-0731` eram os mais       │
+ * │ baratos do catálogo — e por isso mesmo eram a escolha natural do admin.  │
+ * │ Medido em 2026-08-03: COM busca web, devolveram `content: ""` em 6/6     │
+ * │ tentativas, com as citações preenchidas — ou seja, a busca é cobrada     │
+ * │ (US$ 0,005) e o texto não vem. SEM busca, falham de forma intermitente:  │
+ * │ são modelos de RACIOCÍNIO e gastam o orçamento de saída pensando (num    │
+ * │ teste, 11.695 caracteres de raciocínio para 400 tokens pedidos).         │
+ * │ O modo de falha é o pior possível: silencioso, pago e intermitente.      │
+ * │ Um modelo barato que às vezes não responde custa mais que um caro que    │
+ * │ sempre responde.                                                          │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
 
 export type TextModelBestFor =
@@ -78,6 +94,17 @@ export interface TextModelEntry {
 	json: boolean;
 	/** Aceita imagem no input. */
 	vision: boolean;
+	/**
+	 * Funciona com o plugin de busca web do OpenRouter
+	 * (`plugins: [{ id: 'web' }]`). NÃO é o mesmo que "suporta tools".
+	 *
+	 * Hoje todo modelo do catálogo tem `true` — porque os que tinham `false`
+	 * foram REMOVIDOS (ver o histórico do DeepSeek no topo do arquivo). O campo
+	 * continua existindo, e `resolveTextModel({needsWebSearch})` continua
+	 * filtrando por ele, para que o próximo modelo barato que alguém queira
+	 * adicionar seja testado com busca ANTES de virar opção no dropdown.
+	 */
+	webSearch: boolean;
 	pricing: TextModelPricing;
 	/** 1-2 frases PT-BR exibidas como subtítulo quando selecionado. */
 	notes: string;
@@ -98,6 +125,7 @@ export const TEXT_MODELS_CATALOG: ReadonlyArray<TextModelEntry> = [
 		contextK: 1000,
 		toolUse: true,
 		json: true,
+		webSearch: true,
 		vision: true,
 		pricing: { in: 2, out: 10 },
 		notes:
@@ -115,6 +143,7 @@ export const TEXT_MODELS_CATALOG: ReadonlyArray<TextModelEntry> = [
 		contextK: 1000,
 		toolUse: true,
 		json: true,
+		webSearch: true,
 		vision: true,
 		pricing: { in: 5, out: 25 },
 		notes:
@@ -131,6 +160,7 @@ export const TEXT_MODELS_CATALOG: ReadonlyArray<TextModelEntry> = [
 		contextK: 200,
 		toolUse: true,
 		json: true,
+		webSearch: true,
 		vision: true,
 		pricing: { in: 1, out: 5 },
 		notes:
@@ -147,6 +177,7 @@ export const TEXT_MODELS_CATALOG: ReadonlyArray<TextModelEntry> = [
 		contextK: 1000,
 		toolUse: true,
 		json: true,
+		webSearch: true,
 		vision: true,
 		pricing: { in: 0.25, out: 1.5 },
 		notes:
@@ -163,6 +194,7 @@ export const TEXT_MODELS_CATALOG: ReadonlyArray<TextModelEntry> = [
 		contextK: 1000,
 		toolUse: true,
 		json: true,
+		webSearch: true,
 		vision: true,
 		pricing: { in: 0.5, out: 3 },
 		notes:
@@ -178,25 +210,11 @@ export const TEXT_MODELS_CATALOG: ReadonlyArray<TextModelEntry> = [
 		contextK: 1000,
 		toolUse: true,
 		json: true,
+		webSearch: true,
 		vision: true,
 		pricing: { in: 2, out: 12 },
 		notes:
 			'Multimodal completo (imagem, vídeo e áudio) com 1M de contexto. Use para diagnóstico por foto — ex.: analisar a borda de um corte e apontar escória ou queima.',
-	},
-	{
-		id: 'deepseek/deepseek-v4-pro',
-		provider: 'openrouter',
-		label: 'DeepSeek V4 Pro (alternativa barata)',
-		bestFor: ['barato', 'raciocinio', 'redacao'],
-		speed: 'fast',
-		quality: 'high',
-		contextK: 1000,
-		toolUse: true,
-		json: true,
-		vision: false,
-		pricing: { in: 0.435, out: 0.87 },
-		notes:
-			'Texto puro, sem visão, a cerca de um décimo do preço do Sonnet 5. Alternativa fora do eixo Anthropic/Google quando o custo domina a decisão.',
 	},
 ];
 
@@ -239,6 +257,12 @@ export interface ResolveTextModelOpts {
 	needsToolUse?: boolean;
 	/** O chamador vai mandar imagem — descarta modelo sem visão. */
 	needsVision?: boolean;
+	/**
+	 * O chamador vai ligar o plugin de busca — descarta modelo que devolve
+	 * resposta vazia com busca (os DeepSeek). É o filtro que impede um agente de
+	 * pesquisa de gastar a busca e não produzir nada.
+	 */
+	needsWebSearch?: boolean;
 }
 
 /**
@@ -255,14 +279,16 @@ export function resolveTextModel(
 	opts: ResolveTextModelOpts = {},
 ): TextModelEntry {
 	const fits = (m: TextModelEntry) =>
-		(!opts.needsToolUse || m.toolUse) && (!opts.needsVision || m.vision);
+		(!opts.needsToolUse || m.toolUse) &&
+		(!opts.needsVision || m.vision) &&
+		(!opts.needsWebSearch || m.webSearch);
 
 	if (id) {
 		const found = findTextModel(id);
 		if (found && fits(found)) return found;
 		console.warn(
 			found
-				? `[text-models] modelo '${id}' não atende aos requisitos (toolUse=${opts.needsToolUse ?? false}, vision=${opts.needsVision ?? false}); usando o padrão`
+				? `[text-models] modelo '${id}' não atende aos requisitos (toolUse=${opts.needsToolUse ?? false}, vision=${opts.needsVision ?? false}, webSearch=${opts.needsWebSearch ?? false}); usando o padrão`
 				: `[text-models] modelo de texto desconhecido '${id}'; usando o padrão`,
 		);
 	}

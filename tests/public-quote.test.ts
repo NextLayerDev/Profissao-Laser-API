@@ -33,7 +33,10 @@ vi.mock('@/repositories/tool-collection.js', () => ({
  * Nunca deve ser chamado no caminho público: não há Bearer do dono para falar
  * com o upvox por HTTP. Se for chamado, o `throw` abaixo quebra o teste.
  */
-const loadPublished = vi.fn(() => {
+// O `...unknown[]` na assinatura do mock é o que deixa o repasse abaixo
+// (`loadPublished(...a)`) tipar: sem ele o TS recusa o spread num alvo sem
+// parâmetro nenhum (TS2556).
+const loadPublished = vi.fn((..._args: unknown[]): never => {
 	throw new Error('o link público não pode buscar a definition por HTTP');
 });
 vi.mock('@/lib/tool-definitions.js', () => ({
@@ -141,6 +144,34 @@ function linkEntry(over: Record<string, unknown> = {}): CollectionEntry {
 	};
 }
 
+/**
+ * A marca do dono, como ela chega do repositório: `CollectionEntry` com os
+ * campos dentro de `data` (o caminho do `collection.query`, achatado, é o do
+ * time de agentes — os dois passam pelo mesmo `escolherMarca`).
+ */
+function marcaEntry(over: Record<string, unknown> = {}): CollectionEntry {
+	return {
+		...linkEntry(),
+		id: 'marca-1',
+		tool_key: 'estudio_imagens',
+		collection: 'marca',
+		title: 'Laser do Zé',
+		created_at: '2026-03-01T00:00:00Z',
+		data: {
+			nome: 'Laser do Zé',
+			logo_url: 'https://cdn.example/marca.png',
+			cor_primaria: '#ff5500',
+			cor_secundaria: '#111111',
+			cor_fundo: '#ffffff',
+			fonte: 'Poppins',
+			tom_de_voz: 'proximo_e_informal',
+			publico: 'noivas e cerimonialistas',
+			nao_usar: 'emoji e "imperdível"',
+			...over,
+		},
+	};
+}
+
 function materialEntry(): CollectionEntry {
 	return {
 		...linkEntry(),
@@ -200,6 +231,8 @@ const DOC = {
 
 interface Espiao {
 	deps: PublicQuoteDeps;
+	/** Quem teve a marca consultada — tem que ficar VAZIO sem o opt-in do link. */
+	marcasLidas: string[];
 	cobrancas: unknown[];
 	leads: Record<string, unknown>[];
 	emails: unknown[];
@@ -207,6 +240,7 @@ interface Espiao {
 	relogio: { agora: number };
 	proximaCobranca: { modo: 'ok' | 'sem_saldo' | 'erro' };
 	link: CollectionEntry;
+	marcas: CollectionEntry[];
 }
 
 function montaDeps(over: Partial<PublicQuoteDeps> = {}): Espiao {
@@ -217,12 +251,17 @@ function montaDeps(over: Partial<PublicQuoteDeps> = {}): Espiao {
 	const emails: unknown[] = [];
 	const relogio = { agora: 1_800_000_000_000 };
 	const proximaCobranca: { modo: 'ok' | 'sem_saldo' | 'erro' } = { modo: 'ok' };
-	const estado = { link: linkEntry() };
+	const estado = { link: linkEntry(), marcas: [marcaEntry()] };
+	const marcasLidas: string[] = [];
 
 	const deps: PublicQuoteDeps = {
 		findLink: async (slug) => (slug === SLUG ? estado.link : null),
 		linkAtivo: (e) => e.active !== false && e.data?.ativo !== false,
 		listMateriais: async () => [materialEntry()],
+		findMarca: async (ownerId) => {
+			marcasLidas.push(ownerId);
+			return estado.marcas;
+		},
 		loadToolDoc: async () => DOC,
 		createLead: async (l) => {
 			leads.push(l as unknown as Record<string, unknown>);
@@ -268,6 +307,7 @@ function montaDeps(over: Partial<PublicQuoteDeps> = {}): Espiao {
 
 	return {
 		deps,
+		marcasLidas,
 		cobrancas,
 		leads,
 		emails,
@@ -279,6 +319,12 @@ function montaDeps(over: Partial<PublicQuoteDeps> = {}): Espiao {
 		},
 		set link(v: CollectionEntry) {
 			estado.link = v;
+		},
+		get marcas() {
+			return estado.marcas;
+		},
+		set marcas(v: CollectionEntry[]) {
+			estado.marcas = v;
 		},
 	} as Espiao;
 }
@@ -458,6 +504,237 @@ describe('GET /api/public/quote/:slug', () => {
 		expect(body.logo_url).toBe('');
 		expect(res.payload).not.toContain('<script');
 		expect(res.payload).not.toContain('javascript:');
+		await app.close();
+	});
+
+	/**
+	 * A HERANÇA DA MARCA — o link para de pedir logo e cor uma segunda vez.
+	 *
+	 * O que estes testes seguram é a promessa de compatibilidade: link que já
+	 * está no ar não muda de aparência porque uma feature nova entrou.
+	 */
+	it('sem `usar_marca`, o link não muda em nada e a marca NEM É LIDA', async () => {
+		const espiao = montaDeps();
+		const app = await montaApp(espiao.deps);
+		const body = (
+			await app.inject({ url: `/api/public/quote/${SLUG}` })
+		).json();
+
+		expect(body.logo_url).toBe('https://cdn.example/logo.png');
+		expect(body.cor).toBe('#4f46e5');
+		// A consulta a mais nem acontece: sem opt-in não há como o resultado mudar.
+		expect(espiao.marcasLidas).toEqual([]);
+		await app.close();
+	});
+
+	it('com `usar_marca`, a MARCA manda sobre o que o link tinha configurado', async () => {
+		const espiao = montaDeps();
+		espiao.link = linkEntry({ usar_marca: true });
+		const app = await montaApp(espiao.deps);
+		const body = (
+			await app.inject({ url: `/api/public/quote/${SLUG}` })
+		).json();
+
+		expect(body.logo_url).toBe('https://cdn.example/marca.png');
+		expect(body.cor).toBe('#ff5500');
+		// Lida em nome do DONO do link, nunca do visitante (que não tem conta).
+		expect(espiao.marcasLidas).toEqual([OWNER]);
+		await app.close();
+	});
+
+	it('marca sem logo cai no logo do link, em vez de deixar a página sem nada', async () => {
+		const espiao = montaDeps();
+		espiao.link = linkEntry({ usar_marca: true });
+		espiao.marcas = [marcaEntry({ logo_url: '' })];
+		const app = await montaApp(espiao.deps);
+		const body = (
+			await app.inject({ url: `/api/public/quote/${SLUG}` })
+		).json();
+
+		expect(body.logo_url).toBe('https://cdn.example/logo.png');
+		expect(body.cor).toBe('#ff5500');
+		await app.close();
+	});
+
+	it('duas marcas: vale a MAIS RECENTE (a regra de escolha, uma só no sistema)', async () => {
+		const espiao = montaDeps();
+		espiao.link = linkEntry({ usar_marca: true });
+		espiao.marcas = [
+			marcaEntry({ nome: 'Loja nova', cor_primaria: '#00ff00' }),
+			{
+				...marcaEntry({ nome: 'Loja antiga', cor_primaria: '#0000ff' }),
+				id: 'marca-0',
+				created_at: '2020-01-01T00:00:00Z',
+			},
+		];
+		const app = await montaApp(espiao.deps);
+		const body = (
+			await app.inject({ url: `/api/public/quote/${SLUG}` })
+		).json();
+
+		expect(body.cor).toBe('#00ff00');
+		await app.close();
+	});
+
+	it('cadastro de marca EM BRANCO não apaga a marca pronta', async () => {
+		const espiao = montaDeps();
+		espiao.link = linkEntry({ usar_marca: true });
+		espiao.marcas = [
+			// Mais novo, e vazio: alguém abriu o formulário e desistiu.
+			{
+				...marcaEntry(),
+				id: 'marca-9',
+				created_at: '2030-01-01T00:00:00Z',
+				data: {},
+			},
+			marcaEntry(),
+		];
+		const app = await montaApp(espiao.deps);
+		const body = (
+			await app.inject({ url: `/api/public/quote/${SLUG}` })
+		).json();
+
+		expect(body.cor).toBe('#ff5500');
+		await app.close();
+	});
+
+	it('marca ilegível não derruba o link: cai na configuração dele', async () => {
+		// Tool em draft, banco fora do ar, o que for: um link público que sai do
+		// ar por causa de uma COR é uma troca péssima.
+		const espiao = montaDeps({
+			findMarca: async () => {
+				throw new Error('tool_not_found');
+			},
+		});
+		espiao.link = linkEntry({ usar_marca: true });
+		const app = await montaApp(espiao.deps);
+		const res = await app.inject({ url: `/api/public/quote/${SLUG}` });
+
+		expect(res.statusCode).toBe(200);
+		expect(res.json().logo_url).toBe('https://cdn.example/logo.png');
+		expect(res.json().cor).toBe('#4f46e5');
+		await app.close();
+	});
+
+	it('a marca herdada passa pelo MESMO higienizador do resto da página', async () => {
+		// A marca é digitada em OUTRA tela; isso não a torna confiável. Quem lê
+		// continua sendo o cliente final, numa página no nosso domínio.
+		const espiao = montaDeps();
+		espiao.link = linkEntry({ usar_marca: true });
+		espiao.marcas = [
+			marcaEntry({
+				logo_url: 'javascript:alert(document.cookie)',
+				cor_primaria: '"><script>alert(1)</script>',
+			}),
+		];
+		const app = await montaApp(espiao.deps);
+		const res = await app.inject({ url: `/api/public/quote/${SLUG}` });
+
+		expect(res.json().logo_url).toBe('');
+		expect(res.payload).not.toContain('<script');
+		expect(res.payload).not.toContain('javascript:');
+		await app.close();
+	});
+
+	/**
+	 * A PROPOSTA, e não o formulário.
+	 *
+	 * Antes disto a página entregava o preço e não dizia de QUEM era, nem para
+	 * onde ir depois: o único botão era "Recalcular". Os três campos abaixo são
+	 * o que transforma um número solto num documento que fecha pedido.
+	 */
+	it('com `usar_marca`, a proposta sai ASSINADA com o nome da empresa', async () => {
+		const espiao = montaDeps();
+		espiao.link = linkEntry({ usar_marca: true });
+		const app = await montaApp(espiao.deps);
+		const body = (
+			await app.inject({ url: `/api/public/quote/${SLUG}` })
+		).json();
+
+		expect(body.empresa).toBe('Laser do Zé');
+		await app.close();
+	});
+
+	it('sem marca, a página fica NEUTRA — e não quebra', async () => {
+		// A promessa de compatibilidade: link no ar sem `usar_marca` sai
+		// exatamente como sempre saiu, com `empresa` vazio em vez de ausente.
+		const espiao = montaDeps();
+		const app = await montaApp(espiao.deps);
+		const body = (
+			await app.inject({ url: `/api/public/quote/${SLUG}` })
+		).json();
+
+		expect(body.empresa).toBe('');
+		expect(espiao.marcasLidas).toEqual([]);
+		await app.close();
+	});
+
+	it('o WhatsApp do link chega à página, e só em DÍGITOS', async () => {
+		const espiao = montaDeps();
+		espiao.link = linkEntry({ whatsapp: '(11) 98888-7777' });
+		const app = await montaApp(espiao.deps);
+		const body = (
+			await app.inject({ url: `/api/public/quote/${SLUG}` })
+		).json();
+
+		expect(body.whatsapp).toBe('11988887777');
+		await app.close();
+	});
+
+	it('WhatsApp curto demais ou com marcação sai VAZIO, não quebrado', async () => {
+		// O valor é do dono do link e vai parar dentro de um `href` na página do
+		// cliente final dele. Melhor não oferecer contato do que oferecer um link
+		// quebrado — ou um vetor.
+		const espiao = montaDeps();
+		espiao.link = linkEntry({ whatsapp: '123' });
+		const app = await montaApp(espiao.deps);
+		expect(
+			(await app.inject({ url: `/api/public/quote/${SLUG}` })).json().whatsapp,
+		).toBe('');
+
+		// A garantia NÃO é "o número sai certo" — é que NADA além de dígito sai.
+		// Um telefone errado é problema do dono do link; marcação dentro de um
+		// `href` na página do cliente final dele seria problema nosso.
+		espiao.link = linkEntry({
+			whatsapp: 'javascript:alert(1)//5511988887777',
+		});
+		const res = await app.inject({ url: `/api/public/quote/${SLUG}` });
+		expect(res.json().whatsapp).toMatch(/^\d*$/);
+		expect(res.payload).not.toContain('javascript:');
+		expect(res.payload).not.toContain('alert');
+		await app.close();
+	});
+
+	it('o link sem WhatsApp continua sem WhatsApp (nada é inventado)', async () => {
+		const espiao = montaDeps();
+		const app = await montaApp(espiao.deps);
+		expect(
+			(await app.inject({ url: `/api/public/quote/${SLUG}` })).json().whatsapp,
+		).toBe('');
+		await app.close();
+	});
+
+	/**
+	 * ARMADILHA MEDIDA, e ela custou uma rodada: o `response` schema da ROTA é
+	 * uma SEGUNDA allow-list. O Fastify serializa por ele, e campo que o
+	 * controller devolve sem estar declarado lá some do JSON — sem erro, sem log,
+	 * sem 500. `empresa` e `whatsapp` saíram certos do controller e chegaram
+	 * ausentes no navegador exatamente por isso.
+	 *
+	 * Este teste olha o PAYLOAD SERIALIZADO (`res.payload`, a string que vai pelo
+	 * fio), e não o objeto: é a única camada onde o corte aparece.
+	 */
+	it('os campos novos sobrevivem ao SERIALIZADOR da rota, não só ao controller', async () => {
+		const espiao = montaDeps();
+		espiao.link = linkEntry({ usar_marca: true, whatsapp: '11988887777' });
+		const app = await montaApp(espiao.deps);
+		const res = await app.inject({ url: `/api/public/quote/${SLUG}` });
+
+		const cru = JSON.parse(res.payload) as Record<string, unknown>;
+		expect(Object.keys(cru)).toContain('empresa');
+		expect(Object.keys(cru)).toContain('whatsapp');
+		expect(cru.empresa).toBe('Laser do Zé');
+		expect(cru.whatsapp).toBe('11988887777');
 		await app.close();
 	});
 
@@ -964,7 +1241,12 @@ describe('defesa: IP', () => {
 	it('hashIp é estável e não é o IP', () => {
 		expect(hashIp('203.0.113.7')).toBe(hashIp('203.0.113.7'));
 		expect(hashIp('203.0.113.7')).not.toBe(hashIp('203.0.113.8'));
-		expect(hashIp('203.0.113.7')).not.toContain('203');
+		// Hex de 64 nibbles: o IP não sobrevive em lugar nenhum da saída. NÃO
+		// procurar o octeto '203' isolado — sem pimenta configurada o segredo é
+		// efêmero, então o hash muda a cada processo e '203' aparece por acaso em
+		// ~1,5% das execuções (62 janelas × 1/4096). Já reprovou uma vez.
+		expect(hashIp('203.0.113.7')).toMatch(/^[0-9a-f]{64}$/);
+		expect(hashIp('203.0.113.7')).not.toContain('203.0.113.7');
 	});
 });
 

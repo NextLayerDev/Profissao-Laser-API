@@ -116,7 +116,15 @@ const defaultDeps: ImageGalleryDeps = {
 	resolveBilling: resolveToolBilling,
 	settle: settleInvocation,
 	refund: refundInvocation,
-	redraw: redrawAsNanquim,
+	// `redrawAsNanquim` recebe (foto, assunto, signal) e devolve `RedrawOutcome`,
+	// cujo `png` é `null` quando a verificação estrutural falhou nas 2 tentativas
+	// — e isso NÃO é erro, é "a IA não conseguiu redesenhar direito". Nesse caso
+	// seguimos com a imagem original: vetorizar o que o aluno tem é melhor que
+	// abortar o run que ele já pagou.
+	redraw: async (png: Buffer) => {
+		const outcome = await redrawAsNanquim(png, 'photo');
+		return outcome.png ?? png;
+	},
 	vectorize: (customerId, input) =>
 		vectorizeService.vectorize(customerId, input),
 	setPaidFormats: (id, customerId, formats) =>
