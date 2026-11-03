@@ -633,6 +633,7 @@ CREATE TABLE IF NOT EXISTS "ConfiguracaoFiscal" (
     "cofins_situacao_tributaria"     TEXT,
     "percentual_aproximado_tributos" NUMERIC(5,2),
     "ibs_cbs_classificacao"          TEXT,
+    "difal_ativo"                    BOOLEAN NOT NULL DEFAULT false,
     "backup_automatico"              BOOLEAN              DEFAULT false,
     "dias_retencao_backup"           INTEGER,
     "observacoes"                    TEXT,
@@ -958,6 +959,48 @@ ALTER TABLE "Pedido" ADD COLUMN IF NOT EXISTS "producao_checklist" jsonb;
 ALTER TABLE "Company" ADD COLUMN IF NOT EXISTS "segmento" TEXT;
 ALTER TABLE "Company" ADD COLUMN IF NOT EXISTS "onboarding_data" JSONB;
 
+-- Guia de DIFAL (system_porteira 20261031_difal_gnre)
+ALTER TABLE "ConfiguracaoFiscal" ADD COLUMN IF NOT EXISTS "difal_ativo" BOOLEAN NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS "GuiaDifal" (
+    "id" TEXT NOT NULL,
+    "company_id" TEXT NOT NULL,
+    "nfe_id" TEXT NOT NULL,
+    "pedido_id" TEXT,
+    "emitente_id" TEXT,
+    "cnpj_emitente" TEXT,
+    "chave_nfe" TEXT,
+    "numero_nota" INTEGER,
+    "uf_destino" TEXT NOT NULL,
+    "tributo" TEXT NOT NULL,
+    "receita" TEXT NOT NULL,
+    "canal" TEXT NOT NULL,
+    "valor" DECIMAL(12,2) NOT NULL,
+    "valor_fcp" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "memoria" JSONB NOT NULL,
+    "regra_situacao" TEXT NOT NULL,
+    "ambiente" INTEGER NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'aguardando_nota',
+    "numero_recibo" TEXT,
+    "codigo_barras" TEXT,
+    "linha_digitavel" TEXT,
+    "pix_copia_cola" TEXT,
+    "pdf_base64" TEXT,
+    "motivo" TEXT,
+    "divergencia" TEXT,
+    "tentativas" INTEGER NOT NULL DEFAULT 0,
+    "proxima_tentativa" TIMESTAMP(3),
+    "emitida_em" TIMESTAMP(3),
+    "paga_em" TIMESTAMP(3),
+    "paga_por" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "GuiaDifal_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "GuiaDifal_nfe_id_tributo_key" ON "GuiaDifal"("nfe_id", "tributo");
+CREATE INDEX IF NOT EXISTS "GuiaDifal_company_id_created_at_idx" ON "GuiaDifal"("company_id", "created_at" DESC);
+CREATE INDEX IF NOT EXISTS "GuiaDifal_pedido_id_idx" ON "GuiaDifal"("pedido_id");
+CREATE INDEX IF NOT EXISTS "GuiaDifal_status_idx" ON "GuiaDifal"("status");
+
 -- ============== PRISMA MIGRATIONS BASELINE ==============
 -- Marca as migrations do Prisma como já aplicadas para que
 -- `prisma migrate deploy` no build do Vercel não falhe (P3005).
@@ -1001,3 +1044,6 @@ WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '2
 INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
 SELECT gen_random_uuid(), 'baseline', '20260420_add_company_onboarding', now(), 1
 WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20260420_add_company_onboarding');
+INSERT INTO "_prisma_migrations" ("id", "checksum", "migration_name", "finished_at", "applied_steps_count")
+SELECT gen_random_uuid(), 'baseline', '20261031_difal_gnre', now(), 1
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" WHERE "migration_name" = '20261031_difal_gnre');
