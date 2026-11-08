@@ -6,6 +6,23 @@ import {
 	optionValues,
 } from '../lib/previa-options.js';
 
+// ─── Layout marcado pelo aluno (opcional) ─────────────────────────────────
+// Caixa sobre a foto do produto, normalizada 0–1 (x, y = centro; w, h antes
+// da rotação; rot em graus, horário). Ver src/lib/previa-layout.ts.
+const caixaLayoutSchema = z.object({
+	x: z.number().min(0).max(1),
+	y: z.number().min(0).max(1),
+	w: z.number().min(0.03).max(1),
+	h: z.number().min(0.03).max(1),
+	rot: z.number().min(-180).max(180),
+});
+
+export const previaLayoutSchema = z.object({
+	logo: caixaLayoutSchema.nullable().optional(),
+	texto: caixaLayoutSchema.nullable().optional(),
+	texto2: caixaLayoutSchema.nullable().optional(),
+});
+
 // ─── LaserSettings (INPUT — validação estrita) ────────────────────────────
 // Campos discretos viram z.enum() — valor fora da lista → 400.
 // As listas de valores vêm de src/lib/previa-options.ts (fonte única).
@@ -54,6 +71,10 @@ export const laserSettingsSchema = z.object({
 	modoLentes: z.boolean(),
 	textoLenteDireita: z.string(),
 	textoLenteEsquerda: z.string(),
+	// Ausente/null = posição automática (tamanho/posicao/rotacao acima).
+	layout: previaLayoutSchema.nullable().optional(),
+	// 2º texto (frase, data…) — só entra com a caixa `layout.texto2`.
+	texto2: z.string().max(80).optional(),
 });
 
 export type LaserSettings = z.infer<typeof laserSettingsSchema>;
