@@ -20,7 +20,8 @@ import {
 } from '../lib/storage.js';
 import { TEXT_MODELS_CATALOG } from '../lib/text-models-catalog.js';
 import {
-	resolveCreation,
+	bankEntryFormats,
+	resolveFormat,
 	resolveVariationCount,
 	unidadesDaInvocacao,
 	variacoesAEntregar,
@@ -340,6 +341,7 @@ function injectModelOverrides(
 	variationCount: number,
 	bankSizeOverride?: { width: number; height: number },
 	clientSizeOverride?: { width: number; height: number } | 'native',
+	allowedFormats?: readonly string[],
 ): ToolDefinitionDoc {
 	const toolModel = validateModelId(
 		doc.model,
@@ -356,13 +358,29 @@ function injectModelOverrides(
 	const toolSystemPrompt = doc.system_prompt;
 	const toolTextSystemPrompt = doc.text_system_prompt;
 
-	const clientNative = clientSizeOverride === 'native';
-	const clientPx = clientNative ? undefined : clientSizeOverride;
-
-	// ── creations (Passo 1): resolve creation_id → {width, height}, sobrepondo
-	// image_width/height legado. Tool sem creations ignora o passo (legado). ──
+	// ── creations (Passo 1): resolve creation_id (+ modelo) → tamanho, molde e
+	// instrução de formato, sobrepondo image_width/height legado. Tool sem
+	// creations ignora o passo (legado). ──
 	const creations = doc.creations ?? [];
-	const creationSize = resolveCreation(doc, fields.creation_id);
+	const creationSize = resolveFormat(
+		doc,
+		fields.creation_id,
+		fields.creation_model_id,
+		allowedFormats,
+	);
+	/**
+	 * COM MOLDE, O TAMANHO É O DA PEÇA. A máscara é calculada sobre a arte
+	 * final: deixar o cliente pedir outra proporção esticaria a câmera para
+	 * fora do lugar. O pedido do cliente só vale em formato sem molde.
+	 */
+	const comMolde = !!creationSize.template;
+	const clientNative = !comMolde && clientSizeOverride === 'native';
+	const clientPx =
+		comMolde || clientSizeOverride === 'native'
+			? undefined
+			: clientSizeOverride;
+	const formatHint = creationSize.hint;
+	const maskTemplate = creationSize.mask ? creationSize.template : undefined;
 
 	const w = clientNative
 		? undefined
@@ -396,6 +414,8 @@ function injectModelOverrides(
 		hasSize ||
 		useRawPrompt ||
 		clientNative ||
+		!!formatHint ||
+		!!maskTemplate ||
 		variationCount > 1;
 	const hasTextOverride = !!toolTextModel || !!toolTextSystemPrompt;
 	if (
@@ -429,6 +449,12 @@ function injectModelOverrides(
 				}
 				if (useRawPrompt) params.raw_prompt = true;
 				if (variationCount > 1) params.variation_count = variationCount;
+				// Molde: só o `ai.generate_image` sabe aplicar (o estúdio tem o
+				// próprio contrato de tamanho e nenhuma tool com molde o usa).
+				if (n.block === 'ai.generate_image') {
+					if (formatHint) params.format_hint = formatHint;
+					if (maskTemplate) params.mask_template = maskTemplate;
+				}
 				return { ...n, params };
 			}
 			if (n.block === 'ai.text' && hasTextOverride) {
@@ -913,7 +939,12 @@ async function executarRun(
 		// Só licenciar não tem Passo 1: a arte já vem no tamanho dela.
 		if (!modoCarimbo) {
 			try {
-				resolveCreation(doc, fields.creation_id);
+				resolveFormat(
+					doc,
+					fields.creation_id,
+					fields.creation_model_id,
+					bankEntryFormats(selectedBankEntry?.data),
+				);
 			} catch (err) {
 				const message =
 					err instanceof ToolEngineError
@@ -1057,6 +1088,7 @@ async function executarRun(
 				variationCount,
 				bankImageSize(selectedBankEntry),
 				clientSize,
+				bankEntryFormats(selectedBankEntry?.data),
 			);
 		}
 

@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+	appendFormatHint,
+	applyTemplateMask,
+} from '../../lib/creation-template.js';
 import { type GenImageResult, generateToolImage } from '../../lib/image-gen.js';
 import type { ToolBlock } from '../types.js';
 
@@ -72,6 +76,39 @@ const aiGenerateImageSchema = z.object({
 	 * As N chamadas ao modelo rodam em paralelo; billing escala por variação.
 	 */
 	variation_count: z.number().int().min(1).max(4).optional(),
+	/**
+	 * Instrução de FORMATO (injetada pelo motor a partir do molde do formato
+	 * escolhido — `lib/creation-template.ts`). Vai colada no fim do prompt:
+	 * proporção física, cantos e as zonas que a IA deve deixar livres.
+	 */
+	format_hint: z.string().max(4_000).optional(),
+	/**
+	 * Molde a RECORTAR depois da geração (fora do contorno e zonas proibidas →
+	 * alfa 0). A IA não obedece geometria; a máscara obedece. Forma validada
+	 * no motor (`templateProblem`) antes de chegar aqui.
+	 */
+	mask_template: z
+		.object({
+			width_mm: z.number().positive(),
+			height_mm: z.number().positive(),
+			outline: z.enum(['rect', 'ellipse']).optional(),
+			corner_radius_mm: z.number().min(0).optional(),
+			safe_margin_mm: z.number().min(0).optional(),
+			zones: z
+				.array(
+					z.object({
+						label: z.string().optional(),
+						shape: z.enum(['rect', 'ellipse']),
+						x: z.number(),
+						y: z.number(),
+						w: z.number().positive(),
+						h: z.number().positive(),
+						r: z.number().min(0).optional(),
+					}),
+				)
+				.optional(),
+		})
+		.optional(),
 });
 
 export const aiGenerateImageBlock: ToolBlock<
@@ -110,21 +147,29 @@ export const aiGenerateImageBlock: ToolBlock<
 			rawPrompt: params.raw_prompt,
 			fit,
 		});
-		const images: GenImageResult[] =
+		const prompt = appendFormatHint(params.prompt, params.format_hint ?? '');
+		const generated: GenImageResult[] =
 			n === 1
-				? [
-						await generateToolImage(
-							params.prompt,
-							refs,
-							ctx.signal,
-							buildOpts(),
-						),
-					]
+				? [await generateToolImage(prompt, refs, ctx.signal, buildOpts())]
 				: await Promise.all(
 						Array.from({ length: n }, () =>
-							generateToolImage(params.prompt, refs, ctx.signal, buildOpts()),
+							generateToolImage(prompt, refs, ctx.signal, buildOpts()),
 						),
 					);
+		// Recorte do molde DEPOIS do resize: a máscara é calculada no tamanho
+		// final, então o contorno cai exatamente na borda da peça.
+		const mask = params.mask_template;
+		const images: GenImageResult[] = mask
+			? await Promise.all(
+					generated.map(async (g) => {
+						const png = await applyTemplateMask(g.png, mask);
+						return {
+							png,
+							pngBase64: `data:image/png;base64,${png.toString('base64')}`,
+						};
+					}),
+				)
+			: generated;
 		// Back-compat: png/pngBase64 = 1ª imagem (definition.output.primary/preview
 		// legados). `images` é o array completo p/ o novo output.images (Passo 3).
 		return {

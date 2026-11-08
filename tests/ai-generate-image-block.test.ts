@@ -70,6 +70,38 @@ describe('ai.generate_image', () => {
 		expect((out.png as Buffer).equals(out.images[0].png as Buffer)).toBe(true);
 	});
 
+	it('molde: cola a instrução de formato no prompt e recorta a câmera', async () => {
+		create.mockResolvedValue(imageReply());
+		const out = await run({
+			prompt: 'um gato astronauta',
+			width: 140,
+			height: 300,
+			format_hint: 'ÁREA LIVRE — câmera',
+			mask_template: {
+				width_mm: 70,
+				height_mm: 150,
+				zones: [{ label: 'câmera', shape: 'rect', x: 0, y: 0, w: 30, h: 30 }],
+			},
+		});
+		const body = create.mock.calls[0][0] as {
+			messages: { content: unknown }[];
+		};
+		expect(JSON.stringify(body.messages)).toContain(
+			'um gato astronauta\\n\\nÁREA LIVRE — câmera',
+		);
+		const sharp = (await import('sharp')).default;
+		const { data, info } = await sharp(out.png as Buffer)
+			.raw()
+			.toBuffer({ resolveWithObject: true });
+		expect(info.channels).toBe(4);
+		expect([info.width, info.height]).toEqual([140, 300]);
+		expect(data[(10 * info.width + 10) * 4 + 3]).toBe(0); // câmera vazia
+		expect(data[(250 * info.width + 70) * 4 + 3]).toBe(255); // miolo opaco
+		expect(out.pngBase64).toBe(
+			`data:image/png;base64,${(out.png as Buffer).toString('base64')}`,
+		);
+	});
+
 	it('gera N variações chamando o modelo N vezes (sequencial)', async () => {
 		create.mockResolvedValue(imageReply());
 		const out = await run({ prompt: 'copo', variation_count: 3 });
