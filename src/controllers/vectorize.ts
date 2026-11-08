@@ -12,6 +12,10 @@ import {
 } from '../lib/upvox-tools.js';
 import { parseVectorizeParams } from '../lib/vectorize.js';
 import { analyzeImage, type ImageProfile } from '../lib/vectorize-analyze.js';
+import {
+	type ImageKind,
+	vectorizeAuto,
+} from '../lib/vectorize-auto/pipeline.js';
 import { vectorRepository } from '../repositories/vector.js';
 import {
 	INVERT_UNSUPPORTED,
@@ -382,6 +386,148 @@ export const aiLineartController = async (
 		if (invocationId)
 			await settleInvocation(customerId, invocationId, authHeader);
 		return reply.status(201).send({ ...result, paidFormats });
+	} catch (err) {
+		if (invocationId && customerId)
+			await refundInvocation(customerId, invocationId, authHeader);
+		const status = (err as { status?: number })?.status;
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		return reply
+			.status(status && status >= 400 && status < 600 ? status : 500)
+			.send({ message });
+	}
+};
+
+/** Largura útil aceita no Automático (mm). Fora disso volta ao padrão. */
+const AUTO_WIDTH_MM = { min: 5, max: 1000 };
+
+/**
+ * Vetorização AUTOMÁTICA (fluxo único, sem níveis de modelo). Classifica foto ×
+ * logo, tenta o traço local no logo e só chama a IA se a checagem reprovar;
+ * na foto recorta o sujeito e desenha o nanquim com o modelo mais forte.
+ *
+ * Cobrada NA GERAÇÃO, como a line-art: o front invoca (debita) e manda o
+ * `invocation_id`; validamos → vetorizamos → gravamos → liquidamos. Qualquer
+ * falha ESTORNA. O resultado já sai com todos os formatos pagos.
+ */
+export const autoVectorizeController = async (
+	request: FastifyRequest,
+	reply: FastifyReply,
+) => {
+	const customerId = request.currentCustomer?.id;
+	const authHeader = request.headers.authorization;
+	let invocationId: string | null = null;
+
+	try {
+		if (!customerId) {
+			return reply.status(403).send({ message: 'Customer not found' });
+		}
+
+		let fileBuffer: Buffer | null = null;
+		let filename = 'image';
+		let mimetype = 'application/octet-stream';
+		const fields: Record<string, string> = {};
+		for await (const part of request.parts()) {
+			if (part.type === 'file') {
+				fileBuffer = await part.toBuffer();
+				filename = part.filename ?? 'image';
+				mimetype = part.mimetype;
+			} else {
+				fields[part.fieldname] = part.value as string;
+			}
+		}
+		if (!fileBuffer) {
+			return reply.status(400).send({ message: 'File is required' });
+		}
+
+		const gate = await resolveToolBilling(
+			customerId,
+			'vectorize',
+			fields.invocation_id ?? null,
+			authHeader,
+		);
+		if (gate.mode === 'reject') {
+			return reply.status(gate.status).send({ message: gate.message });
+		}
+		invocationId = gate.mode === 'paid' ? gate.invocationId : null;
+
+		const kind: ImageKind | undefined =
+			fields.kind === 'photo' || fields.kind === 'logo'
+				? fields.kind
+				: undefined;
+		const width = Number(fields.widthMm);
+		const widthMm =
+			Number.isFinite(width) &&
+			width >= AUTO_WIDTH_MM.min &&
+			width <= AUTO_WIDTH_MM.max
+				? width
+				: undefined;
+		const darkCup = fields.darkCup === 'true';
+
+		const auto = await vectorizeAuto({
+			buffer: fileBuffer,
+			kind,
+			darkCup,
+			widthMm,
+		});
+
+		const { data: result, error } = await vectorizeService.saveVectorized(
+			customerId,
+			{
+				buffer: fileBuffer,
+				filename,
+				mimetype,
+				svgContent: auto.svgContent,
+				params: {
+					preset: 'automatico',
+					mode: 'trace',
+					// A inversão posterior precisa saber se é foto (silhueta) ou logo
+					// (complemento geométrico).
+					subject: auto.kind,
+					darkCup,
+					widthMm: auto.widthMm,
+					route: auto.route,
+					engine: auto.engine,
+				},
+			},
+		);
+		if (error || !result) {
+			if (invocationId)
+				await refundInvocation(customerId, invocationId, authHeader);
+			invocationId = null;
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			return reply.status(500).send({ message });
+		}
+
+		// Geração pagou tudo → marca os 3 formatos como pagos (download não recobra).
+		let paidFormats = ['svg', 'png', 'dxf'];
+		try {
+			paidFormats = await vectorRepository.setPaidFormats(
+				result.id,
+				customerId,
+				paidFormats,
+			);
+		} catch {
+			// best-effort: se falhar, o cliente re-baixa e no máximo revalida grátis
+		}
+
+		if (invocationId)
+			await settleInvocation(customerId, invocationId, authHeader);
+		return reply.status(201).send({
+			...result,
+			paidFormats,
+			auto: {
+				kind: auto.kind,
+				kindSource: auto.kindSource,
+				engine: auto.engine,
+				route: auto.route,
+				aiAttempts: auto.aiAttempts,
+				backgroundRemoved: auto.backgroundRemoved,
+				darkCup,
+				widthMm: auto.widthMm,
+				heightMm: auto.heightMm,
+				timeMs: auto.stats.timeMs,
+			},
+		});
 	} catch (err) {
 		if (invocationId && customerId)
 			await refundInvocation(customerId, invocationId, authHeader);

@@ -10,6 +10,7 @@ import {
 } from '../controllers/vector.js';
 import {
 	aiLineartController,
+	autoVectorizeController,
 	downloadVectorFormatController,
 	exportVectorController,
 	invertVectorController,
@@ -309,6 +310,40 @@ export async function vectorRoute(server: FastifyInstance) {
 			},
 		},
 		aiLineartController,
+	);
+
+	server.post(
+		'/api/vectorize/auto',
+		{
+			preHandler: [authenticateVectorizacao],
+			schema: {
+				description: [
+					'Vetorização **Automática** (fluxo único, sem níveis de modelo).',
+					'Classifica foto × logo; no logo tenta o traço local e só usa IA se a',
+					'checagem de fidelidade reprovar; na foto recorta o sujeito e desenha',
+					'o nanquim com o modelo de imagem mais forte. Envio',
+					'**multipart/form-data** (campo `image`).',
+					'',
+					'Campos opcionais: `kind` (`photo`|`logo`, força o caminho),',
+					'`darkCup` (`true` = negativo p/ copo escuro), `widthMm` (5–1000).',
+					'',
+					'**Cobrada NA GERAÇÃO**: o front invoca (debita) e manda o',
+					'`invocation_id`; falha estorna. O resultado sai com todos os formatos pagos.',
+				].join('\n'),
+				consumes: ['multipart/form-data'],
+				response: {
+					201: vectorizeResultSchema,
+					400: ErrorSchema,
+					402: ErrorSchema,
+					403: ErrorSchema,
+					500: ErrorSchema,
+					502: ErrorSchema,
+				},
+				tags: ['Vectors'],
+				security: [{ bearerAuth: [] }],
+			},
+		},
+		autoVectorizeController,
 	);
 
 	server.post(

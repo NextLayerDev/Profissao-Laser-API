@@ -68,6 +68,55 @@ export const vectorizeService = {
 	},
 
 	/**
+	 * Grava um SVG já vetorizado (fluxo Automático): original, SVG, PNG e o
+	 * registro em "Meus vetores". Mesmo contrato de resposta de `vectorize`.
+	 */
+	async saveVectorized(
+		customerId: string,
+		input: {
+			buffer: Buffer;
+			filename: string;
+			mimetype: string;
+			svgContent: string;
+			params: Record<string, unknown>;
+		},
+	) {
+		return withCapture(async () => {
+			const { buffer, filename, mimetype, svgContent, params } = input;
+			const id = crypto.randomUUID();
+			const pngBuffer = await sharp(Buffer.from(svgContent)).png().toBuffer();
+			const [originalUrl, svgUrl, pngUrl] = await Promise.all([
+				uploadVectorOriginalImage(
+					buffer,
+					`${customerId}/${id}_original_${filename}`,
+					mimetype,
+				),
+				uploadSvgFile(svgContent, `${customerId}/${id}_${filename}.svg`),
+				uploadVectorPng(pngBuffer, `${customerId}/${id}_${filename}.png`),
+			]);
+
+			const record = await vectorRepository.create(customerId, {
+				original_name: filename,
+				original_url: originalUrl,
+				svg_url: svgUrl,
+				params,
+				png_url: pngUrl,
+			});
+
+			return {
+				...record,
+				svgContent,
+				originalName: filename,
+				isColor: false,
+				svgUrl,
+				pngUrl,
+				dxfContent: svgToDxf(svgContent),
+				paidFormats: (record as { paid_formats?: string[] }).paid_formats ?? [],
+			};
+		});
+	},
+
+	/**
 	 * Preview rápido e NÃO cobrado: reduz o input (~600px) p/ baratear a CPU,
 	 * roda o motor sem supersampling e devolve só o SVG inline — sem upload e sem
 	 * gravar no banco. Serve o feedback ao vivo dos sliders na vetorização.
