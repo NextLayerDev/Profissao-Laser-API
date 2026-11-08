@@ -1,3 +1,10 @@
+import {
+	activeModels,
+	buildFormatHint,
+	type ResolvedFormat,
+	templateProblem,
+	templateSizePx,
+} from './creation-template.js';
 import type { Creation, ToolDefinitionDoc } from './tool-definitions.js';
 import { ToolEngineError } from './tool-errors.js';
 
@@ -30,6 +37,80 @@ export function resolveCreation(
 		throw new ToolEngineError(400, 'Tipo de criação inválido.');
 	}
 	return { width: c.width, height: c.height };
+}
+
+/**
+ * O FORMATO COMPLETO do run: tamanho, molde, recorte e a instrução para a IA.
+ *
+ * `resolveCreation` responde só "qual W×H"; isto responde "que peça é essa".
+ * Roda as mesmas validações (e lança o mesmo 400) e acrescenta duas:
+ *
+ *  - **modelo** (`creation_model_id`): formato com biblioteca de modelos ativos
+ *    exige a escolha — capinha sem o celular é arte no escuro. Modelo
+ *    inexistente ou desligado → 400.
+ *  - **formatos do card** (`allowed`): o card do banco pode restringir em quais
+ *    formatos ele faz sentido (`data.formats`). Lista vazia = todos.
+ *
+ * Tudo antes do billing: erro aqui nunca custa voxxy.
+ */
+export function resolveFormat(
+	doc: Pick<ToolDefinitionDoc, 'creations'>,
+	creationId: string | undefined,
+	modelId?: string,
+	allowed?: readonly string[],
+): ResolvedFormat {
+	const size = resolveCreation(doc, creationId);
+	const c = (doc.creations ?? []).find((x) => x.id === creationId);
+	if (!c) return { ...size, mask: false, hint: '' };
+	if (allowed && allowed.length > 0 && !allowed.includes(c.id)) {
+		throw new ToolEngineError(
+			400,
+			'Este card não está disponível nesse formato.',
+		);
+	}
+	const models = activeModels(c);
+	let template = c.template;
+	let label = c.label;
+	if (models.length > 0) {
+		if (!modelId) throw new ToolEngineError(400, 'Escolha o modelo.');
+		const m = models.find((x) => x.id === modelId);
+		if (!m) throw new ToolEngineError(400, 'Modelo inválido.');
+		template = m.template;
+		label = `${c.label} · ${m.label}`;
+	}
+	if (template) {
+		const problem = templateProblem(template);
+		if (problem)
+			throw new ToolEngineError(400, `Formato mal cadastrado: ${problem}.`);
+	}
+	const longSide = Math.max(c.width, c.height);
+	return {
+		...(template ? templateSizePx(template, longSide) : size),
+		template,
+		mask: !!template && c.mask !== false,
+		hint: buildFormatHint(template, { label, extra: c.prompt_hint }),
+		label,
+	};
+}
+
+/**
+ * `data.formats` de um card do banco → lista de ids.
+ *
+ * Gravado como TEXTO separado por vírgula ("capinha,caneca-11oz"), não array:
+ * o editor clássico do banco só preserva string/number em `data`, e um array
+ * sumiria em silêncio no primeiro salvar por lá. Array também é aceito.
+ */
+export function bankEntryFormats(data: unknown): string[] {
+	const raw = (data as { formats?: unknown } | null)?.formats;
+	const list = Array.isArray(raw)
+		? raw
+		: typeof raw === 'string'
+			? raw.split(',')
+			: [];
+	return list
+		.filter((v): v is string => typeof v === 'string')
+		.map((v) => v.trim())
+		.filter((v) => v.length > 0);
 }
 
 /**

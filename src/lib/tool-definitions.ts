@@ -128,6 +128,63 @@ export interface Creation {
 	 * o motor passa a arte pelo removedor de fundo ANTES do carimbo.
 	 */
 	transparent?: boolean;
+	/**
+	 * MOLDE da peça (contorno + zonas proibidas, em mm). Com ele a arte sai na
+	 * proporção física, o prompt manda a IA deixar as zonas livres e o motor
+	 * recorta no pós. Ver `lib/creation-template.ts`.
+	 */
+	template?: CreationTemplate;
+	/**
+	 * VARIANTES do formato que o aluno escolhe (ex.: o modelo do celular na
+	 * Capinha). Cada uma traz o próprio molde; com modelos ativos, o run exige
+	 * `creation_model_id`. A biblioteca é dado da definition — o admin edita
+	 * sem migration.
+	 */
+	models?: CreationModel[];
+	/**
+	 * Aplica o recorte do molde no pós (fora do contorno e zonas → alfa 0).
+	 * Ausente = sim quando há molde. `false` deixa só a instrução no prompt
+	 * (caneca/copo de sangria total, onde a alça só pede "nada importante ali").
+	 */
+	mask?: boolean;
+	/** Instrução extra do admin para este formato, anexada ao prompt. */
+	prompt_hint?: string;
+}
+
+/** Zona proibida do molde (mm, origem no canto superior esquerdo da face). */
+export interface CreationZone {
+	/** Nome que vai para a IA e para o admin (ex.: "câmera", "alça"). */
+	label?: string;
+	shape: 'rect' | 'ellipse';
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	/** Raio dos cantos (mm) quando `rect`. */
+	r?: number;
+}
+
+/** Geometria física de uma peça. */
+export interface CreationTemplate {
+	width_mm: number;
+	height_mm: number;
+	/** Contorno: retângulo (com `corner_radius_mm`) ou elipse. Default `rect`. */
+	outline?: 'rect' | 'ellipse';
+	corner_radius_mm?: number;
+	/** Margem de segurança: só instrui a IA (não recorta). */
+	safe_margin_mm?: number;
+	zones?: CreationZone[];
+}
+
+/** Um modelo da biblioteca de um formato (ex.: "iPhone 17"). */
+export interface CreationModel {
+	/** Slug estável (ex.: `iphone-17`). */
+	id: string;
+	label: string;
+	/** Agrupa no seletor do aluno (ex.: "Apple", "Samsung"). */
+	brand?: string;
+	active?: boolean;
+	template: CreationTemplate;
 }
 
 export interface ToolDefinitionDoc {

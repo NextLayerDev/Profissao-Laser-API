@@ -49,6 +49,7 @@ import { templateRoute } from './routes/template.js';
 import { textModelsRoute } from './routes/text-models.js';
 import { toolAgentRoute } from './routes/tool-agent.js';
 import { toolBankRoute } from './routes/tool-bank.js';
+import { toolBankAssistRoute } from './routes/tool-bank-assist.js';
 import { toolBankSmartTemaRoute } from './routes/tool-bank-smart-tema.js';
 import { toolBankSummarizePromptRoute } from './routes/tool-bank-summarize-prompt.js';
 import { toolCollectionRoute } from './routes/tool-collection.js';
@@ -106,6 +107,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(licensedSellerRoute);
 	app.register(toolCollectionRoute);
 	app.register(toolBankSmartTemaRoute);
+	app.register(toolBankAssistRoute);
 	app.register(toolBankSummarizePromptRoute);
 	// Perfil curto do Orçamento: seis perguntas → os 31 campos. Não cobra, não
 	// grava e não chama modelo — é cadastro, não cotação.
