@@ -95,6 +95,41 @@ export function mergeIntoSingleCompoundPath(input: string): string {
 	return out;
 }
 
+/**
+ * "Inverter" da Comunidade Laser, idêntico: complemento GEOMÉTRICO = retângulo
+ * do viewBox com todas as formas como furos (`evenodd`), num path só. O laser e
+ * o Corel enxergam o negativo de verdade, não só a cor. Sem IA e sem re-traçar.
+ */
+export function invertSvgPolarity(input: string): string {
+	const svg = normalizeSvgForLaser(input);
+	let [x, y, w, h] = [0, 0, 100, 100];
+	const vb = svg.match(/viewBox="([^"]+)"/);
+	if (vb) {
+		const p = vb[1].split(/[\s,]+/).map(Number);
+		if (p.length === 4 && p.every((n) => Number.isFinite(n))) [x, y, w, h] = p;
+	}
+
+	const pathRe = /<path[^>]*?\bd="([^"]+)"[^>]*?(?:\/>|>)/gi;
+	const ds: string[] = [];
+	for (const m of svg.matchAll(pathRe)) {
+		const d = m[1].trim();
+		if (d) ds.push(d);
+	}
+	if (ds.length === 0) return svg;
+
+	const rectD = `M${x} ${y}H${x + w}V${y + h}H${x}Z`;
+	const inverted = `<path fill="${detectInk(svg)}" fill-rule="evenodd" d="${rectD} ${ds.join(' ')}"/>`;
+	let out = svg
+		.replace(/<path\b[^>]*?\/>/gi, '')
+		.replace(/<path\b[^>]*?>[\s\S]*?<\/path>/gi, '');
+	if (/<\/svg>/i.test(out)) {
+		out = out.replace(/<\/svg>/i, `${inverted}</svg>`);
+	} else {
+		out = out.replace(/(<svg[^>]*>)/i, `$1${inverted}`);
+	}
+	return normalizeInkToBlack(out);
+}
+
 /** Paths/nós para as estatísticas (o `Z` de fechamento não conta como nó). */
 export function svgStats(svgContent: string) {
 	return {

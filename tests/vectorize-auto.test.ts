@@ -23,7 +23,10 @@ import {
 	VECTORIZE_AI_MODEL,
 	vectorizeAuto,
 } from '../src/lib/vectorize-auto/pipeline.js';
-import { finalizeSvg } from '../src/lib/vectorize-auto/svg-finalize.js';
+import {
+	finalizeSvg,
+	invertSvgPolarity,
+} from '../src/lib/vectorize-auto/svg-finalize.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -151,5 +154,24 @@ describe('motor laser portado', () => {
 		expect(out).toMatch(/height="50mm"/);
 		expect(out).toMatch(/fill="#000000"/);
 		expect(allSubpathsClosed(out)).toBe(true);
+	});
+});
+
+describe('inverter (idêntico ao da Comunidade Laser)', () => {
+	it('vira o retângulo do viewBox com a arte como furos, num path só', () => {
+		const svg =
+			'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><path fill="#000000" d="M10 10 L50 10 L50 50 Z"/><path fill="#000000" d="M100 10 L150 10 L150 50 Z"/></svg>';
+		const out = invertSvgPolarity(svg);
+		const paths = out.match(/<path\b[^>]*>/g) ?? [];
+		expect(paths).toHaveLength(1);
+		expect(paths[0]).toMatch(/fill-rule="evenodd"/);
+		expect(paths[0]).toMatch(/fill="#000000"/);
+		expect(paths[0]).toMatch(/d="M0 0H200V100H0Z /);
+	});
+
+	it('sem paths devolve o SVG como está', () => {
+		const svg =
+			'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
+		expect(invertSvgPolarity(svg)).not.toMatch(/<path/);
 	});
 });
