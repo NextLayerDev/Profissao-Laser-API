@@ -159,7 +159,7 @@ describe('ai.generate_image', () => {
 			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 			expect(url).toBe('https://openrouter.ai/api/v1/images');
 			const body = JSON.parse(init.body as string);
-			expect(body.model).toBe('google/gemini-3.1-flash-image');
+			expect(body.model).toBe('google/gemini-3-pro-image-preview');
 			expect(body.prompt).toBe('copo azul');
 			expect(body.input_references).toBeUndefined();
 			expect(body.aspect_ratio).toBeUndefined();

@@ -173,27 +173,15 @@ describe('generateToolImage — dimensão final exata via /v1/images (raw_prompt
 		it('miniatura 512×512 desce até a menor faixa QUE O MODELO OFERECE', async () => {
 			await mockModelOutput(1024, 1024);
 			await generateToolImage('copo', [], undefined, {
-				model: 'google/gemini-3-pro-image-preview',
 				width: 512,
 				height: 512,
 				rawPrompt: true,
 			});
-			// O Pro só declara ['1K','2K','4K'] — não existe '512' para comprar. A
-			// escolha sai da lista do modelo, nunca da tabela de faixas: pedir uma
-			// faixa que o modelo não aceita é erro 400 no provedor, não economia.
+			// O padrão (`gemini-3-pro-image-preview`) só declara ['1K','2K','4K'] —
+			// não existe '512' para comprar. A escolha sai da lista do modelo, nunca
+			// da tabela de faixas: pedir uma faixa que o modelo não aceita é erro
+			// 400 no provedor, não economia.
 			expect(corpoEnviado().resolution).toBe('1K');
-		});
-
-		it('o padrão (3.1 Flash) oferece 512 e a miniatura compra 512', async () => {
-			await mockModelOutput(512, 512);
-			await generateToolImage('copo', [], undefined, {
-				width: 512,
-				height: 512,
-				rawPrompt: true,
-			});
-			const body = corpoEnviado();
-			expect(body.model).toBe('google/gemini-3.1-flash-image');
-			expect(body.resolution).toBe('512');
 		});
 
 		it('alvo maior que toda faixa disponível ainda pede o topo', async () => {

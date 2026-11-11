@@ -135,6 +135,24 @@ export interface TextModelEntry {
 	disableReasoning?: boolean;
 }
 
+/**
+ * Piso de `max_tokens` para modelo `disableReasoning` (o DeepSeek). Mesmo com
+ * `reasoning:{enabled:false}`, o A/B de 2026-11-11 mediu até ~640 tokens de
+ * raciocínio num texto de 120 palavras — com um teto baixo a resposta sai
+ * cortada. Abaixo disto o pedido sobe para o piso; acima, vale o pedido.
+ */
+export const PISO_MAX_TOKENS_SEM_RACIOCINIO = 1_200;
+
+/** O `max_tokens` que vai ao provedor: o pedido, com o piso do modelo. */
+export function maxTokensDoModelo(
+	model: Pick<TextModelEntry, 'disableReasoning'>,
+	pedido: number,
+): number {
+	return model.disableReasoning
+		? Math.max(pedido, PISO_MAX_TOKENS_SEM_RACIOCINIO)
+		: pedido;
+}
+
 export const TEXT_MODELS_CATALOG: ReadonlyArray<TextModelEntry> = [
 	{
 		id: 'deepseek/deepseek-v4-flash',

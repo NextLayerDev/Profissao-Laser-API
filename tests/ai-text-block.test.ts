@@ -60,6 +60,24 @@ describe('ai.text', () => {
 		expect(msgs[0]).toEqual({ role: 'system', content: 'você é um redator' });
 	});
 
+	it('DeepSeek: max_tokens baixo sobe para o piso de 1200 (o raciocínio corta a resposta)', async () => {
+		create.mockResolvedValue(reply('ok'));
+		await run({ user: 'oi', max_tokens: 300 });
+		const [body] = create.mock.calls[0] as [Record<string, unknown>];
+		expect(body.max_tokens).toBe(1200);
+	});
+
+	it('Claude: max_tokens pedido vai como veio, sem piso', async () => {
+		create.mockResolvedValue(reply('ok'));
+		await run({
+			user: 'oi',
+			max_tokens: 300,
+			model: 'anthropic/claude-sonnet-5',
+		});
+		const [body] = create.mock.calls[0] as [Record<string, unknown>];
+		expect(body.max_tokens).toBe(300);
+	});
+
 	it('Claude: system fixo PRIMEIRO e com cache_control; o pedido vem depois', async () => {
 		create.mockResolvedValue(reply('ok'));
 		await run({

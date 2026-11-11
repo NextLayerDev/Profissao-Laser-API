@@ -7,6 +7,7 @@ import {
 } from '../openrouter-custo.js';
 import {
 	findTextModel,
+	maxTokensDoModelo,
 	TEXT_MODELS_CATALOG,
 	type TextModelEntry,
 } from '../text-models-catalog.js';
@@ -312,7 +313,7 @@ export async function chamarModelo(o: ChamadaOpts): Promise<ChamadaResult> {
 		model: o.model.id,
 		messages,
 		temperature: o.temperature,
-		max_tokens: o.maxTokens,
+		max_tokens: maxTokensDoModelo(o.model, o.maxTokens),
 		...(o.json ? { response_format: { type: 'json_object' } } : {}),
 		// Ver `raciocinio` em `OpcoesDaChamada`. `padrao`/ausente não manda nada,
 		// que é o comportamento de sempre — só quem DECLARA muda de rota.

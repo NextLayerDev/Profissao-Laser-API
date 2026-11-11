@@ -47,9 +47,16 @@ afterEach(() => {
 	create.mockReset();
 });
 
-describe('edições simples vão ao modelo leve, a 1K, com tamanho explícito', () => {
-	for (const id of ['ai.backgroundRemoval', 'ai.colorize', 'ai.restoration']) {
-		it(`${id}: /v1/images com flash-lite, 4:3 e 1K; saída na proporção da foto`, async () => {
+// O modelo de cada edição é o que ganhou o A/B dela (`EDIT_IMAGE_MODELS`).
+const EDICOES = [
+	['ai.backgroundRemoval', 'google/gemini-3.1-flash-image'],
+	['ai.colorize', 'google/gemini-3.1-flash-lite-image'],
+	['ai.restoration', 'google/gemini-3.1-flash-image'],
+] as const;
+
+describe('edições simples vão ao modelo do A/B, a 1K, com tamanho explícito', () => {
+	for (const [id, modelo] of EDICOES) {
+		it(`${id}: /v1/images com ${modelo}, 4:3 e 1K; saída na proporção da foto`, async () => {
 			const fetchMock = vi
 				.fn()
 				.mockResolvedValue(await respostaDoModelo(1184, 864));
@@ -64,7 +71,7 @@ describe('edições simples vão ao modelo leve, a 1K, com tamanho explícito', 
 			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 			expect(url).toBe('https://openrouter.ai/api/v1/images');
 			const body = JSON.parse(init.body as string);
-			expect(body.model).toBe('google/gemini-3.1-flash-lite-image');
+			expect(body.model).toBe(modelo);
 			expect(body.resolution).toBe('1K');
 			expect(body.aspect_ratio).toBe('4:3');
 			expect(body.user).toBeUndefined();
@@ -76,4 +83,36 @@ describe('edições simples vão ao modelo leve, a 1K, com tamanho explícito', 
 			expect([meta.width, meta.height]).toEqual([1024, 768]);
 		});
 	}
+});
+
+describe('image.removeBackground: fundo complexo cai na IA', () => {
+	it('o fallback de IA usa o modelo de remover fundo, a 1K', async () => {
+		// Ruído em toda a imagem: a borda não é uniforme, o chroma-key não serve.
+		const w = 400;
+		const h = 300;
+		const raw = Buffer.alloc(w * h * 3);
+		for (let i = 0; i < raw.length; i++)
+			raw[i] = (i * 97 + (i >> 3) * 31) % 256;
+		const ruido = await sharp(raw, {
+			raw: { width: w, height: h, channels: 3 },
+		})
+			.png()
+			.toBuffer();
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue(await respostaDoModelo(1184, 864));
+		vi.stubGlobal('fetch', fetchMock);
+
+		await bloco('image.removeBackground').run(
+			{ customerId: 'c', toolKey: 'tirar_fundo' },
+			bloco('image.removeBackground').paramsSchema.parse({ image: ruido }),
+		);
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const body = JSON.parse(
+			(fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string,
+		);
+		expect(body.model).toBe('google/gemini-3.1-flash-image');
+		expect(body.resolution).toBe('1K');
+	});
 });

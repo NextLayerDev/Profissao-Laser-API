@@ -148,11 +148,12 @@ export const removeBgBlock = block(
 		}
 
 		// 2) Fundo complexo (ou chroma-key não resolveu) → IA isola em branco e
-		//    o chroma-key tira o branco. Modelo leve: é recorte, não criação.
+		//    o chroma-key tira o branco. Recorte, não criação: `editarImagemLeve`.
 		try {
 			const gen = await editarImagemLeve(
 				'Recorte com precisão o sujeito principal (pessoa/objeto) e coloque-o SOZINHO sobre fundo BRANCO PURO (#FFFFFF), totalmente liso, sem sombra. Preserve todas as bordas, cabelo e detalhes; não altere o sujeito.',
 				p.image,
+				'remover_fundo',
 				{ signal: ctx.signal, atribuicao: atribuicaoDe(ctx) },
 			);
 			const rg = await loadRaster(gen.png);
@@ -173,8 +174,9 @@ export const removeBgBlock = block(
 
 /**
  * As três edições abaixo são SIMPLES — o mesmo objeto sem fundo, a mesma foto
- * com cor ou sem risco — e vão ao modelo leve (`editarImagemLeve`), a 1K e com
- * o tamanho da foto como parâmetro. Antes iam ao padrão do catálogo (o Pro).
+ * com cor ou sem risco — e vão pelo `editarImagemLeve`, a 1K e com o tamanho
+ * da foto como parâmetro, cada uma no modelo que ganhou o A/B dela
+ * (`EDIT_IMAGE_MODELS`). Antes iam ao padrão do catálogo (o Pro).
  */
 const atribuicaoDe = (ctx: BlockRunContext) => ({ toolKey: ctx.toolKey });
 
@@ -187,6 +189,7 @@ export const backgroundRemovalBlock = block(
 		editarImagemLeve(
 			'Remova completamente o fundo desta imagem, deixando o objeto principal sobre fundo BRANCO sólido. Não altere o objeto.',
 			p.image,
+			'remover_fundo',
 			{ signal: ctx.signal, atribuicao: atribuicaoDe(ctx) },
 		),
 );
@@ -200,6 +203,7 @@ export const colorizeBlock = block(
 		editarImagemLeve(
 			'Colorize esta foto em preto e branco com cores realistas e naturais, preservando todos os detalhes.',
 			p.image,
+			'colorir',
 			{ signal: ctx.signal, atribuicao: atribuicaoDe(ctx) },
 		),
 );
@@ -213,6 +217,7 @@ export const restorationBlock = block(
 		editarImagemLeve(
 			'Restaure e melhore esta foto antiga/danificada: remova riscos e ruído, recupere nitidez e detalhes, mantendo a aparência original.',
 			p.image,
+			'restaurar',
 			{ signal: ctx.signal, atribuicao: atribuicaoDe(ctx) },
 		),
 );

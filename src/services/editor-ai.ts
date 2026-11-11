@@ -190,10 +190,11 @@ class EditorAiService {
 		}
 	}
 
-	// ── /editor/remove-background — modelo leve via OpenRouter `/v1/images` ──
-	// Recorte não é criação: vai ao Lite (`LIGHT_EDIT_IMAGE_MODEL_ID`, ~US$ 0,035
-	// a 1K) e não ao `EDITOR_MODEL` (Pro, ~US$ 0,13), com o tamanho da foto como
-	// parâmetro. A edição com máscara/prompt (`generateOrEdit`) continua no Pro.
+	// ── /editor/remove-background — OpenRouter `/v1/images`, 1K ──────────────
+	// Recorte não é criação: vai ao modelo que ganhou o A/B de remover fundo
+	// (`EDIT_IMAGE_MODELS.remover_fundo`, US$ 0,068) e não ao `EDITOR_MODEL` (Pro
+	// sem tamanho, ~US$ 0,137), com o tamanho da foto como parâmetro. A edição
+	// com máscara/prompt (`generateOrEdit`) continua no Pro.
 	// O prompt vai cru (`rawPrompt`): ele já é a instrução inteira, como antes.
 	async removeBackground(
 		body: RemoveBackgroundRequest,
@@ -212,6 +213,7 @@ class EditorAiService {
 			const { pngBase64 } = await editarImagemLeve(
 				createRemoveBackgroundPrompt(),
 				Buffer.from(base64, 'base64'),
+				'remover_fundo',
 				{ rawPrompt: true, atribuicao },
 			);
 			return { imageBase64: pngBase64 };

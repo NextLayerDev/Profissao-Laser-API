@@ -79,12 +79,13 @@ export interface ImageModelEntry {
 export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 	{
 		id: 'google/gemini-3-pro-image-preview',
-		label: 'Gemini 3 Pro Image · Nano Banana Pro (topo laser)',
+		label: 'Gemini 3 Pro Image · Nano Banana Pro (padrão laser)',
 		bestFor: ['laser', 'vector'],
 		speed: 'medium',
 		quality: 'top',
 		notes:
-			'Topo de acabamento da família Gemini. Forte em ilustração 2D limpa, alto contraste, sem cinza — o "look laser". Custa ~2× o Flash (US$ 0,13–0,24 por imagem): escolha quando o acabamento justificar. Pode engessar casos fotorrealistas ou com muito texto na imagem.',
+			'Modelo padrão atual. Forte em ilustração 2D limpa, alto contraste, sem cinza — o "look laser". Pode engessar casos fotorrealistas ou com muito texto na imagem.',
+		default: true,
 		apiAspectRatios: [
 			'1:1',
 			'2:3',
@@ -158,13 +159,12 @@ export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 	},
 	{
 		id: 'google/gemini-3.1-flash-image',
-		label: 'Gemini 3.1 Flash Image · Nano Banana 2 (padrão)',
+		label: 'Gemini 3.1 Flash Image · Nano Banana 2 (rápido)',
 		bestFor: ['laser', 'photoreal', 'poster'],
 		speed: 'fast',
 		quality: 'high',
 		notes:
-			'Modelo padrão. Tier Flash do Nano Banana 2: bem mais rápido e cerca de metade do preço do Pro (US$ 0,07 por imagem a 1K), com qualidade geral alta. Melhor equilíbrio velocidade/qualidade para tool de cliente. Único da família com presets de proporção extrema (até 8:1/1:8) — bom pra formatos wrap bem largos.',
-		default: true,
+			'Tier Flash do Nano Banana 2: bem mais rápido e barato que o Pro, com qualidade geral alta. Melhor equilíbrio velocidade/qualidade para tool de cliente. Único da família com presets de proporção extrema (até 8:1/1:8) — bom pra formatos wrap bem largos.',
 		apiAspectRatios: [
 			'1:1',
 			'1:4',
@@ -266,16 +266,28 @@ export function getDefaultImageModel(): ImageModelEntry {
 	);
 }
 
+/** As edições simples de foto que vão pelo `editarImagemLeve`. */
+export type EdicaoDeFoto = 'remover_fundo' | 'colorir' | 'restaurar';
+
 /**
- * Modelo das EDIÇÕES SIMPLES de foto: remover fundo, colorir e restaurar.
+ * O MODELO DE CADA EDIÇÃO SIMPLES — escolhido por A/B, não por preço.
  *
- * O Pro custava US$ 0,13 por edição em que o aluno só quer o mesmo objeto sem
- * o fundo, ou a mesma foto com cor. O Lite faz isso por ~US$ 0,035 a 1K — a
- * entrega dessas ferramentas nunca passou de ~1K, então não há pixel perdido.
- * Quem chama passa pelo `/v1/images` com tamanho explícito (`editarImagemLeve`
- * em `image-gen.ts`), para a faixa de resolução ser parâmetro e não sorte.
+ * Antes as três iam ao padrão do catálogo (o Pro) pelo `/chat/completions`
+ * sem tamanho: ~US$ 0,137 por edição a 1024×1024. Agora vão pelo `/v1/images`
+ * a 1K com tamanho explícito, cada uma no modelo que ganhou o teste cego de
+ * 2026-11-11 (4 casos reais por edição, notas do João):
+ *
+ *   remover_fundo  3.1 Flash       4/4 boa  US$ 0,068  (Lite e Pro erraram o copo)
+ *   colorir        3.1 Flash Lite  4/4 boa  US$ 0,034  (os três empataram)
+ *   restaurar      3.1 Flash       3/3 boa  US$ 0,068  (Pro "aceitável", Lite errou 1)
+ *
+ * Trocar um destes sem refazer o A/B é trocar qualidade por palpite.
  */
-export const LIGHT_EDIT_IMAGE_MODEL_ID = 'google/gemini-3.1-flash-lite-image';
+export const EDIT_IMAGE_MODELS: Readonly<Record<EdicaoDeFoto, string>> = {
+	remover_fundo: 'google/gemini-3.1-flash-image',
+	colorir: 'google/gemini-3.1-flash-lite-image',
+	restaurar: 'google/gemini-3.1-flash-image',
+};
 
 /**
  * Devolve o id do modelo padrão do catálogo. Usado como fallback quando uma

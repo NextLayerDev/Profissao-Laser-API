@@ -1,9 +1,10 @@
 import sharp from 'sharp';
 import {
+	EDIT_IMAGE_MODELS,
+	type EdicaoDeFoto,
 	findImageModel,
 	getDefaultImageModelId,
 	type ImageModelEntry,
-	LIGHT_EDIT_IMAGE_MODEL_ID,
 } from './image-models-catalog.js';
 import { type GeminiImageMessage, openrouter } from './openrouter.js';
 import {
@@ -817,18 +818,18 @@ export async function generateToolImage(
 	return { png, pngBase64 };
 }
 
-/** Lado maior da entrega das edições leves: a faixa `1K` do modelo Lite. */
+/** Lado maior da entrega das edições simples: a faixa `1K`. */
 const LADO_EDICAO_LEVE = 1024;
 
 /**
- * EDIÇÃO SIMPLES DE FOTO (remover fundo, colorir, restaurar) no modelo leve.
+ * EDIÇÃO SIMPLES DE FOTO (remover fundo, colorir, restaurar), no modelo que
+ * ganhou o A/B daquela edição (`EDIT_IMAGE_MODELS`).
  *
  * Vai pelo `/v1/images` com TAMANHO EXPLÍCITO: a proporção da foto do aluno,
- * com o lado maior em no máximo 1024 px (foto menor que isso volta no tamanho
- * dela). Assim o `aspect_ratio` e a faixa `1K` viajam como parâmetro, a saída
- * não sai quadrada nem cortada, e o `resize` final só reduz. Antes estas
- * edições iam ao Pro pelo `/chat/completions`, sem tamanho nenhum, e voltavam
- * em ~1K do mesmo jeito — só que pelo dobro do preço ou mais.
+ * com o lado maior em 1024 px. Assim o `aspect_ratio` e a faixa `1K` viajam
+ * como parâmetro e a saída não sai quadrada nem cortada. Antes estas edições
+ * iam ao Pro pelo `/chat/completions`, sem tamanho nenhum, e voltavam em
+ * ~1024×1024 por ~US$ 0,137 — o tamanho de entrega é o mesmo de antes.
  *
  * `rawPrompt` = o prompt vai cru (sem o system de aderência do gerador), para
  * quem já manda o prompt completo, como o editor.
@@ -836,6 +837,7 @@ const LADO_EDICAO_LEVE = 1024;
 export async function editarImagemLeve(
 	prompt: string,
 	image: Buffer,
+	edicao: EdicaoDeFoto,
 	opts?: {
 		signal?: AbortSignal;
 		rawPrompt?: boolean;
@@ -847,10 +849,7 @@ export async function editarImagemLeve(
 	try {
 		const meta = await sharp(image).metadata();
 		if (meta.width && meta.height) {
-			const escala = Math.min(
-				1,
-				LADO_EDICAO_LEVE / Math.max(meta.width, meta.height),
-			);
+			const escala = LADO_EDICAO_LEVE / Math.max(meta.width, meta.height);
 			width = Math.max(64, Math.round(meta.width * escala));
 			height = Math.max(64, Math.round(meta.height * escala));
 		}
@@ -858,7 +857,7 @@ export async function editarImagemLeve(
 		// Sem metadata, o provedor decide o formato — a edição ainda sai.
 	}
 	return generateToolImage(prompt, [image], opts?.signal, {
-		model: LIGHT_EDIT_IMAGE_MODEL_ID,
+		model: EDIT_IMAGE_MODELS[edicao],
 		formatoReal: true,
 		rawPrompt: opts?.rawPrompt,
 		width,

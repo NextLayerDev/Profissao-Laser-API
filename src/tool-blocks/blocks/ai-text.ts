@@ -8,6 +8,7 @@ import {
 	usuarioOpenRouter,
 } from '../../lib/openrouter-custo.js';
 import {
+	maxTokensDoModelo,
 	resolveTextModel,
 	type TextModelEntry,
 } from '../../lib/text-models-catalog.js';
@@ -81,7 +82,7 @@ async function complete(
 			model: model.id,
 			messages,
 			temperature: params.temperature,
-			max_tokens: params.max_tokens,
+			max_tokens: maxTokensDoModelo(model, params.max_tokens),
 			...(useJsonFormat ? { response_format: { type: 'json_object' } } : {}),
 			...(model.disableReasoning ? { reasoning: { enabled: false } } : {}),
 			...usuarioOpenRouter(atribuicao.tenantId),
