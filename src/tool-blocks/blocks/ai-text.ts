@@ -2,6 +2,13 @@ import { z } from 'zod';
 import { extractJson } from '../../lib/llm-json.js';
 import { openrouter } from '../../lib/openrouter.js';
 import {
+	type AtribuicaoOpenRouter,
+	systemComCache,
+	tituloOpenRouter,
+	usuarioOpenRouter,
+} from '../../lib/openrouter-custo.js';
+import {
+	maxTokensDoModelo,
 	resolveTextModel,
 	type TextModelEntry,
 } from '../../lib/text-models-catalog.js';
@@ -55,26 +62,36 @@ async function complete(
 	params: AiTextParams,
 	useJsonFormat: boolean,
 	signal: AbortSignal,
+	atribuicao: AtribuicaoOpenRouter,
 ): Promise<string> {
-	const messages: { role: 'system' | 'user'; content: string }[] = [];
+	// O system (fixo, da definition) vai PRIMEIRO e com cache no Claude; o
+	// prompt montado com o que o aluno mandou vem depois. Ver `systemComCache`.
+	const messages: { role: 'system' | 'user'; content: unknown }[] = [];
 	if (params.system.trim()) {
-		messages.push({ role: 'system', content: params.system });
+		messages.push({
+			role: 'system',
+			content: systemComCache(model.id, params.system),
+		});
 	}
 	messages.push({ role: 'user', content: params.user });
 
 	const completion = await openrouter.chat.completions.create(
+		// `cache_control`, `reasoning` e `user` são extensões do OpenRouter fora
+		// dos tipos do SDK — mesmo cast isolado que `agent-team/llm.ts` usa.
 		{
 			model: model.id,
 			messages,
 			temperature: params.temperature,
-			max_tokens: params.max_tokens,
+			max_tokens: maxTokensDoModelo(model, params.max_tokens),
 			...(useJsonFormat ? { response_format: { type: 'json_object' } } : {}),
-		},
+			...(model.disableReasoning ? { reasoning: { enabled: false } } : {}),
+			...usuarioOpenRouter(atribuicao.tenantId),
+		} as never,
 		{
 			signal,
 			headers: {
 				'HTTP-Referer': 'https://profissaolaser.com',
-				'X-Title': 'Profissão Laser - Tools',
+				'X-Title': tituloOpenRouter(atribuicao.toolKey, 'Tools'),
 			},
 		},
 	);
@@ -107,9 +124,16 @@ export const aiTextBlock: ToolBlock<AiTextParams> = {
 			? AbortSignal.any([ctx.signal, timeout])
 			: timeout;
 
+		const atribuicao = { toolKey: ctx.toolKey };
 		let text: string;
 		try {
-			text = await complete(model, params, params.json && model.json, signal);
+			text = await complete(
+				model,
+				params,
+				params.json && model.json,
+				signal,
+				atribuicao,
+			);
 		} catch (err) {
 			const e = err as { status?: number; code?: number; name?: string };
 			if (err instanceof ToolEngineError) throw err;
@@ -119,7 +143,7 @@ export const aiTextBlock: ToolBlock<AiTextParams> = {
 			const isBadRequest =
 				typeof e?.status === 'number' && e.status >= 400 && e.status < 500;
 			if (params.json && model.json && isBadRequest) {
-				text = await complete(model, params, false, signal);
+				text = await complete(model, params, false, signal, atribuicao);
 			} else if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
 				throw new ToolEngineError(504, 'Tempo esgotado na resposta da IA.');
 			} else if (e?.status === 429 || e?.code === 429) {

@@ -79,6 +79,47 @@ describe('ai.generate_image', () => {
 		expect(out.pngBase64).toBe(out.images[0].pngBase64);
 	});
 
+	it('uma variação que falha não joga fora as que saíram (allSettled)', async () => {
+		const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		create
+			.mockResolvedValueOnce(imageReply())
+			.mockRejectedValueOnce(Object.assign(new Error('rate'), { status: 429 }))
+			.mockResolvedValueOnce(imageReply());
+		const out = await run({ prompt: 'copo', variation_count: 3 });
+		expect(create).toHaveBeenCalledTimes(3);
+		expect(out.images).toHaveLength(2);
+		expect(out.pngBase64).toBe(out.images[0].pngBase64);
+		// O caso fica no log: o upvox não estorna parcial (cobrança cheia).
+		expect(aviso).toHaveBeenCalledWith(
+			expect.stringContaining('variações parciais'),
+			expect.objectContaining({ pedidas: 3, entregues: 2 }),
+		);
+		aviso.mockRestore();
+	});
+
+	it('se NENHUMA variação sai, o run falha (e o controller estorna tudo)', async () => {
+		create.mockRejectedValue(Object.assign(new Error('rate'), { status: 429 }));
+		await expect(run({ prompt: 'copo', variation_count: 2 })).rejects.toThrow(
+			'Limite de requisições',
+		);
+	});
+
+	it('atribui o gasto: X-Title com a key da tool, sem dado do aluno', async () => {
+		create.mockResolvedValue(imageReply());
+		await aiGenerateImageBlock.run(
+			{ customerId: 'cust-1', toolKey: 'prompts_magicos' },
+			aiGenerateImageBlock.paramsSchema.parse({ prompt: 'copo' }) as never,
+		);
+		const [body, opts] = create.mock.calls[0] as [
+			Record<string, unknown>,
+			{ headers: Record<string, string> },
+		];
+		expect(body.user).toBeUndefined();
+		expect(opts.headers['X-Title']).toBe('Profissão Laser - prompts_magicos');
+		// Nunca o aluno: só o tenant.
+		expect(JSON.stringify(body)).not.toContain('cust-1');
+	});
+
 	it('rejeita variation_count fora de [1,4] no schema', () => {
 		expect(() =>
 			aiGenerateImageBlock.paramsSchema.parse({

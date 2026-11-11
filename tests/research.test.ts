@@ -2633,6 +2633,8 @@ describe('um especialista, do ponto de vista do relógio e do dinheiro', () => {
 		const r = await rodarAgente(
 			spec({
 				nome: 'Estrategista de Negócio',
+				// Redator de qualidade `top`: o freio é sobre ele, não sobre o padrão.
+				modelo: 'anthropic/claude-sonnet-5',
 				saida: '{"nota":0}',
 				maxTokens: 4_000,
 				fase: 'sintese',
@@ -2674,7 +2676,7 @@ describe('um especialista, do ponto de vista do relógio e do dinheiro', () => {
 
 		const bPesquisador = magro();
 		const rPesquisador = await rodarAgente(
-			spec({ nome: 'Caçador de Brechas' }),
+			spec({ nome: 'Caçador de Brechas', modelo: 'anthropic/claude-sonnet-5' }),
 			{},
 			[],
 			bPesquisador,
@@ -2690,7 +2692,12 @@ describe('um especialista, do ponto de vista do relógio e do dinheiro', () => {
 
 		const bEssencial = magro();
 		const rEssencial = await rodarAgente(
-			spec({ nome: 'Estrategista', essencial: true, fase: 'sintese' }),
+			spec({
+				nome: 'Estrategista',
+				essencial: true,
+				fase: 'sintese',
+				modelo: 'anthropic/claude-sonnet-5',
+			}),
 			{},
 			[],
 			bEssencial,
@@ -2741,7 +2748,7 @@ describe('um especialista, do ponto de vista do relógio e do dinheiro', () => {
 			Date.now(),
 		);
 		await rodarAgente(
-			spec({ nome: 'Caçador de Brechas' }),
+			spec({ nome: 'Caçador de Brechas', modelo: 'anthropic/claude-sonnet-5' }),
 			{},
 			[],
 			b2,
@@ -2765,6 +2772,8 @@ describe('um especialista, do ponto de vista do relógio e do dinheiro', () => {
 		await rodarAgente(
 			spec({
 				nome: 'Estrategista de Negócio',
+				// Redator de qualidade `top`: o freio é sobre ele, não sobre o padrão.
+				modelo: 'anthropic/claude-sonnet-5',
 				saida: '{"nota":0}',
 				maxTokens: 4_000,
 				fase: 'sintese',

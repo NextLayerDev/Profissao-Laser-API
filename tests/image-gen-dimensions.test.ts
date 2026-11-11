@@ -18,8 +18,13 @@ vi.mock('@/lib/openrouter.js', () => ({
 	PREVIA_MODEL: 'stub',
 }));
 
-const { generateToolImage, nearestAspectRatioPreset, pctDescartadoNoCover } =
-	await import('@/lib/image-gen.js');
+const {
+	generateToolImage,
+	nearestAspectRatioPreset,
+	pctDescartadoNoCover,
+	sizeParaApi,
+} = await import('@/lib/image-gen.js');
+const { findImageModel } = await import('@/lib/image-models-catalog.js');
 
 beforeAll(() => {
 	process.env.OPENROUTER_API_KEY = 'test-key';
@@ -39,6 +44,51 @@ const GEMINI_PRESETS = [
 	'16:9',
 	'21:9',
 ];
+
+describe('sizeParaApi (size livre do gpt-5.4-image-2)', () => {
+	const lim = findImageModel('openai/gpt-5.4-image-2')?.apiSize;
+	if (!lim) throw new Error('gpt-5.4-image-2 sem apiSize no catálogo');
+
+	it('copo 360° 2905×1122 → 2912×1120 (múltiplo de 16 mais próximo)', () => {
+		expect(sizeParaApi(2905, 1122, lim)).toEqual({ width: 2912, height: 1120 });
+	});
+
+	it('lado maior acima de 3840 desce mantendo a proporção', () => {
+		expect(sizeParaApi(5000, 2000, lim)).toEqual({ width: 3840, height: 1536 });
+		expect(sizeParaApi(1000, 4000, lim)).toEqual({ width: 1280, height: 3840 });
+	});
+
+	it('mais largo que 3:1 vira 3:1 mantendo o lado maior (o cover apara)', () => {
+		expect(sizeParaApi(4000, 1000, lim)).toEqual({ width: 3840, height: 1280 });
+		expect(sizeParaApi(3000, 500, lim)).toEqual({ width: 3008, height: 1008 });
+	});
+
+	it('acima de 8,3 MP desce; abaixo de 655.360 px sobe', () => {
+		expect(sizeParaApi(4096, 4096, lim)).toEqual({ width: 2880, height: 2880 });
+		expect(sizeParaApi(512, 512, lim)).toEqual({ width: 816, height: 816 });
+	});
+
+	it('qualquer alvo sai dentro de todos os limites do provedor', () => {
+		const lados = [16, 100, 333, 512, 777, 1024, 1122, 2905, 3840, 5000, 9999];
+		for (const w of lados) {
+			for (const h of lados) {
+				const r = sizeParaApi(w, h, lim);
+				const px = r.width * r.height;
+				expect(r.width % 16, `${w}×${h}`).toBe(0);
+				expect(r.height % 16, `${w}×${h}`).toBe(0);
+				expect(Math.max(r.width, r.height), `${w}×${h}`).toBeLessThanOrEqual(
+					3840,
+				);
+				expect(
+					Math.max(r.width / r.height, r.height / r.width),
+					`${w}×${h}`,
+				).toBeLessThanOrEqual(3);
+				expect(px, `${w}×${h}`).toBeGreaterThanOrEqual(655_360);
+				expect(px, `${w}×${h}`).toBeLessThanOrEqual(8_294_400);
+			}
+		}
+	});
+});
 
 describe('nearestAspectRatioPreset', () => {
 	it('2000×1000 (2:1) → 16:9 (mais próximo em escala log)', () => {
@@ -480,7 +530,7 @@ describe('generateToolImage — dimensão final exata via /v1/images (raw_prompt
 			return JSON.parse(fetchMock.mock.calls[0][1].body as string);
 		}
 
-		it('GPT: quality high, e NENHUM aspect_ratio/resolution', async () => {
+		it('GPT: quality medium por padrão, e NENHUM aspect_ratio/resolution', async () => {
 			await mockModelOutput(1024, 1536);
 			await generateToolImage('caneca', [], undefined, {
 				model: 'openai/gpt-5-image-mini',
@@ -489,9 +539,62 @@ describe('generateToolImage — dimensão final exata via /v1/images (raw_prompt
 				formatoReal: true,
 			});
 			const body = corpoEnviado();
-			expect(body.quality).toBe('high');
+			// Era 'high' sempre (~US$ 0,15 no gpt-5.4-image-2). Ver `bestQuality`.
+			expect(body.quality).toBe('medium');
 			expect(body.aspect_ratio).toBeUndefined();
 			expect(body.resolution).toBeUndefined();
+		});
+
+		it('GPT 5.4 Image 2: manda SÓ o size do alvo, sem aspect_ratio/resolution', async () => {
+			await mockModelOutput(2912, 1120);
+			await generateToolImage('copo 360', [], undefined, {
+				model: 'openai/gpt-5.4-image-2',
+				width: 2905,
+				height: 1122,
+				formatoReal: true,
+			});
+			const body = corpoEnviado();
+			// Com aspect_ratio voltava 1536×656 e o resize ampliava ~2×; os dois
+			// juntos dão 400 no provedor ("size conflicts with aspect_ratio").
+			expect(body.size).toBe('2912x1120');
+			expect(body.aspect_ratio).toBeUndefined();
+			expect(body.resolution).toBeUndefined();
+			expect(body.quality).toBe('medium');
+		});
+
+		it('GPT sem size livre (gpt-5-image-mini) não recebe size', async () => {
+			await mockModelOutput(1536, 1024);
+			await generateToolImage('copo 360', [], undefined, {
+				model: 'openai/gpt-5-image-mini',
+				width: 2905,
+				height: 1122,
+				formatoReal: true,
+			});
+			expect(corpoEnviado().size).toBeUndefined();
+		});
+
+		it('GPT: a tool que precisa do topo pede quality high e recebe', async () => {
+			await mockModelOutput(1024, 1536);
+			await generateToolImage('caneca', [], undefined, {
+				model: 'openai/gpt-5.4-image-2',
+				width: 864,
+				height: 1536,
+				formatoReal: true,
+				quality: 'high',
+			});
+			expect(corpoEnviado().quality).toBe('high');
+		});
+
+		it('quality pedida que o modelo não aceita não vai (Gemini)', async () => {
+			await mockModelOutput(1024, 1024);
+			await generateToolImage('caneca', [], undefined, {
+				model: 'google/gemini-3.1-flash-image',
+				width: 1024,
+				height: 1024,
+				formatoReal: true,
+				quality: 'high',
+			});
+			expect(corpoEnviado().quality).toBeUndefined();
 		});
 
 		it('Gemini: aspect_ratio + resolution, e NENHUM quality', async () => {

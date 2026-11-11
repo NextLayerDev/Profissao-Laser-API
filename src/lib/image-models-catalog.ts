@@ -31,6 +31,19 @@ export type ImageModelSpeed = 'fast' | 'medium' | 'slow';
 /** Acabamento geral esperado. */
 export type ImageModelQuality = 'standard' | 'high' | 'top';
 
+/**
+ * Limites do `size` livre, lidos das mensagens de erro do próprio provedor
+ * (OpenRouter → OpenAI, 2026-11-11): cada lado múltiplo de 16, lado maior até
+ * 3840, proporção até 3:1, e entre 655.360 e 8.294.400 pixels no total.
+ */
+export interface ApiSizeLimits {
+	multiplo: number;
+	maxLado: number;
+	maxProporcao: number;
+	minPixels: number;
+	maxPixels: number;
+}
+
 export interface ImageModelEntry {
 	/** OpenRouter model id (ex.: `'google/gemini-3-pro-image-preview'`). */
 	id: string;
@@ -57,10 +70,10 @@ export interface ImageModelEntry {
 	 * modelo aqui não exige tocar em `image-gen.ts`.
 	 *
 	 * Família Gemini: aceita `aspect_ratio`/`resolution` (corrige o corte de
-	 * formato) mas NÃO `quality`. Família GPT: aceita `quality` (corrige parte
-	 * da diferença de nitidez vs. ChatGPT) mas NÃO `aspect_ratio`/`resolution`
-	 * — a OpenAI não expõe controle de proporção/tamanho nessa superfície,
-	 * nem no endpoint dedicado; só o texto do prompt influencia a composição.
+	 * formato) mas NÃO `quality`. Família GPT: aceita `quality` mas NÃO
+	 * `aspect_ratio`/`resolution`. O tamanho dela vai por `size` (ver
+	 * `apiSize`) — só no `gpt-5.4-image-2`; o `gpt-5-image` e o mini aceitam
+	 * apenas 1024×1024, 1024×1536 e 1536×1024.
 	 */
 	/** Presets de `aspect_ratio` aceitos. Ausente = modelo não controla proporção. */
 	apiAspectRatios?: readonly string[];
@@ -68,6 +81,13 @@ export interface ImageModelEntry {
 	apiResolutions?: readonly string[];
 	/** Valores de `quality` aceitos. Ausente = sem controle de qualidade. */
 	apiQuality?: readonly string[];
+	/**
+	 * O modelo aceita `size: "LxA"` livre no `/v1/images`, dentro destes
+	 * limites. Com isto, `image-gen.ts` manda `size` e NUNCA `aspect_ratio`
+	 * nem `resolution` junto (os dois juntos dão 400: "size conflicts with
+	 * aspect_ratio"). Ausente = sem tamanho livre.
+	 */
+	apiSize?: ApiSizeLimits;
 	/**
 	 * true = confirmado disponível em `POST /v1/images` (todos os 8 modelos
 	 * atuais estão). Gate pra `image-gen.ts` rotear `raw_prompt` pra essa API;
@@ -131,8 +151,19 @@ export const IMAGE_MODELS_CATALOG: ReadonlyArray<ImageModelEntry> = [
 		speed: 'slow',
 		quality: 'top',
 		notes:
-			'Modelo #1 de imagem (OpenAI GPT-5.4 + GPT Image 2) — a MELHOR qualidade/detalhe, nível do print gerado direto no ChatGPT. MUITO lento (~2,5-3 min por imagem) e mais caro. Use quando qualidade importa mais que velocidade. Sem controle de proporção/resolução (a OpenAI não expõe isso nessa API) — depende só do texto do prompt pra compor no formato certo.',
+			'Modelo #1 de imagem (OpenAI GPT-5.4 + GPT Image 2) — a MELHOR qualidade/detalhe, nível do print gerado direto no ChatGPT. Lento (25 s a 3 min por imagem). Recebe o tamanho exato pedido (até 3840 px no lado maior e proporção 3:1), então a arte já sai no formato da peça.',
 		apiQuality: ['auto', 'low', 'medium', 'high'],
+		// Medido em 2026-11-11, quality medium: `size: '2912x1120'` voltou
+		// 2912×1120 por US$ 0,035 (com `aspect_ratio: '21:9'` voltava 1536×656
+		// e o resize ampliava ~2×). No voto cego ganhou do Gemini 3 Pro 4K
+		// (US$ 0,12) nos 3 casos do copo 360°.
+		apiSize: {
+			multiplo: 16,
+			maxLado: 3840,
+			maxProporcao: 3,
+			minPixels: 655_360,
+			maxPixels: 8_294_400,
+		},
 		unifiedImagesApi: true,
 	},
 	{
@@ -265,6 +296,29 @@ export function getDefaultImageModel(): ImageModelEntry {
 		(IMAGE_MODELS_CATALOG[0] as ImageModelEntry)
 	);
 }
+
+/** As edições simples de foto que vão pelo `editarImagemLeve`. */
+export type EdicaoDeFoto = 'remover_fundo' | 'colorir' | 'restaurar';
+
+/**
+ * O MODELO DE CADA EDIÇÃO SIMPLES — escolhido por A/B, não por preço.
+ *
+ * Antes as três iam ao padrão do catálogo (o Pro) pelo `/chat/completions`
+ * sem tamanho: ~US$ 0,137 por edição a 1024×1024. Agora vão pelo `/v1/images`
+ * a 1K com tamanho explícito, cada uma no modelo que ganhou o teste cego de
+ * 2026-11-11 (4 casos reais por edição, notas do João):
+ *
+ *   remover_fundo  3.1 Flash       4/4 boa  US$ 0,068  (Lite e Pro erraram o copo)
+ *   colorir        3.1 Flash Lite  4/4 boa  US$ 0,034  (os três empataram)
+ *   restaurar      3.1 Flash       3/3 boa  US$ 0,068  (Pro "aceitável", Lite errou 1)
+ *
+ * Trocar um destes sem refazer o A/B é trocar qualidade por palpite.
+ */
+export const EDIT_IMAGE_MODELS: Readonly<Record<EdicaoDeFoto, string>> = {
+	remover_fundo: 'google/gemini-3.1-flash-image',
+	colorir: 'google/gemini-3.1-flash-lite-image',
+	restaurar: 'google/gemini-3.1-flash-image',
+};
 
 /**
  * Devolve o id do modelo padrão do catálogo. Usado como fallback quando uma

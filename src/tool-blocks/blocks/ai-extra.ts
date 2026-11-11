@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import { z } from 'zod';
-import { generateToolImage } from '../../lib/image-gen.js';
+import { editarImagemLeve } from '../../lib/image-gen.js';
 import type { FxOutput } from '../lib/pixels.js';
 import {
 	borderStats,
@@ -9,7 +9,7 @@ import {
 	fxSharp,
 	loadRaster,
 } from '../lib/pixels.js';
-import type { ToolBlock } from '../types.js';
+import type { BlockRunContext, ToolBlock } from '../types.js';
 
 /**
  * Blocos de IA EXTRA (categoria `ai`) — port do grupo "AI" do ImagR. Embrulham
@@ -28,6 +28,7 @@ function block<P extends z.ZodRawShape>(
 	shape: P,
 	run: (
 		params: z.infer<z.ZodObject<P & { image: typeof img }>>,
+		ctx: BlockRunContext,
 	) => Promise<FxOutput>,
 ): ToolBlock {
 	const schema = z.object({ image: img, ...shape });
@@ -36,8 +37,8 @@ function block<P extends z.ZodRawShape>(
 		category: 'ai',
 		description,
 		paramsSchema: schema as z.ZodType<unknown>,
-		run: (_ctx, params) =>
-			run(params as z.infer<z.ZodObject<P & { image: typeof img }>>),
+		run: (ctx, params) =>
+			run(params as z.infer<z.ZodObject<P & { image: typeof img }>>, ctx),
 	} as ToolBlock;
 }
 
@@ -126,7 +127,7 @@ export const removeBgBlock = block(
 		tolerance: z.coerce.number().min(0.02).max(0.6).default(0.16),
 		feather: z.coerce.number().min(0).max(1).default(0.6),
 	},
-	async (p) => {
+	async (p, ctx) => {
 		const r = await loadRaster(p.image);
 		const n = r.width * r.height;
 		if (n < 16) return fxFromRaster(r);
@@ -147,11 +148,13 @@ export const removeBgBlock = block(
 		}
 
 		// 2) Fundo complexo (ou chroma-key não resolveu) → IA isola em branco e
-		//    o chroma-key tira o branco. Reusa o Gemini já integrado.
+		//    o chroma-key tira o branco. Recorte, não criação: `editarImagemLeve`.
 		try {
-			const gen = await generateToolImage(
+			const gen = await editarImagemLeve(
 				'Recorte com precisão o sujeito principal (pessoa/objeto) e coloque-o SOZINHO sobre fundo BRANCO PURO (#FFFFFF), totalmente liso, sem sombra. Preserve todas as bordas, cabelo e detalhes; não altere o sujeito.',
-				[p.image],
+				p.image,
+				'remover_fundo',
+				{ signal: ctx.signal, atribuicao: atribuicaoDe(ctx) },
 			);
 			const rg = await loadRaster(gen.png);
 			// branco é uniforme → chroma-key com tolerância apertada tira o fundo.
@@ -169,15 +172,25 @@ export const removeBgBlock = block(
 
 /* ───────────────────────────── IA (Gemini Image) ───────────────────────────── */
 
+/**
+ * As três edições abaixo são SIMPLES — o mesmo objeto sem fundo, a mesma foto
+ * com cor ou sem risco — e vão pelo `editarImagemLeve`, a 1K e com o tamanho
+ * da foto como parâmetro, cada uma no modelo que ganhou o A/B dela
+ * (`EDIT_IMAGE_MODELS`). Antes iam ao padrão do catálogo (o Pro).
+ */
+const atribuicaoDe = (ctx: BlockRunContext) => ({ toolKey: ctx.toolKey });
+
 export const backgroundRemovalBlock = block(
 	'ai.backgroundRemoval',
 	'Remove o fundo deixando o objeto sobre fundo branco (IA — Gemini Image).',
 	{},
-	(p) =>
+	(p, ctx) =>
 		// Usa Gemini Image (não o modelo exato do ImagR).
-		generateToolImage(
+		editarImagemLeve(
 			'Remova completamente o fundo desta imagem, deixando o objeto principal sobre fundo BRANCO sólido. Não altere o objeto.',
-			[p.image],
+			p.image,
+			'remover_fundo',
+			{ signal: ctx.signal, atribuicao: atribuicaoDe(ctx) },
 		),
 );
 
@@ -185,11 +198,13 @@ export const colorizeBlock = block(
 	'ai.colorize',
 	'Coloriza foto P&B com cores realistas e naturais (IA — Gemini Image).',
 	{},
-	(p) =>
+	(p, ctx) =>
 		// Usa Gemini Image (não o modelo exato do ImagR).
-		generateToolImage(
+		editarImagemLeve(
 			'Colorize esta foto em preto e branco com cores realistas e naturais, preservando todos os detalhes.',
-			[p.image],
+			p.image,
+			'colorir',
+			{ signal: ctx.signal, atribuicao: atribuicaoDe(ctx) },
 		),
 );
 
@@ -197,11 +212,13 @@ export const restorationBlock = block(
 	'ai.restoration',
 	'Restaura foto antiga/danificada: remove riscos/ruído e recupera nitidez (IA — Gemini Image).',
 	{},
-	(p) =>
+	(p, ctx) =>
 		// Usa Gemini Image (não o modelo exato do ImagR).
-		generateToolImage(
+		editarImagemLeve(
 			'Restaure e melhore esta foto antiga/danificada: remova riscos e ruído, recupere nitidez e detalhes, mantendo a aparência original.',
-			[p.image],
+			p.image,
+			'restaurar',
+			{ signal: ctx.signal, atribuicao: atribuicaoDe(ctx) },
 		),
 );
 

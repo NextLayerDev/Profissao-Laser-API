@@ -50,6 +50,69 @@ describe('ai.text', () => {
 		expect(body.messages.map((m) => m.role)).toEqual(['user']);
 	});
 
+	it('padrão DeepSeek: raciocínio desligado e system em string (sem cache_control)', async () => {
+		create.mockResolvedValue(reply('ok'));
+		await run({ user: 'oi', system: 'você é um redator' });
+		const [body] = create.mock.calls[0] as [Record<string, unknown>];
+		expect(body.model).toBe('deepseek/deepseek-v4-flash');
+		expect(body.reasoning).toEqual({ enabled: false });
+		const msgs = body.messages as { role: string; content: unknown }[];
+		expect(msgs[0]).toEqual({ role: 'system', content: 'você é um redator' });
+	});
+
+	it('DeepSeek: max_tokens baixo sobe para o piso de 1200 (o raciocínio corta a resposta)', async () => {
+		create.mockResolvedValue(reply('ok'));
+		await run({ user: 'oi', max_tokens: 300 });
+		const [body] = create.mock.calls[0] as [Record<string, unknown>];
+		expect(body.max_tokens).toBe(1200);
+	});
+
+	it('Claude: max_tokens pedido vai como veio, sem piso', async () => {
+		create.mockResolvedValue(reply('ok'));
+		await run({
+			user: 'oi',
+			max_tokens: 300,
+			model: 'anthropic/claude-sonnet-5',
+		});
+		const [body] = create.mock.calls[0] as [Record<string, unknown>];
+		expect(body.max_tokens).toBe(300);
+	});
+
+	it('Claude: system fixo PRIMEIRO e com cache_control; o pedido vem depois', async () => {
+		create.mockResolvedValue(reply('ok'));
+		await run({
+			user: 'pedido do aluno',
+			system: 'regras fixas da tool',
+			model: 'anthropic/claude-sonnet-5',
+		});
+		const [body] = create.mock.calls[0] as [Record<string, unknown>];
+		expect(body.reasoning).toBeUndefined();
+		const msgs = body.messages as { role: string; content: unknown }[];
+		expect(msgs.map((m) => m.role)).toEqual(['system', 'user']);
+		expect(msgs[0]?.content).toEqual([
+			{
+				type: 'text',
+				text: 'regras fixas da tool',
+				cache_control: { type: 'ephemeral' },
+			},
+		]);
+		expect(msgs[1]?.content).toBe('pedido do aluno');
+	});
+
+	it('atribui o gasto: X-Title com a tool, e nada de user sem tenant', async () => {
+		create.mockResolvedValue(reply('ok'));
+		await aiTextBlock.run(
+			{ customerId: 'cust-1', toolKey: 'central' },
+			aiTextBlock.paramsSchema.parse({ user: 'oi' }) as never,
+		);
+		const [body, opts] = create.mock.calls[0] as [
+			Record<string, unknown>,
+			{ headers: Record<string, string> },
+		];
+		expect(body.user).toBeUndefined();
+		expect(opts.headers['X-Title']).toBe('Profissão Laser - central');
+	});
+
 	it('usa o modelo pedido quando ele está no catálogo', async () => {
 		create.mockResolvedValue(reply('ok'));
 		const out = await run({ user: 'oi', model: 'anthropic/claude-haiku-4.5' });

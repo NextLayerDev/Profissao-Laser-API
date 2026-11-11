@@ -57,6 +57,10 @@ describe('image-models-catalog', () => {
 		expect(m?.quality).toBe('top');
 		expect(m?.apiQuality).toContain('high');
 		expect(m?.apiAspectRatios).toBeUndefined();
+		// Tamanho livre por `size`; o gpt-5-image e o mini só têm 3 tamanhos.
+		expect(m?.apiSize?.maxLado).toBe(3840);
+		expect(findImageModel('openai/gpt-5-image')?.apiSize).toBeUndefined();
+		expect(findImageModel('openai/gpt-5-image-mini')?.apiSize).toBeUndefined();
 	});
 
 	it('cacheia entre chamadas e `force` refaz a cópia', () => {

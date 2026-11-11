@@ -22,6 +22,13 @@ export interface BlockProgressEvent {
 export interface BlockRunContext {
 	/** Identidade do cliente que disparou o run (escopo de storage/billing). */
 	customerId: string;
+	/**
+	 * Key da tool que está rodando. Hoje serve para ATRIBUIR o gasto no
+	 * OpenRouter (vai no `X-Title` das chamadas de modelo): a chave é uma só
+	 * para todos os sistemas, e sem isto o painel não separa custo por
+	 * ferramenta. Opcional: quem não preenche cai no rótulo genérico.
+	 */
+	toolKey?: string;
 	/** Bearer original do request, repassado a chamadas server-to-server. */
 	authHeader?: string;
 	/**

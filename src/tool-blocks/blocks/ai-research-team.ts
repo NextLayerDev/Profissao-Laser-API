@@ -737,6 +737,7 @@ async function cacarFotoDosProdutos(
 			maxTokens: 700,
 			json: true,
 			signal: ctx.signal ?? AbortSignal.timeout(45_000),
+			atribuicao: { toolKey: ctx.toolKey },
 		});
 	} catch {
 		return 0;
@@ -1556,6 +1557,7 @@ export async function rodarAgente(
 				temperature: a.temperatura,
 				json: Boolean(a.saida) && m.json,
 				signal,
+				atribuicao: { toolKey: ctx.toolKey },
 			});
 		};
 

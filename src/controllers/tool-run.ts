@@ -1260,7 +1260,12 @@ async function executarRun(
 					const rodada = await executeTool(
 						docRun,
 						coerceInputs(doc.input ?? {}, campos, arquivosDaPeca, meta),
-						{ customerId, authHeader, onProgress: res.progresso },
+						{
+							customerId,
+							toolKey: key,
+							authHeader,
+							onProgress: res.progresso,
+						},
 						flow,
 					);
 					const arte = rodada.bag[chave];
@@ -1280,6 +1285,7 @@ async function executarRun(
 					entrada,
 					{
 						customerId,
+						toolKey: key,
 						authHeader,
 						onProgress: res.progresso,
 					},
@@ -1817,6 +1823,7 @@ export const toolPreviewController = async (
 			bag,
 			{
 				customerId,
+				toolKey: key,
 				authHeader,
 				// O bloco não decide se roda (quem filtrou foi o `skipInPreview`);
 				// decide o quanto trabalha de graça. Ver `MAX_MP_AMPLIAR_PREVIEW`.

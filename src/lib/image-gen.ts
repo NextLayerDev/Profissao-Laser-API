@@ -1,10 +1,18 @@
 import sharp from 'sharp';
 import {
+	type ApiSizeLimits,
+	EDIT_IMAGE_MODELS,
+	type EdicaoDeFoto,
 	findImageModel,
 	getDefaultImageModelId,
 	type ImageModelEntry,
 } from './image-models-catalog.js';
 import { type GeminiImageMessage, openrouter } from './openrouter.js';
+import {
+	type AtribuicaoOpenRouter,
+	tituloOpenRouter,
+	usuarioOpenRouter,
+} from './openrouter-custo.js';
 import { ToolEngineError } from './tool-errors.js';
 
 /**
@@ -203,10 +211,26 @@ export function pctDescartadoNoCover(
 	return Number(((1 - mantida) * 100).toFixed(2));
 }
 
-/** `quality:'high'` quando o modelo aceita — senão omite (deixa o provider
- * decidir; nunca pedimos um tier pior que o que já pedíamos, que era nenhum). */
-function bestQuality(allowed?: readonly string[]): string | undefined {
-	return allowed?.includes('high') ? 'high' : undefined;
+/** Os tiers de `quality` que a família GPT aceita no `/v1/images`. */
+export type ImageQuality = 'auto' | 'low' | 'medium' | 'high';
+
+/**
+ * `quality` que vai no corpo, quando o modelo aceita — senão omite.
+ *
+ * Padrão `'medium'`, e não mais `'high'`: o `gpt-5.4-image-2` em `high` custava
+ * ~US$ 0,15 por imagem e era pedido SEMPRE, inclusive nas tools em que a arte
+ * vira gravação a laser num quadrado de 5 cm. A tool que precisa do topo pede
+ * `quality: 'high'` no próprio nó `ai.generate_image` da definition — é o
+ * override por ferramenta (`pedida`). Um tier que o modelo não aceita é
+ * ignorado: mandar mesmo assim seria 400 no provedor.
+ */
+export function bestQuality(
+	allowed?: readonly string[],
+	pedida?: ImageQuality,
+): string | undefined {
+	if (!allowed?.length) return undefined;
+	if (pedida && allowed.includes(pedida)) return pedida;
+	return allowed.includes('medium') ? 'medium' : undefined;
 }
 
 interface UnifiedImagesResponse {
@@ -228,6 +252,65 @@ const REFS_LEAD_UNIFIED =
 	'Siga EXATAMENTE estas instruções. O texto abaixo é autoritativo; as imagens de referência enviadas são apenas referência de assunto/estilo quando o texto permitir:';
 
 /**
+ * O `size` livre ("LxA") para um modelo com `apiSize` (o `gpt-5.4-image-2`):
+ * o próprio alvo, ajustado aos limites do provedor. Sem isto a família GPT
+ * voltava em ~1536 px e o resize final AMPLIAVA a arte (o copo 360° de
+ * 2905×1122 saía de 1536×656 — ~2× de pixel inventado).
+ *
+ * 1. Proporção acima do teto (3:1): mantém o lado MAIOR e engorda o menor.
+ *    O `fit:'cover'` do fim apara a sobra — reduz, nunca amplia.
+ * 2. Acima do lado máximo ou dos pixels máximos: reduz mantendo a proporção.
+ *    Abaixo dos pixels mínimos: aumenta (o resize do fim reduz de volta).
+ * 3. Cada lado no múltiplo mais próximo, e o arredondamento nunca sai dos
+ *    limites (o provedor recusa 2912×1121 com 400).
+ */
+export function sizeParaApi(
+	w: number,
+	h: number,
+	lim: ApiSizeLimits,
+): { width: number; height: number } {
+	let lw = w;
+	let lh = h;
+	if (lw / lh > lim.maxProporcao) lh = lw / lim.maxProporcao;
+	else if (lh / lw > lim.maxProporcao) lw = lh / lim.maxProporcao;
+
+	const area = lw * lh;
+	const escala =
+		area < lim.minPixels
+			? Math.sqrt(lim.minPixels / area)
+			: Math.min(
+					1,
+					lim.maxLado / Math.max(lw, lh),
+					Math.sqrt(lim.maxPixels / area),
+				);
+	lw *= escala;
+	lh *= escala;
+
+	const m = lim.multiplo;
+	const passos = (v: number, arred: (x: number) => number) =>
+		Math.max(m, arred(v / m) * m);
+	let width = passos(lw, Math.round);
+	let height = passos(lh, Math.round);
+	// O arredondamento para o mais próximo pode estourar um teto por um
+	// múltiplo: aí aquele lado vai para baixo (ou, no piso de pixels, para cima).
+	if (width > lim.maxLado) width = passos(lim.maxLado, Math.floor);
+	if (height > lim.maxLado) height = passos(lim.maxLado, Math.floor);
+	if (width * height > lim.maxPixels) {
+		width = passos(lw, Math.floor);
+		height = passos(lh, Math.floor);
+	}
+	if (width * height < lim.minPixels) {
+		width = passos(lw, Math.ceil);
+		height = passos(lh, Math.ceil);
+	}
+	if (width / height > lim.maxProporcao)
+		width = passos(height * lim.maxProporcao, Math.floor);
+	else if (height / width > lim.maxProporcao)
+		height = passos(width * lim.maxProporcao, Math.floor);
+	return { width, height };
+}
+
+/**
  * Gera via o endpoint dedicado `POST /v1/images` da OpenRouter (Unified Image
  * API), em vez do `/chat/completions` legado. Só é chamado quando o modelo
  * tem `unifiedImagesApi:true` no catálogo (confirmado empiricamente pra todo
@@ -239,9 +322,8 @@ const REFS_LEAD_UNIFIED =
  * (testado: pedir 16:9 devolveu 1344×768 — genuinamente widescreen, não
  * quadrado cortado depois; pedir 4K devolveu 5504×3072, bem acima do teto de
  * ~1536px que o `/chat/completions` entregava por padrão) e `quality` de
- * verdade pra família GPT (que não aceita aspect_ratio/resolution em NENHUMA
- * API da OpenAI pra geração via texto — só o prompt influencia a composição
- * nesse caso). Imagens de referência vão em `input_references`, mesmo formato
+ * verdade pra família GPT (que não aceita aspect_ratio/resolution; o tamanho dela vai
+ * por `size` quando o modelo tem `apiSize` — ver `sizeParaApi`). Imagens de referência vão em `input_references`, mesmo formato
  * de content-part já usado no `/chat/completions` (`{type:'image_url',
  * image_url:{url}}`), confirmado aceito em teste real.
  */
@@ -253,28 +335,43 @@ async function generateViaUnifiedImagesApi(opts: {
 	entry: ImageModelEntry;
 	outW?: number;
 	outH?: number;
+	quality?: ImageQuality;
+	atribuicao?: AtribuicaoOpenRouter;
 }): Promise<Buffer> {
 	const { model, prompt, refs, signal, entry, outW, outH } = opts;
 	const body: Record<string, unknown> = {
 		model,
 		prompt,
 		output_format: 'png',
+		...usuarioOpenRouter(opts.atribuicao?.tenantId),
 	};
-	let aspectPreset: string | undefined;
-	if (outW && outH && entry.apiAspectRatios?.length) {
-		aspectPreset = nearestAspectRatioPreset(outW, outH, entry.apiAspectRatios);
-		body.aspect_ratio = aspectPreset;
+	if (outW && outH && entry.apiSize) {
+		// Tamanho livre: vai SÓ o `size`. Com `aspect_ratio` junto o provedor
+		// devolve 400 ("size conflicts with aspect_ratio").
+		const { width, height } = sizeParaApi(outW, outH, entry.apiSize);
+		body.size = `${width}x${height}`;
+	} else {
+		let aspectPreset: string | undefined;
+		if (outW && outH && entry.apiAspectRatios?.length) {
+			aspectPreset = nearestAspectRatioPreset(
+				outW,
+				outH,
+				entry.apiAspectRatios,
+			);
+			body.aspect_ratio = aspectPreset;
+		}
+		// A faixa depende da proporção que acabamos de escolher: é ela que
+		// decide como o provedor distribui os pixels da faixa entre largura e
+		// altura.
+		const resolution = bestResolution(
+			entry.apiResolutions,
+			outW,
+			outH,
+			aspectPreset,
+		);
+		if (resolution) body.resolution = resolution;
 	}
-	// A faixa depende da proporção que acabamos de escolher: é ela que decide
-	// como o provedor distribui os pixels da faixa entre largura e altura.
-	const resolution = bestResolution(
-		entry.apiResolutions,
-		outW,
-		outH,
-		aspectPreset,
-	);
-	if (resolution) body.resolution = resolution;
-	const quality = bestQuality(entry.apiQuality);
+	const quality = bestQuality(entry.apiQuality, opts.quality);
 	if (quality) body.quality = quality;
 	if (refs.length > 0) {
 		body.input_references = refs.map((ref) => ({
@@ -290,6 +387,7 @@ async function generateViaUnifiedImagesApi(opts: {
 			refs: refs.length,
 			aspectRatio: body.aspect_ratio,
 			resolution: body.resolution,
+			size: body.size,
 			quality: body.quality,
 		});
 	}
@@ -304,7 +402,10 @@ async function generateViaUnifiedImagesApi(opts: {
 				'Content-Type': 'application/json',
 				'HTTP-Referer':
 					process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-				'X-Title': `${process.env.NEXT_PUBLIC_COMPANY_SYSTEM ?? 'Profissão Laser'} - Prompts Mágicos`,
+				'X-Title': tituloOpenRouter(
+					opts.atribuicao?.toolKey,
+					'Prompts Mágicos',
+				),
 			},
 			body: JSON.stringify(body),
 		});
@@ -484,6 +585,10 @@ export async function generateToolImage(
 		rawPrompt?: boolean;
 		formatoReal?: boolean;
 		fit?: 'fill' | 'cover' | 'contain';
+		/** Override do tier `quality` (só família GPT). Ver `bestQuality`. */
+		quality?: ImageQuality;
+		/** Quem gastou, para o painel do OpenRouter. Ver `AtribuicaoOpenRouter`. */
+		atribuicao?: AtribuicaoOpenRouter;
 	},
 ): Promise<GenImageResult> {
 	if (!process.env.OPENROUTER_API_KEY) {
@@ -555,6 +660,8 @@ export async function generateToolImage(
 			entry: modelEntry!,
 			outW,
 			outH,
+			quality: opts?.quality,
+			atribuicao: opts?.atribuicao,
 		});
 	} else {
 		// `rawPrompt`: sem intermediação — só a user message. ai-extra não passa a
@@ -594,6 +701,7 @@ export async function generateToolImage(
 				{ role: 'user' as const, content },
 			],
 			modalities: ['image', 'text'],
+			...usuarioOpenRouter(opts?.atribuicao?.tenantId),
 		};
 
 		if (process.env.DEBUG_IMAGE_GEN) {
@@ -622,7 +730,10 @@ export async function generateToolImage(
 					headers: {
 						'HTTP-Referer':
 							process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-						'X-Title': `${process.env.NEXT_PUBLIC_COMPANY_SYSTEM ?? 'Profissão Laser'} - Prompts Mágicos`,
+						'X-Title': tituloOpenRouter(
+							opts?.atribuicao?.toolKey,
+							'Prompts Mágicos',
+						),
 					},
 				},
 			);
@@ -749,9 +860,10 @@ export async function generateToolImage(
 						// Separa as duas causas possíveis, que pedem ações opostas:
 						// `true`  = o modelo TINHA `aspect_ratio` e ignorou (ou a chamada
 						//           não foi pela `/v1/images`) → investigar a rota;
-						// `false` = família GPT, que não expõe proporção em API nenhuma
-						//           → só o prompt influencia, o corte é o preço conhecido.
-						temControleDeFormato: !!modelEntry?.apiAspectRatios?.length,
+						// `false` = GPT sem `size` livre (gpt-5-image e o mini), que só
+						//           tem 3 tamanhos fixos → o corte é o preço conhecido.
+						temControleDeFormato:
+							!!modelEntry?.apiAspectRatios?.length || !!modelEntry?.apiSize,
 					},
 				);
 			}
@@ -777,4 +889,53 @@ export async function generateToolImage(
 	const png = await sharpPipe.png().toBuffer();
 	const pngBase64 = `data:image/png;base64,${png.toString('base64')}`;
 	return { png, pngBase64 };
+}
+
+/** Lado maior da entrega das edições simples: a faixa `1K`. */
+const LADO_EDICAO_LEVE = 1024;
+
+/**
+ * EDIÇÃO SIMPLES DE FOTO (remover fundo, colorir, restaurar), no modelo que
+ * ganhou o A/B daquela edição (`EDIT_IMAGE_MODELS`).
+ *
+ * Vai pelo `/v1/images` com TAMANHO EXPLÍCITO: a proporção da foto do aluno,
+ * com o lado maior em 1024 px. Assim o `aspect_ratio` e a faixa `1K` viajam
+ * como parâmetro e a saída não sai quadrada nem cortada. Antes estas edições
+ * iam ao Pro pelo `/chat/completions`, sem tamanho nenhum, e voltavam em
+ * ~1024×1024 por ~US$ 0,137 — o tamanho de entrega é o mesmo de antes.
+ *
+ * `rawPrompt` = o prompt vai cru (sem o system de aderência do gerador), para
+ * quem já manda o prompt completo, como o editor.
+ */
+export async function editarImagemLeve(
+	prompt: string,
+	image: Buffer,
+	edicao: EdicaoDeFoto,
+	opts?: {
+		signal?: AbortSignal;
+		rawPrompt?: boolean;
+		atribuicao?: AtribuicaoOpenRouter;
+	},
+): Promise<GenImageResult> {
+	let width: number | undefined;
+	let height: number | undefined;
+	try {
+		const meta = await sharp(image).metadata();
+		if (meta.width && meta.height) {
+			const escala = LADO_EDICAO_LEVE / Math.max(meta.width, meta.height);
+			width = Math.max(64, Math.round(meta.width * escala));
+			height = Math.max(64, Math.round(meta.height * escala));
+		}
+	} catch {
+		// Sem metadata, o provedor decide o formato — a edição ainda sai.
+	}
+	return generateToolImage(prompt, [image], opts?.signal, {
+		model: EDIT_IMAGE_MODELS[edicao],
+		formatoReal: true,
+		rawPrompt: opts?.rawPrompt,
+		width,
+		height,
+		fit: 'cover',
+		atribuicao: opts?.atribuicao,
+	});
 }
