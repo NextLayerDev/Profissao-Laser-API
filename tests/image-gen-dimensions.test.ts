@@ -173,15 +173,27 @@ describe('generateToolImage — dimensão final exata via /v1/images (raw_prompt
 		it('miniatura 512×512 desce até a menor faixa QUE O MODELO OFERECE', async () => {
 			await mockModelOutput(1024, 1024);
 			await generateToolImage('copo', [], undefined, {
+				model: 'google/gemini-3-pro-image-preview',
 				width: 512,
 				height: 512,
 				rawPrompt: true,
 			});
-			// O padrão (`gemini-3-pro-image-preview`) só declara ['1K','2K','4K'] —
-			// não existe '512' para comprar. A escolha sai da lista do modelo, nunca
-			// da tabela de faixas: pedir uma faixa que o modelo não aceita é erro
-			// 400 no provedor, não economia.
+			// O Pro só declara ['1K','2K','4K'] — não existe '512' para comprar. A
+			// escolha sai da lista do modelo, nunca da tabela de faixas: pedir uma
+			// faixa que o modelo não aceita é erro 400 no provedor, não economia.
 			expect(corpoEnviado().resolution).toBe('1K');
+		});
+
+		it('o padrão (3.1 Flash) oferece 512 e a miniatura compra 512', async () => {
+			await mockModelOutput(512, 512);
+			await generateToolImage('copo', [], undefined, {
+				width: 512,
+				height: 512,
+				rawPrompt: true,
+			});
+			const body = corpoEnviado();
+			expect(body.model).toBe('google/gemini-3.1-flash-image');
+			expect(body.resolution).toBe('512');
 		});
 
 		it('alvo maior que toda faixa disponível ainda pede o topo', async () => {
@@ -480,7 +492,7 @@ describe('generateToolImage — dimensão final exata via /v1/images (raw_prompt
 			return JSON.parse(fetchMock.mock.calls[0][1].body as string);
 		}
 
-		it('GPT: quality high, e NENHUM aspect_ratio/resolution', async () => {
+		it('GPT: quality medium por padrão, e NENHUM aspect_ratio/resolution', async () => {
 			await mockModelOutput(1024, 1536);
 			await generateToolImage('caneca', [], undefined, {
 				model: 'openai/gpt-5-image-mini',
@@ -489,9 +501,34 @@ describe('generateToolImage — dimensão final exata via /v1/images (raw_prompt
 				formatoReal: true,
 			});
 			const body = corpoEnviado();
-			expect(body.quality).toBe('high');
+			// Era 'high' sempre (~US$ 0,15 no gpt-5.4-image-2). Ver `bestQuality`.
+			expect(body.quality).toBe('medium');
 			expect(body.aspect_ratio).toBeUndefined();
 			expect(body.resolution).toBeUndefined();
+		});
+
+		it('GPT: a tool que precisa do topo pede quality high e recebe', async () => {
+			await mockModelOutput(1024, 1536);
+			await generateToolImage('caneca', [], undefined, {
+				model: 'openai/gpt-5.4-image-2',
+				width: 864,
+				height: 1536,
+				formatoReal: true,
+				quality: 'high',
+			});
+			expect(corpoEnviado().quality).toBe('high');
+		});
+
+		it('quality pedida que o modelo não aceita não vai (Gemini)', async () => {
+			await mockModelOutput(1024, 1024);
+			await generateToolImage('caneca', [], undefined, {
+				model: 'google/gemini-3.1-flash-image',
+				width: 1024,
+				height: 1024,
+				formatoReal: true,
+				quality: 'high',
+			});
+			expect(corpoEnviado().quality).toBeUndefined();
 		});
 
 		it('Gemini: aspect_ratio + resolution, e NENHUM quality', async () => {

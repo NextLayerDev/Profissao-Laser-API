@@ -559,6 +559,7 @@ export async function rodarAgenteDeArte(
 				json: Boolean(a.saida) && m.json,
 				signal,
 				titulo: 'Profissão Laser - Ateliê',
+				atribuicao: { toolKey: ctx.toolKey },
 			});
 
 		/**

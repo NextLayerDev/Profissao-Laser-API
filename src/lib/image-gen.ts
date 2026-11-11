@@ -3,8 +3,14 @@ import {
 	findImageModel,
 	getDefaultImageModelId,
 	type ImageModelEntry,
+	LIGHT_EDIT_IMAGE_MODEL_ID,
 } from './image-models-catalog.js';
 import { type GeminiImageMessage, openrouter } from './openrouter.js';
+import {
+	type AtribuicaoOpenRouter,
+	tituloOpenRouter,
+	usuarioOpenRouter,
+} from './openrouter-custo.js';
 import { ToolEngineError } from './tool-errors.js';
 
 /**
@@ -203,10 +209,26 @@ export function pctDescartadoNoCover(
 	return Number(((1 - mantida) * 100).toFixed(2));
 }
 
-/** `quality:'high'` quando o modelo aceita — senão omite (deixa o provider
- * decidir; nunca pedimos um tier pior que o que já pedíamos, que era nenhum). */
-function bestQuality(allowed?: readonly string[]): string | undefined {
-	return allowed?.includes('high') ? 'high' : undefined;
+/** Os tiers de `quality` que a família GPT aceita no `/v1/images`. */
+export type ImageQuality = 'auto' | 'low' | 'medium' | 'high';
+
+/**
+ * `quality` que vai no corpo, quando o modelo aceita — senão omite.
+ *
+ * Padrão `'medium'`, e não mais `'high'`: o `gpt-5.4-image-2` em `high` custava
+ * ~US$ 0,15 por imagem e era pedido SEMPRE, inclusive nas tools em que a arte
+ * vira gravação a laser num quadrado de 5 cm. A tool que precisa do topo pede
+ * `quality: 'high'` no próprio nó `ai.generate_image` da definition — é o
+ * override por ferramenta (`pedida`). Um tier que o modelo não aceita é
+ * ignorado: mandar mesmo assim seria 400 no provedor.
+ */
+export function bestQuality(
+	allowed?: readonly string[],
+	pedida?: ImageQuality,
+): string | undefined {
+	if (!allowed?.length) return undefined;
+	if (pedida && allowed.includes(pedida)) return pedida;
+	return allowed.includes('medium') ? 'medium' : undefined;
 }
 
 interface UnifiedImagesResponse {
@@ -253,12 +275,15 @@ async function generateViaUnifiedImagesApi(opts: {
 	entry: ImageModelEntry;
 	outW?: number;
 	outH?: number;
+	quality?: ImageQuality;
+	atribuicao?: AtribuicaoOpenRouter;
 }): Promise<Buffer> {
 	const { model, prompt, refs, signal, entry, outW, outH } = opts;
 	const body: Record<string, unknown> = {
 		model,
 		prompt,
 		output_format: 'png',
+		...usuarioOpenRouter(opts.atribuicao?.tenantId),
 	};
 	let aspectPreset: string | undefined;
 	if (outW && outH && entry.apiAspectRatios?.length) {
@@ -274,7 +299,7 @@ async function generateViaUnifiedImagesApi(opts: {
 		aspectPreset,
 	);
 	if (resolution) body.resolution = resolution;
-	const quality = bestQuality(entry.apiQuality);
+	const quality = bestQuality(entry.apiQuality, opts.quality);
 	if (quality) body.quality = quality;
 	if (refs.length > 0) {
 		body.input_references = refs.map((ref) => ({
@@ -304,7 +329,10 @@ async function generateViaUnifiedImagesApi(opts: {
 				'Content-Type': 'application/json',
 				'HTTP-Referer':
 					process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-				'X-Title': `${process.env.NEXT_PUBLIC_COMPANY_SYSTEM ?? 'Profissão Laser'} - Prompts Mágicos`,
+				'X-Title': tituloOpenRouter(
+					opts.atribuicao?.toolKey,
+					'Prompts Mágicos',
+				),
 			},
 			body: JSON.stringify(body),
 		});
@@ -484,6 +512,10 @@ export async function generateToolImage(
 		rawPrompt?: boolean;
 		formatoReal?: boolean;
 		fit?: 'fill' | 'cover' | 'contain';
+		/** Override do tier `quality` (só família GPT). Ver `bestQuality`. */
+		quality?: ImageQuality;
+		/** Quem gastou, para o painel do OpenRouter. Ver `AtribuicaoOpenRouter`. */
+		atribuicao?: AtribuicaoOpenRouter;
 	},
 ): Promise<GenImageResult> {
 	if (!process.env.OPENROUTER_API_KEY) {
@@ -555,6 +587,8 @@ export async function generateToolImage(
 			entry: modelEntry!,
 			outW,
 			outH,
+			quality: opts?.quality,
+			atribuicao: opts?.atribuicao,
 		});
 	} else {
 		// `rawPrompt`: sem intermediação — só a user message. ai-extra não passa a
@@ -594,6 +628,7 @@ export async function generateToolImage(
 				{ role: 'user' as const, content },
 			],
 			modalities: ['image', 'text'],
+			...usuarioOpenRouter(opts?.atribuicao?.tenantId),
 		};
 
 		if (process.env.DEBUG_IMAGE_GEN) {
@@ -622,7 +657,10 @@ export async function generateToolImage(
 					headers: {
 						'HTTP-Referer':
 							process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-						'X-Title': `${process.env.NEXT_PUBLIC_COMPANY_SYSTEM ?? 'Profissão Laser'} - Prompts Mágicos`,
+						'X-Title': tituloOpenRouter(
+							opts?.atribuicao?.toolKey,
+							'Prompts Mágicos',
+						),
 					},
 				},
 			);
@@ -777,4 +815,55 @@ export async function generateToolImage(
 	const png = await sharpPipe.png().toBuffer();
 	const pngBase64 = `data:image/png;base64,${png.toString('base64')}`;
 	return { png, pngBase64 };
+}
+
+/** Lado maior da entrega das edições leves: a faixa `1K` do modelo Lite. */
+const LADO_EDICAO_LEVE = 1024;
+
+/**
+ * EDIÇÃO SIMPLES DE FOTO (remover fundo, colorir, restaurar) no modelo leve.
+ *
+ * Vai pelo `/v1/images` com TAMANHO EXPLÍCITO: a proporção da foto do aluno,
+ * com o lado maior em no máximo 1024 px (foto menor que isso volta no tamanho
+ * dela). Assim o `aspect_ratio` e a faixa `1K` viajam como parâmetro, a saída
+ * não sai quadrada nem cortada, e o `resize` final só reduz. Antes estas
+ * edições iam ao Pro pelo `/chat/completions`, sem tamanho nenhum, e voltavam
+ * em ~1K do mesmo jeito — só que pelo dobro do preço ou mais.
+ *
+ * `rawPrompt` = o prompt vai cru (sem o system de aderência do gerador), para
+ * quem já manda o prompt completo, como o editor.
+ */
+export async function editarImagemLeve(
+	prompt: string,
+	image: Buffer,
+	opts?: {
+		signal?: AbortSignal;
+		rawPrompt?: boolean;
+		atribuicao?: AtribuicaoOpenRouter;
+	},
+): Promise<GenImageResult> {
+	let width: number | undefined;
+	let height: number | undefined;
+	try {
+		const meta = await sharp(image).metadata();
+		if (meta.width && meta.height) {
+			const escala = Math.min(
+				1,
+				LADO_EDICAO_LEVE / Math.max(meta.width, meta.height),
+			);
+			width = Math.max(64, Math.round(meta.width * escala));
+			height = Math.max(64, Math.round(meta.height * escala));
+		}
+	} catch {
+		// Sem metadata, o provedor decide o formato — a edição ainda sai.
+	}
+	return generateToolImage(prompt, [image], opts?.signal, {
+		model: LIGHT_EDIT_IMAGE_MODEL_ID,
+		formatoReal: true,
+		rawPrompt: opts?.rawPrompt,
+		width,
+		height,
+		fit: 'cover',
+		atribuicao: opts?.atribuicao,
+	});
 }

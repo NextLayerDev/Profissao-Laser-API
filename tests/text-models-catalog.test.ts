@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+	FALLBACK_TEXT_MODEL_ID,
 	findTextModel,
 	getDefaultTextModel,
 	getDefaultTextModelId,
@@ -112,30 +113,29 @@ describe('text-models-catalog', () => {
 
 describe('webSearch — o filtro que impede gastar busca à toa', () => {
 	/**
-	 * O DeepSeek FOI REMOVIDO do catálogo (era o mais barato, e por isso a
-	 * escolha natural do admin): com busca web devolvia `content: ""` em 6/6, e
-	 * sem busca falhava de forma intermitente por gastar o orçamento de saída
-	 * raciocinando. Este teste impede que ele — ou qualquer parente — volte pela
-	 * porta dos fundos.
+	 * O DeepSeek saiu do catálogo em 2026-08 (com busca devolvia `content: ""`
+	 * em 6/6, e sem busca gastava a saída raciocinando) e VOLTOU em 2026-11 como
+	 * padrão, com o raciocínio desligado. A guarda agora é a condição da volta:
+	 * todo DeepSeek precisa sair com `disableReasoning` e não pode se dizer
+	 * compatível com busca.
 	 */
-	it('nenhum DeepSeek no catálogo', () => {
+	it('DeepSeek só entra com raciocínio desligado e sem busca', () => {
 		for (const m of getTextModelsCatalog(true)) {
-			expect(
-				m.id.startsWith('deepseek/'),
-				`${m.id} foi removido de propósito`,
-			).toBe(false);
+			if (!m.id.startsWith('deepseek/')) continue;
+			expect(m.disableReasoning, `${m.id} sem disableReasoning`).toBe(true);
+			expect(m.webSearch, `${m.id} não pode prometer busca`).toBe(false);
 		}
 	});
 
-	it('todo modelo do catálogo funciona com busca', () => {
-		// A regra passou a ser de ADMISSÃO: modelo que não funciona com busca não
-		// entra. O campo continua existindo para o próximo candidato ser testado.
-		for (const m of getTextModelsCatalog(true)) {
-			expect(
-				m.webSearch,
-				`${m.id} precisa funcionar com busca para entrar`,
-			).toBe(true);
-		}
+	it('o padrão sem busca/visão cai na reserva barata que tem as duas', () => {
+		expect(getDefaultTextModelId()).toBe('deepseek/deepseek-v4-flash');
+		expect(resolveTextModel(undefined, { needsWebSearch: true }).id).toBe(
+			FALLBACK_TEXT_MODEL_ID,
+		);
+		expect(resolveTextModel(undefined, { needsVision: true }).id).toBe(
+			FALLBACK_TEXT_MODEL_ID,
+		);
+		expect(resolveTextModel(undefined).id).toBe('deepseek/deepseek-v4-flash');
 	});
 
 	it('existe pelo menos um modelo barato COM busca', () => {

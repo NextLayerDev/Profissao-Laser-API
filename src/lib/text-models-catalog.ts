@@ -30,7 +30,7 @@
  * E há uma quinta coisa, aprendida do jeito caro: `webSearch`. Suportar tools
  * NÃO implica funcionar com o plugin de busca do OpenRouter.
  *
- * ┌─ POR QUE NÃO HÁ DEEPSEEK AQUI (não readicione sem testar) ───────────────┐
+ * ┌─ O DEEPSEEK QUE FALHAVA (histórico — vale para qualquer modelo novo) ────┐
  * │ `deepseek/deepseek-v4-pro` e `deepseek-v4-flash-0731` eram os mais       │
  * │ baratos do catálogo — e por isso mesmo eram a escolha natural do admin.  │
  * │ Medido em 2026-08-03: COM busca web, devolveram `content: ""` em 6/6     │
@@ -41,6 +41,21 @@
  * │ O modo de falha é o pior possível: silencioso, pago e intermitente.      │
  * │ Um modelo barato que às vezes não responde custa mais que um caro que    │
  * │ sempre responde.                                                          │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌─ POR QUE O DEEPSEEK VOLTOU, E COMO PADRÃO (2026-11-11) ─────────────────┐
+ * │ `deepseek/deepseek-v4-flash` (o id estável, não o `-0731`) com o        │
+ * │ raciocínio DESLIGADO (`reasoning:{enabled:false}`, ver                  │
+ * │ `disableReasoning`): conferido em `GET /models` e em chamadas reais —   │
+ * │ texto, JSON, tool-calling e até busca responderam, 77–106 tokens de     │
+ * │ saída a ~US$ 0,00002 por chamada. O defeito de antes era o raciocínio   │
+ * │ comendo o orçamento de saída; desligado, ele não existe.                │
+ * │                                                                          │
+ * │ Mesmo assim fica `webSearch: false` (um teste não apaga 6/6 falhas) e   │
+ * │ `vision: false` (o modelo é só texto). Quem precisa de busca ou de      │
+ * │ visão sem escolher modelo cai no `FALLBACK_TEXT_MODEL_ID` (Gemini 3.1   │
+ * │ Flash Lite), não no Sonnet. O Sonnet continua no catálogo para quem o   │
+ * │ escolher na Fábrica.                                                     │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -112,13 +127,37 @@ export interface TextModelEntry {
 	default?: boolean;
 	/** "Melhor da faixa X" — alvo do fallback quando a tool pede só um tier. */
 	tierDefault?: TextModelSpeed;
+	/**
+	 * Manda `reasoning:{enabled:false}` quando quem chama não decidiu. Para
+	 * modelo de raciocínio que, ligado, gasta a saída pensando e devolve texto
+	 * vazio (ver o histórico do DeepSeek no topo do arquivo).
+	 */
+	disableReasoning?: boolean;
 }
 
 export const TEXT_MODELS_CATALOG: ReadonlyArray<TextModelEntry> = [
 	{
+		id: 'deepseek/deepseek-v4-flash',
+		provider: 'openrouter',
+		label: 'DeepSeek V4 Flash (padrão · econômico)',
+		bestFor: ['redacao', 'extracao', 'barato'],
+		speed: 'fast',
+		quality: 'standard',
+		contextK: 1000,
+		toolUse: true,
+		json: true,
+		webSearch: false,
+		vision: false,
+		pricing: { in: 0.09, out: 0.18 },
+		notes:
+			'Modelo padrão: texto, JSON e uso de ferramentas por uma fração do preço do Sonnet. Só texto — sem imagem e sem busca web (nesses casos o sistema usa o Gemini 3.1 Flash Lite). Roda com o raciocínio desligado.',
+		default: true,
+		disableReasoning: true,
+	},
+	{
 		id: 'anthropic/claude-sonnet-5',
 		provider: 'openrouter',
-		label: 'Claude Sonnet 5 (padrão)',
+		label: 'Claude Sonnet 5 (raciocínio)',
 		bestFor: ['raciocinio', 'cad', 'juiz', 'redacao', 'visao'],
 		speed: 'medium',
 		quality: 'top',
@@ -129,8 +168,7 @@ export const TEXT_MODELS_CATALOG: ReadonlyArray<TextModelEntry> = [
 		vision: true,
 		pricing: { in: 2, out: 10 },
 		notes:
-			'Melhor custo-benefício com uso de ferramentas. Contexto de 1M, aceita imagem e segue schema de saída com confiabilidade. É o padrão para orquestrar agentes e para interpretar pedido em linguagem natural.',
-		default: true,
+			'Forte com uso de ferramentas. Contexto de 1M, aceita imagem e segue schema de saída com confiabilidade. Escolha para orquestrar agentes e interpretar pedido difícil em linguagem natural — custa ~50× o padrão na saída.',
 		tierDefault: 'medium',
 	},
 	{
@@ -241,6 +279,12 @@ export function getDefaultTextModel(): TextModelEntry {
 	return TEXT_MODELS_CATALOG[0] as TextModelEntry;
 }
 
+/**
+ * Reserva de quem precisa do que o padrão não tem (imagem, busca web). Tem
+ * tudo — `toolUse`, `json`, `webSearch`, `vision` — e é o mais barato que tem.
+ */
+export const FALLBACK_TEXT_MODEL_ID = 'google/gemini-3.1-flash-lite';
+
 /** Id do modelo padrão. Espelha `getDefaultImageModelId()`. */
 export function getDefaultTextModelId(): string {
 	return getDefaultTextModel().id;
@@ -271,8 +315,9 @@ export interface ResolveTextModelOpts {
  * NUNCA derruba a execução — cai no padrão e loga.
  *
  * Ordem: (1) `id` no catálogo e compatível com os requisitos; (2) melhor da
- * faixa `tier` que atenda os requisitos; (3) padrão do catálogo; (4) primeiro
- * do catálogo que atenda os requisitos.
+ * faixa `tier` que atenda os requisitos; (3) padrão do catálogo; (4) a reserva
+ * `FALLBACK_TEXT_MODEL_ID` (visão/busca, barata); (5) primeiro do catálogo que
+ * atenda os requisitos.
  */
 export function resolveTextModel(
 	id: string | undefined,
@@ -302,6 +347,9 @@ export function resolveTextModel(
 
 	const fallback = getDefaultTextModel();
 	if (fits(fallback)) return fallback;
+
+	const reserva = findTextModel(FALLBACK_TEXT_MODEL_ID);
+	if (reserva && fits(reserva)) return reserva;
 
 	const any = TEXT_MODELS_CATALOG.find(fits);
 	if (any) return any;

@@ -321,6 +321,7 @@ export const imageStudioBlock: ToolBlock<StudioParams> = {
 			formatoReal: true,
 			rawPrompt: p.raw_prompt === true,
 			fit: 'cover' as const,
+			atribuicao: { toolKey: ctx.toolKey },
 		};
 
 		/**

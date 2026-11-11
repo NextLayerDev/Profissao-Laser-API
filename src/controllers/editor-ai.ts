@@ -13,6 +13,12 @@ import {
 
 const AI_CANVAS_TOOL_KEY = 'ai_canvas';
 
+/** O tenant do request, quando veio — só para atribuir o gasto no OpenRouter. */
+function tenantOpcional(request: FastifyRequest): string | undefined {
+	const t = request.headers['x-tenant-id'];
+	return typeof t === 'string' && t ? t : undefined;
+}
+
 function statusFor(message: string): number {
 	if (message.includes('Limite de requisições')) return 429;
 	if (message.includes('Chave da API não configurada')) return 500;
@@ -81,7 +87,10 @@ export const editorRemoveBackgroundController = async (
 			return reply.status(gate.status).send({ message: gate.message });
 		}
 		invocationId = gate.mode === 'paid' ? gate.invocationId : null;
-		const result = await editorAiService.removeBackground(body);
+		const result = await editorAiService.removeBackground(body, {
+			toolKey: AI_CANVAS_TOOL_KEY,
+			tenantId: tenantOpcional(request),
+		});
 		if (invocationId)
 			await settleInvocation(customerId, invocationId, authHeader);
 		return reply.send(result);

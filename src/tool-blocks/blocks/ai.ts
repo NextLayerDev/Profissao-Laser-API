@@ -9,9 +9,9 @@ import type { ToolBlock } from '../types.js';
  * mesmo contrato do `laser.photoengrave`.
  *
  * `variation_count` — quantas imagens gerar (1–4). As N chamadas ao modelo rodam
- * em **paralelo** (`Promise.all`) pra baixar a latência total (2×/4× custa
- * ~1× o tempo de 1, não N×). `images` devolve o array completo; `png`/`pngBase64`
- * apontam pra 1ª imagem (back-compat de output).
+ * em **paralelo** (`Promise.allSettled`) pra baixar a latência total (2×/4×
+ * custa ~1× o tempo de 1, não N×). `images` devolve as que saíram; `png`/
+ * `pngBase64` apontam pra 1ª delas (back-compat de output).
  * Cobrança escala por variação (vox_cost × N) — veja `authorizeAndCharge` no
  * upvox; o motor settle/refund a invocation única cujo `voxes_spent` já vem N×.
  *
@@ -72,6 +72,13 @@ const aiGenerateImageSchema = z.object({
 	 * As N chamadas ao modelo rodam em paralelo; billing escala por variação.
 	 */
 	variation_count: z.number().int().min(1).max(4).optional(),
+	/**
+	 * Tier de `quality` (só família GPT; os Gemini não aceitam e ele é
+	 * ignorado). Ausente = `'medium'`. É o override POR FERRAMENTA: a tool que
+	 * precisa do topo declara `quality: 'high'` no próprio nó da definition.
+	 * Ver `bestQuality` em `lib/image-gen.ts`.
+	 */
+	quality: z.enum(['auto', 'low', 'medium', 'high']).optional(),
 });
 
 export const aiGenerateImageBlock: ToolBlock<
@@ -96,12 +103,6 @@ export const aiGenerateImageBlock: ToolBlock<
 		// `as const` é necessário: sem ele o ternário infere `string` e não estreita
 		// para a união `'fill' | 'cover' | 'contain'` que `generateToolImage` exige.
 		const fit = params.raw_prompt ? ('cover' as const) : ('fill' as const);
-		// Paralelo: N chamadas simultâneas ao modelo — 2×/4× variações custam
-		// ~1× o tempo de 1 (não N×). 429 individual já é tratado em `image-gen`
-		// (refund); o `Promise.allSettled`-style aqui rejeita se QUALQUER uma
-		// falhar, e o controller refunda a invocation única (cobrança N× já
-		// embutida no voxes_spent). Modelos muito lentos podem 504 com 4× — o
-		// admin escolhe o allowlist de variações ciente do modelo da tool.
 		const buildOpts = () => ({
 			model: params.model,
 			systemPromptOverride: params.system_prompt,
@@ -109,22 +110,58 @@ export const aiGenerateImageBlock: ToolBlock<
 			height: params.height,
 			rawPrompt: params.raw_prompt,
 			fit,
+			quality: params.quality,
+			atribuicao: { toolKey: ctx.toolKey },
 		});
-		const images: GenImageResult[] =
-			n === 1
-				? [
-						await generateToolImage(
-							params.prompt,
-							refs,
-							ctx.signal,
-							buildOpts(),
-						),
-					]
-				: await Promise.all(
-						Array.from({ length: n }, () =>
-							generateToolImage(params.prompt, refs, ctx.signal, buildOpts()),
-						),
-					);
+		/**
+		 * Paralelo: N chamadas simultâneas ao modelo — 2×/4× variações custam
+		 * ~1× o tempo de 1 (não N×).
+		 *
+		 * ┌─ POR QUE `allSettled`, E O QUE ELE AINDA NÃO RESOLVE ──────────────┐
+		 * │ Com `Promise.all`, UMA variação que falhasse (429, 504, recusa)     │
+		 * │ derrubava o run: o controller estornava a invocação inteira e as    │
+		 * │ outras 1–3 imagens, já pagas ao OpenRouter, iam para o lixo. Agora  │
+		 * │ o aluno recebe as que saíram, e o run só falha se NENHUMA sair      │
+		 * │ (aí o estorno é integral, como sempre).                             │
+		 * │                                                                      │
+		 * │ O que falta: o upvox só estorna a invocação INTEIRA                 │
+		 * │ (`POST /v1/tool/invocation/:id/refund`, sem valor). Não há como     │
+		 * │ devolver só as variações que falharam — o run parcial liquida pelo  │
+		 * │ valor cheio (vox_cost × N). O log abaixo deixa o caso visível até   │
+		 * │ existir um estorno parcial no upvox.                                │
+		 * └──────────────────────────────────────────────────────────────────────┘
+		 */
+		const tentativas = await Promise.allSettled(
+			Array.from({ length: n }, () =>
+				generateToolImage(params.prompt, refs, ctx.signal, buildOpts()),
+			),
+		);
+		const images = tentativas
+			.filter(
+				(t): t is PromiseFulfilledResult<GenImageResult> =>
+					t.status === 'fulfilled',
+			)
+			.map((t) => t.value);
+		if (images.length === 0) {
+			// Nenhuma saiu: propaga o 1º erro (o controller estorna tudo).
+			const primeira = tentativas.find(
+				(t): t is PromiseRejectedResult => t.status === 'rejected',
+			);
+			throw primeira?.reason;
+		}
+		if (images.length < n) {
+			console.warn(
+				'[ai.generate_image] variações parciais: entregue o que saiu, cobrança cheia (o upvox não estorna parcial)',
+				{
+					toolKey: ctx.toolKey,
+					pedidas: n,
+					entregues: images.length,
+					erros: tentativas
+						.filter((t): t is PromiseRejectedResult => t.status === 'rejected')
+						.map((t) => (t.reason as Error)?.message ?? String(t.reason)),
+				},
+			);
+		}
 		// Back-compat: png/pngBase64 = 1ª imagem (definition.output.primary/preview
 		// legados). `images` é o array completo p/ o novo output.images (Passo 3).
 		return {

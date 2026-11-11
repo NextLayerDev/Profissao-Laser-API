@@ -1,5 +1,11 @@
 import { openrouter } from '../openrouter.js';
 import {
+	type AtribuicaoOpenRouter,
+	systemComCache,
+	tituloOpenRouter,
+	usuarioOpenRouter,
+} from '../openrouter-custo.js';
+import {
 	findTextModel,
 	TEXT_MODELS_CATALOG,
 	type TextModelEntry,
@@ -148,6 +154,12 @@ export interface ChamadaOpts {
 	/** Rótulo do produto no painel do OpenRouter. */
 	titulo?: string;
 	/**
+	 * Quem gastou: o `tenantId` vai no campo `user`, e o `toolKey` vira o
+	 * `X-Title` quando não há `titulo` (que é mais granular e vence). Ver
+	 * `AtribuicaoOpenRouter`.
+	 */
+	atribuicao?: AtribuicaoOpenRouter;
+	/**
 	 * DESLIGA O RACIOCÍNIO DO MODELO — e isto conserta um run que MORRIA.
 	 *
 	 * ┌─ O DEFEITO, MEDIDO ─────────────────────────────────────────────────────┐
@@ -170,7 +182,9 @@ export interface ChamadaOpts {
 	 * │ tokens e US$ 0,17, PIOR que não mexer. Só `effort` e `enabled` servem.   │
 	 * └─────────────────────────────────────────────────────────────────────────┘
 	 *
-	 * Ausente = o modelo decide (comportamento de sempre, para quem não declarou).
+	 * Ausente = o modelo decide (comportamento de sempre, para quem não
+	 * declarou) — EXCETO modelo marcado `disableReasoning` no catálogo (o
+	 * DeepSeek padrão), que sai desligado. `'padrao'` explícito liga de volta.
 	 */
 	raciocinio?: 'padrao' | 'baixo' | 'desligado';
 }
@@ -278,12 +292,22 @@ export async function chamarModelo(o: ChamadaOpts): Promise<ChamadaResult> {
 		o.maxSide ?? LADO_PADRAO,
 	);
 
-	const messages: { role: 'system' | 'user'; content: string | Parte[] }[] = [];
-	if (o.system.trim()) messages.push({ role: 'system', content: o.system });
+	// O system (o papel do especialista, fixo) vai primeiro e, no Claude, com
+	// `cache_control`; o variável (pergunta, material, fotos) vai no fim, na
+	// mensagem do usuário. Ver `systemComCache`.
+	const messages: { role: 'system' | 'user'; content: unknown }[] = [];
+	if (o.system.trim()) {
+		messages.push({
+			role: 'system',
+			content: systemComCache(o.model.id, o.system),
+		});
+	}
 	messages.push({ role: 'user', content: conteudo });
 
 	const usaBusca = o.engine !== 'nenhum';
 	let avisoPlugin: string | undefined;
+	const raciocinio =
+		o.raciocinio ?? (o.model.disableReasoning ? 'desligado' : undefined);
 	const corpo: Record<string, unknown> = {
 		model: o.model.id,
 		messages,
@@ -292,11 +316,12 @@ export async function chamarModelo(o: ChamadaOpts): Promise<ChamadaResult> {
 		...(o.json ? { response_format: { type: 'json_object' } } : {}),
 		// Ver `raciocinio` em `OpcoesDaChamada`. `padrao`/ausente não manda nada,
 		// que é o comportamento de sempre — só quem DECLARA muda de rota.
-		...(o.raciocinio === 'desligado'
+		...(raciocinio === 'desligado'
 			? { reasoning: { enabled: false } }
-			: o.raciocinio === 'baixo'
+			: raciocinio === 'baixo'
 				? { reasoning: { effort: 'low' } }
 				: {}),
+		...usuarioOpenRouter(o.atribuicao?.tenantId),
 	};
 
 	if (usaBusca) {
@@ -322,7 +347,7 @@ export async function chamarModelo(o: ChamadaOpts): Promise<ChamadaResult> {
 			signal: o.signal,
 			headers: {
 				'HTTP-Referer': 'https://profissaolaser.com',
-				'X-Title': o.titulo ?? 'Profissão Laser - Tools',
+				'X-Title': o.titulo ?? tituloOpenRouter(o.atribuicao?.toolKey, 'Tools'),
 			},
 		});
 	} catch (err) {
