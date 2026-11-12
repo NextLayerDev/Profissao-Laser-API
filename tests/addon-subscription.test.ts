@@ -233,6 +233,23 @@ describe('addAddon', () => {
 		expect(stripe.subscriptions.create).not.toHaveBeenCalled();
 	});
 
+	it('assinatura migrada sem id do produto na metadata: duplicado reconhecido pelo preço', async () => {
+		const migrated = addonSub({
+			metadata: { kind: ADDON_SUBSCRIPTION_KIND, migrated_from_item: 'si_old' },
+		});
+		mockSubscriptions({ active: [planSub, migrated], all: [migrated] });
+
+		const { error } = await purchaseService.addAddon(
+			'aluno@x.com',
+			'prod-vetores',
+		);
+
+		expect((error as Error).message).toBe(
+			'Addon already attached to subscription',
+		);
+		expect(stripe.subscriptions.create).not.toHaveBeenCalled();
+	});
+
 	it('complemento legado (item no plano): também conta como duplicado', async () => {
 		const legacyPlan = {
 			...planSub,

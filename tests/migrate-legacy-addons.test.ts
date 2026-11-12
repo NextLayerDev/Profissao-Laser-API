@@ -9,7 +9,10 @@ vi.mock('../src/repositories/provisioning.js', () => ({
 	provisioningRepository: {},
 }));
 
-import { migrateSubscription } from '../scripts/migrate-legacy-addons.js';
+import {
+	addonPricesFromArgs,
+	migrateSubscription,
+} from '../scripts/migrate-legacy-addons.js';
 
 const NOW = 1_792_000_000;
 const stripe = {
@@ -81,10 +84,11 @@ const planInvoice = {
 
 const deps = () => ({
 	stripe: stripe as unknown as Stripe,
-	findProductByStripePriceId: vi.fn(async (priceId: string) =>
-		priceId === 'price_vetores_month'
-			? { id: 'prod-vetores', isAddon: true }
-			: { id: 'prod-starter', isAddon: false },
+	findProductByStripePriceId: vi.fn(
+		async (priceId: string): Promise<{ id?: string; isAddon: boolean }> =>
+			priceId === 'price_vetores_month'
+				? { id: 'prod-vetores', isAddon: true }
+				: { id: 'prod-starter', isAddon: false },
 	),
 	log: vi.fn(),
 	now: () => NOW * 1000,
@@ -177,5 +181,41 @@ describe('migrateSubscription', () => {
 			metadata: { kind: 'addon' },
 		} as unknown as Stripe.Subscription;
 		expect(await migrateSubscription(sub, deps(), true)).toEqual([]);
+	});
+});
+
+describe('sem banco de produtos (--addon-price)', () => {
+	it('lê os preços de complemento dos argumentos', () => {
+		expect([
+			...addonPricesFromArgs([
+				'node',
+				'x.ts',
+				'--addon-price=price_a',
+				'--apply',
+				'--addon-price=price_b',
+				'--addon-price=',
+			]),
+		]).toEqual(['price_a', 'price_b']);
+	});
+
+	it('migra pelo preço e não grava addon_product_id inexistente', async () => {
+		const d = deps();
+		d.findProductByStripePriceId.mockImplementation(
+			async (priceId: string) => ({
+				isAddon: priceId === 'price_vetores_month',
+			}),
+		);
+
+		await migrateSubscription(legacySub, d, true);
+
+		const metadata = stripe.subscriptions.create.mock.calls[0]?.[0]?.metadata;
+		expect(metadata).toEqual({
+			kind: 'addon',
+			plan_subscription_id: 'sub_plan',
+			migrated_from_item: 'si_addon',
+		});
+		expect(stripe.subscriptionItems.del).toHaveBeenCalledWith('si_addon', {
+			proration_behavior: 'none',
+		});
 	});
 });

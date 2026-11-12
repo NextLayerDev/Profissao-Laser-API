@@ -14,11 +14,14 @@
  *
  * Padrão é SIMULAÇÃO (não muda nada). Para aplicar:
  *   npx tsx --env-file=.env scripts/migrate-legacy-addons.ts --apply
+ * Sem acesso ao banco de produtos, informe os preços de complemento:
+ *   ... scripts/migrate-legacy-addons.ts --addon-price=price_x --apply
  */
 import type Stripe from 'stripe';
 import { ADDON_SUBSCRIPTION_KIND } from '../src/services/purchase.js';
 
-type AddonProduct = { id: string; isAddon?: boolean } | null;
+/** `id` é opcional: sem banco (`--addon-price`), o preço identifica o complemento. */
+type AddonProduct = { id?: string; isAddon?: boolean } | null;
 
 export type MigrationDeps = {
 	stripe: Stripe;
@@ -73,7 +76,7 @@ export async function migrateSubscription(
 	const plan = planItemOf(sub);
 	if (!plan || sub.metadata?.kind === ADDON_SUBSCRIPTION_KIND) return [];
 
-	const extras: { item: Stripe.SubscriptionItem; productId: string }[] = [];
+	const extras: { item: Stripe.SubscriptionItem; productId?: string }[] = [];
 	for (const item of sub.items.data) {
 		if (item.id === plan.id) continue;
 		const product = await deps.findProductByStripePriceId(item.price.id);
@@ -106,7 +109,7 @@ export async function migrateSubscription(
 						...(paidUntil > now + 60 ? { trial_end: paidUntil } : {}),
 						metadata: {
 							kind: ADDON_SUBSCRIPTION_KIND,
-							addon_product_id: productId,
+							...(productId ? { addon_product_id: productId } : {}),
 							plan_subscription_id: sub.id,
 							migrated_from_item: item.id,
 						},
@@ -179,16 +182,37 @@ export async function migrateAll(deps: MigrationDeps, apply: boolean) {
 	return summary;
 }
 
+/**
+ * `--addon-price=price_x` (repetível): diz quais preços são complemento sem
+ * consultar o banco de produtos — para rodar só com a chave do Stripe.
+ */
+export function addonPricesFromArgs(argv: string[]): Set<string> {
+	return new Set(
+		argv
+			.filter((a) => a.startsWith('--addon-price='))
+			.map((a) => a.slice('--addon-price='.length))
+			.filter(Boolean),
+	);
+}
+
 if (process.argv[1]?.endsWith('migrate-legacy-addons.ts')) {
 	const { stripe } = await import('../src/lib/stripe.js');
-	const { productRepository } = await import('../src/repositories/product.js');
+	const addonPrices = addonPricesFromArgs(process.argv);
+	const findProductByStripePriceId =
+		addonPrices.size > 0
+			? async (priceId: string): Promise<AddonProduct> => ({
+					isAddon: addonPrices.has(priceId),
+				})
+			: async (priceId: string): Promise<AddonProduct> => {
+					const { productRepository } = await import(
+						'../src/repositories/product.js'
+					);
+					return productRepository
+						.findByStripePriceId(priceId)
+						.catch(() => null);
+				};
 	await migrateAll(
-		{
-			stripe,
-			findProductByStripePriceId: (priceId) =>
-				productRepository.findByStripePriceId(priceId).catch(() => null),
-			log: (line) => console.log(line),
-		},
+		{ stripe, findProductByStripePriceId, log: (line) => console.log(line) },
 		process.argv.includes('--apply'),
 	);
 }
