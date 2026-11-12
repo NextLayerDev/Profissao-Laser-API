@@ -1,6 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { customerRepository } from '../repositories/customer.js';
-import { purchaseService } from '../services/purchase.js';
+import {
+	AddonPaymentMethodError,
+	purchaseService,
+} from '../services/purchase.js';
 
 export const getPurchasesController = async (
 	request: FastifyRequest,
@@ -207,6 +210,16 @@ export const addAddonController = async (
 	);
 	if (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
+		if (error instanceof AddonPaymentMethodError)
+			return reply.status(422).send({ message });
+		// Cartão recusado ou que pede autenticação (402 do Stripe): nada foi criado.
+		const stripeErr = error as { type?: string; statusCode?: number };
+		if (stripeErr?.type === 'StripeCardError' || stripeErr?.statusCode === 402)
+			return reply.status(422).send({
+				message: `Cartão recusado ao cobrar o complemento: ${message}`,
+			});
+		if (message === 'Addon already attached to subscription')
+			return reply.status(409).send({ message });
 		return reply.status(500).send({ message });
 	}
 	return reply.status(201).send(result);

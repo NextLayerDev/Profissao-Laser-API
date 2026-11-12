@@ -145,11 +145,14 @@ export async function purchaseRoute(server: FastifyInstance) {
 		{
 			preHandler: [authenticateCustomer],
 			schema: {
-				description: 'Add an addon (extra item) to the current subscription.',
+				description:
+					'Add an addon. It is its own Stripe subscription, charged right away on the customer card, so a failed addon charge never cancels the plan.',
 				body: z.object({ productId: z.uuid() }),
 				response: {
 					201: addonSchema.extend({ subscriptionId: z.string() }),
 					401: ErrorSchema,
+					409: ErrorSchema,
+					422: ErrorSchema,
 					500: ErrorSchema,
 				},
 				tags: ['Purchases'],
