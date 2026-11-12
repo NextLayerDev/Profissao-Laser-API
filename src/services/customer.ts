@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase.js';
 import { customerRepository } from '../repositories/customer.js';
 import { subscriptionRepository } from '../repositories/subscription.js';
 import { usersRepository } from '../repositories/user.js';
+import { isAddonSubscription } from './purchase.js';
 
 type SubscriptionInfo = {
 	status: string;
@@ -47,7 +48,8 @@ async function fetchAllStripeSubscriptions(): Promise<{
 					phones.set(email, customer.phone);
 				}
 
-				if (!subscriptions.has(email)) {
+				// Complemento é assinatura própria: não é o plano do cliente.
+				if (!subscriptions.has(email) && !isAddonSubscription(sub)) {
 					const periodEnd = sub.items.data[0]?.current_period_end;
 					subscriptions.set(email, {
 						status: sub.status,

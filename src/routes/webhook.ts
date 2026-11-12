@@ -9,6 +9,7 @@ import { customerRepository } from '../repositories/customer.js';
 import { productRepository } from '../repositories/product.js';
 import { provisioningRepository } from '../repositories/provisioning.js';
 import { subscriptionRepository } from '../repositories/subscription.js';
+import { ADDON_SUBSCRIPTION_KIND } from '../services/purchase.js';
 import type { ProvisioningPlan, Tenant } from '../types/provisioning.js';
 import { normalizeCompanySlug } from '../utils/normalize.js';
 import { PLAN_ORDER, resolvePlanFromProduct } from '../utils/plan.js';
@@ -36,6 +37,14 @@ export async function webhookRoute(server: FastifyInstance) {
 			);
 		} catch {
 			return reply.status(400).send({ message: 'Invalid webhook signature' });
+		}
+
+		// Complemento é assinatura própria (metadata.kind='addon', ver
+		// purchaseService.addAddon): os eventos dele não são do plano do tenant —
+		// sem isto, o produto do complemento rebaixava o plano e o fim dele
+		// cancelava o tenant.
+		if (isAddonEvent(event)) {
+			return reply.status(200).send({ received: true });
 		}
 
 		switch (event.type) {
@@ -77,6 +86,24 @@ export async function webhookRoute(server: FastifyInstance) {
 }
 
 // ========== HELPERS ==========
+
+export function isAddonEvent(event: Stripe.Event): boolean {
+	const obj = event.data.object as {
+		object?: string;
+		metadata?: Record<string, string> | null;
+		parent?: {
+			subscription_details?: { metadata?: Record<string, string> | null };
+		} | null;
+	};
+	if (obj.object === 'subscription')
+		return obj.metadata?.kind === ADDON_SUBSCRIPTION_KIND;
+	if (obj.object === 'invoice')
+		return (
+			obj.parent?.subscription_details?.metadata?.kind ===
+			ADDON_SUBSCRIPTION_KIND
+		);
+	return false;
+}
 
 async function resolveCustomerEmailFromStripeCustomer(
 	stripeCustomerId: string,

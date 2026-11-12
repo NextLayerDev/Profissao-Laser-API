@@ -8,27 +8,122 @@ import type { ProvisioningPlan } from '../types/provisioning.js';
 import { PLAN_ORDER, resolvePlanFromProduct } from '../utils/plan.js';
 import { resolveSuccessUrl } from '../utils/success-url.js';
 
-async function findActiveStripeSubscription(email: string) {
-	const customers = await stripe.customers.list({ email, limit: 1 });
-	if (!customers.data.length) throw new Error('No Stripe customer found');
-	const customerId = customers.data[0].id;
+/**
+ * Complemento vira assinatura PRÓPRIA no Stripe, marcada com esta metadata.
+ * Antes ele entrava como item na assinatura do plano: a cobrança mensal do
+ * complemento (num plano anual, por boleto) vencia e o Stripe cancelava a
+ * assinatura inteira — o aluno perdia o plano já pago por R$ 30.
+ */
+export const ADDON_SUBSCRIPTION_KIND = 'addon';
 
-	const [activeSubs, trialingSubs] = await Promise.all([
-		stripe.subscriptions.list({
-			customer: customerId,
-			status: 'active',
-			limit: 1,
-		}),
-		stripe.subscriptions.list({
-			customer: customerId,
-			status: 'trialing',
-			limit: 1,
-		}),
-	]);
-	const subscription = activeSubs.data[0] ?? trialingSubs.data[0];
+export class AddonPaymentMethodError extends Error {
+	constructor() {
+		super(
+			'Para adicionar um complemento, cadastre um cartão de crédito na sua assinatura.',
+		);
+		this.name = 'AddonPaymentMethodError';
+	}
+}
+
+export function isAddonSubscription(sub: Stripe.Subscription): boolean {
+	return sub.metadata?.kind === ADDON_SUBSCRIPTION_KIND;
+}
+
+/** O item do plano: o mais antigo (troca de plano reaproveita o item). */
+function planItemOf(sub: Stripe.Subscription) {
+	return sub.items.data.reduce<Stripe.SubscriptionItem | undefined>(
+		(oldest, item) =>
+			!oldest || (item.created ?? 0) < (oldest.created ?? 0) ? item : oldest,
+		undefined,
+	);
+}
+
+/**
+ * Assinatura ativa (ou em trial) do PLANO do cliente — nunca a de um
+ * complemento, que agora convive com ela no mesmo cliente.
+ */
+async function findPlanSubscription(
+	customerId: string,
+	expand?: string[],
+): Promise<Stripe.Subscription | null> {
+	const [active, trialing] = await Promise.all(
+		(['active', 'trialing'] as const).map((status) =>
+			stripe.subscriptions.list({
+				customer: customerId,
+				status,
+				limit: 10,
+				...(expand ? { expand } : {}),
+			}),
+		),
+	);
+	return (
+		[...active.data, ...trialing.data].find(
+			(sub) => !isAddonSubscription(sub),
+		) ?? null
+	);
+}
+
+async function findStripeCustomerId(email: string): Promise<string | null> {
+	const customers = await stripe.customers.list({ email, limit: 1 });
+	return customers.data[0]?.id ?? null;
+}
+
+async function findActiveStripeSubscription(email: string) {
+	const customerId = await findStripeCustomerId(email);
+	if (!customerId) throw new Error('No Stripe customer found');
+	const subscription = await findPlanSubscription(customerId);
 	if (!subscription)
 		throw new Error('No active or trialing Stripe subscription found');
 	return subscription;
+}
+
+/** Assinaturas de complemento do cliente que ainda cobram. */
+async function listAddonSubscriptions(customerId: string) {
+	const subs = await stripe.subscriptions.list({
+		customer: customerId,
+		status: 'all',
+		limit: 100,
+	});
+	return subs.data.filter(
+		(sub) =>
+			isAddonSubscription(sub) &&
+			['active', 'trialing', 'past_due'].includes(sub.status),
+	);
+}
+
+/**
+ * Cartão para cobrar o complemento na hora. Boleto/Pix não servem: a cobrança
+ * mensal viraria um boleto que o aluno não vê e que vence sozinho.
+ */
+async function resolveCardPaymentMethod(
+	plan: Stripe.Subscription,
+	customerId: string,
+): Promise<string> {
+	const idOf = (pm: string | Stripe.PaymentMethod | null | undefined) =>
+		typeof pm === 'string' ? pm : (pm?.id ?? null);
+	const customer = await stripe.customers.retrieve(customerId);
+	const candidates = [
+		idOf(plan.default_payment_method),
+		'deleted' in customer && customer.deleted
+			? null
+			: idOf(
+					(customer as Stripe.Customer).invoice_settings
+						?.default_payment_method,
+				),
+	].filter((id): id is string => !!id);
+
+	for (const id of candidates) {
+		const pm = await stripe.paymentMethods.retrieve(id);
+		if (pm.type === 'card') return pm.id;
+	}
+	const cards = await stripe.paymentMethods.list({
+		customer: customerId,
+		type: 'card',
+		limit: 1,
+	});
+	const card = cards.data[0];
+	if (!card) throw new AddonPaymentMethodError();
+	return card.id;
 }
 
 export const purchaseService = {
@@ -367,8 +462,11 @@ export const purchaseService = {
 				status: 'active',
 				limit: 100,
 			});
+			// Troca o PLANO; complementos (assinaturas próprias) seguem ativos.
 			await Promise.all(
-				existingSubs.data.map((sub) => stripe.subscriptions.cancel(sub.id)),
+				existingSubs.data
+					.filter((sub) => !isAddonSubscription(sub))
+					.map((sub) => stripe.subscriptions.cancel(sub.id)),
 			);
 
 			const price = await stripe.prices.create({
@@ -498,26 +596,9 @@ export const purchaseService = {
 					);
 			}
 
-			const customers = await stripe.customers.list({ email, limit: 1 });
-			if (!customers.data.length) throw new Error('No Stripe customer found');
-			const customerId = customers.data[0].id;
-
-			const [activeSubs, trialingSubs] = await Promise.all([
-				stripe.subscriptions.list({
-					customer: customerId,
-					status: 'active',
-					limit: 1,
-				}),
-				stripe.subscriptions.list({
-					customer: customerId,
-					status: 'trialing',
-					limit: 1,
-				}),
-			]);
-			const subscription = activeSubs.data[0] ?? trialingSubs.data[0];
-			if (!subscription)
-				throw new Error('No active or trialing Stripe subscription found');
-			const item = subscription.items.data[0];
+			const subscription = await findActiveStripeSubscription(email);
+			const item = planItemOf(subscription);
+			if (!item) throw new Error('No subscription item found');
 
 			const updated = await stripe.subscriptions.update(subscription.id, {
 				items: [{ id: item.id, price: product.stripePriceId }],
@@ -542,23 +623,12 @@ export const purchaseService = {
 
 			const customerId = customers.data[0].id;
 
-			const [active, trialing] = await Promise.all([
-				stripe.subscriptions.list({
-					customer: customerId,
-					status: 'active',
-					expand: ['data.items.data.price'],
-				}),
-				stripe.subscriptions.list({
-					customer: customerId,
-					status: 'trialing',
-					expand: ['data.items.data.price'],
-				}),
+			const sub = await findPlanSubscription(customerId, [
+				'data.items.data.price',
 			]);
-
-			const sub = active.data[0] ?? trialing.data[0];
 			if (!sub) return null;
 
-			const item = sub.items.data[0];
+			const item = planItemOf(sub);
 			const price = item?.price;
 
 			let productName = 'Unknown';
@@ -591,27 +661,14 @@ export const purchaseService = {
 
 			const customerId = customers.data[0].id;
 
-			const [active, trialing] = await Promise.all([
-				stripe.subscriptions.list({
-					customer: customerId,
-					status: 'active',
-					limit: 1,
-				}),
-				stripe.subscriptions.list({
-					customer: customerId,
-					status: 'trialing',
-					limit: 1,
-				}),
-			]);
-
-			const sub = active.data[0] ?? trialing.data[0];
+			const sub = await findPlanSubscription(customerId);
 			if (!sub) return null;
 
 			const updated = await stripe.subscriptions.update(sub.id, {
 				cancel_at_period_end: true,
 			});
 
-			const periodEnd = updated.items.data[0]?.current_period_end;
+			const periodEnd = planItemOf(updated)?.current_period_end;
 
 			return {
 				message:
@@ -653,7 +710,7 @@ export const purchaseService = {
 				cancel_at_period_end: true,
 			});
 
-			const periodEnd = updated.items.data[0]?.current_period_end;
+			const periodEnd = planItemOf(updated)?.current_period_end;
 
 			return {
 				id: updated.id,
@@ -694,13 +751,13 @@ export const purchaseService = {
 			const subscriptions = [
 				...(activeRes?.data ?? []),
 				...(trialingRes?.data ?? []),
-			];
+			].filter((sub) => !isAddonSubscription(sub));
 
 			const productIds = [
 				...new Set(
 					subscriptions
 						.map((sub) => {
-							const productRef = sub.items.data[0]?.price?.product;
+							const productRef = planItemOf(sub)?.price?.product;
 							return typeof productRef === 'string' ? productRef : null;
 						})
 						.filter(Boolean) as string[],
@@ -718,7 +775,7 @@ export const purchaseService = {
 
 			return subscriptions.map((sub) => {
 				const customer = sub.customer as Stripe.Customer | null;
-				const item = sub.items.data[0];
+				const item = planItemOf(sub);
 				const price = item?.price;
 				const productRef = price?.product;
 				const productName =
@@ -768,10 +825,12 @@ export const purchaseService = {
 				}),
 			]);
 
-			const subscriptions = [...active.data, ...trialing.data];
+			const subscriptions = [...active.data, ...trialing.data].filter(
+				(sub) => !isAddonSubscription(sub),
+			);
 
 			return subscriptions.map((sub) => {
-				const item = sub.items.data[0];
+				const item = planItemOf(sub);
 				const productRef = item?.price?.product;
 				const stripeProductId =
 					typeof productRef === 'string'
@@ -800,38 +859,81 @@ export const purchaseService = {
 	async addAddon(email: string, productId: string) {
 		return withCapture(async () => {
 			const product = await productRepository.findAddonById(productId);
-			const subscription = await findActiveStripeSubscription(email);
+			const plan = await findActiveStripeSubscription(email);
+			const customerId =
+				typeof plan.customer === 'string' ? plan.customer : plan.customer.id;
 
-			const already = subscription.items.data.find(
-				(i) => i.price.id === product.stripePriceId,
+			// Legado: complemento ainda pendurado como item da assinatura do plano.
+			if (plan.items.data.some((i) => i.price.id === product.stripePriceId))
+				throw new Error('Addon already attached to subscription');
+
+			const existing = (await listAddonSubscriptions(customerId)).find(
+				(sub) => sub.metadata?.addon_product_id === product.id,
 			);
-			if (already) throw new Error('Addon already attached to subscription');
+			if (existing && !existing.cancel_at_period_end)
+				throw new Error('Addon already attached to subscription');
 
-			const updated = await stripe.subscriptions.update(subscription.id, {
-				items: [{ price: product.stripePriceId, quantity: 1 }],
-				proration_behavior: 'create_prorations',
-				billing_cycle_anchor: 'unchanged',
-			});
+			// Removido mas ainda no período pago: só desfaz o cancelamento.
+			const subscription = existing
+				? await stripe.subscriptions.update(existing.id, {
+						cancel_at_period_end: false,
+					})
+				: await stripe.subscriptions.create(
+						{
+							customer: customerId,
+							items: [{ price: product.stripePriceId as string, quantity: 1 }],
+							default_payment_method: await resolveCardPaymentMethod(
+								plan,
+								customerId,
+							),
+							collection_method: 'charge_automatically',
+							// Cobra no cartão agora; se recusar, nada é criado e o erro volta.
+							payment_behavior: 'error_if_incomplete',
+							payment_settings: { payment_method_types: ['card'] },
+							metadata: {
+								kind: ADDON_SUBSCRIPTION_KIND,
+								addon_product_id: product.id,
+								plan_subscription_id: plan.id,
+							},
+						},
+						// Duplo clique / retry / duas abas: uma assinatura e uma cobrança só.
+						{
+							idempotencyKey: `addon:${customerId}:${product.id}:${Math.floor(Date.now() / 60_000)}`,
+						},
+					);
 
-			const newItem = updated.items.data.find(
-				(i) => i.price.id === product.stripePriceId,
-			);
-			if (!newItem) throw new Error('Failed to attach addon to subscription');
+			const item = subscription.items.data[0];
+			if (!item) throw new Error('Failed to attach addon to subscription');
 
 			return {
-				subscriptionId: updated.id,
-				itemId: newItem.id,
+				subscriptionId: subscription.id,
+				itemId: item.id,
 				productId: product.id,
 				productName: product.name,
-				stripePriceId: product.stripePriceId,
+				stripePriceId: product.stripePriceId as string,
 			};
 		});
 	},
 
 	async removeAddon(email: string, itemId: string) {
 		return withCapture(async () => {
-			const subscription = await findActiveStripeSubscription(email);
-			const item = subscription.items.data.find((i) => i.id === itemId);
+			const plan = await findActiveStripeSubscription(email);
+			const customerId =
+				typeof plan.customer === 'string' ? plan.customer : plan.customer.id;
+
+			const addonSub = (await listAddonSubscriptions(customerId)).find((sub) =>
+				sub.items.data.some((i) => i.id === itemId),
+			);
+			if (addonSub) {
+				// Já pago até o fim do período: para de renovar, sem estorno parcial.
+				await stripe.subscriptions.update(addonSub.id, {
+					cancel_at_period_end: true,
+				});
+				return { removed: true, itemId };
+			}
+
+			// Legado: item pendurado na assinatura do plano.
+			const item = plan.items.data.find((i) => i.id === itemId);
 			if (!item) throw new Error('Subscription item not found');
 
 			const product = await productRepository.findByStripePriceId(
@@ -848,8 +950,17 @@ export const purchaseService = {
 
 	async listAddons(email: string) {
 		return withCapture(async () => {
-			const subscription = await findActiveStripeSubscription(email);
-			const items = subscription.items.data;
+			const plan = await findActiveStripeSubscription(email);
+			const customerId =
+				typeof plan.customer === 'string' ? plan.customer : plan.customer.id;
+
+			const addonSubs = (await listAddonSubscriptions(customerId)).filter(
+				(sub) => !sub.cancel_at_period_end,
+			);
+			const items = [
+				...plan.items.data,
+				...addonSubs.flatMap((sub) => sub.items.data),
+			];
 
 			const enriched = await Promise.all(
 				items.map(async (i) => {
