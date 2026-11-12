@@ -204,11 +204,11 @@ export async function heuristicClassify(
  */
 export async function classifyImage(
 	buffer: Buffer,
-	opts?: { allowAI?: boolean },
+	opts?: { allowAI?: boolean; aiGate?: number },
 ): Promise<ClassifyResult> {
 	const h = await heuristicClassify(buffer);
 	if (
-		h.confidence >= AI_GATE ||
+		h.confidence >= (opts?.aiGate ?? AI_GATE) ||
 		opts?.allowAI === false ||
 		!process.env.OPENROUTER_API_KEY
 	) {

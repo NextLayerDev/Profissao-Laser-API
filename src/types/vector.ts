@@ -135,6 +135,21 @@ export const vectorizeResultSchema = vectorSchema.extend({
 	// zod REMOVE campo não declarado — sem isto o front nunca veria a flag.)
 	aiFallback: z.boolean().optional(),
 	aiFallbackReason: z.string().optional(),
+	// Fluxo Automático: o que o servidor decidiu (foto/logo, motor, caminho).
+	auto: z
+		.object({
+			kind: z.enum(['photo', 'logo']),
+			kindSource: z.enum(['forced', 'heuristic', 'ai', 'heuristic-fallback']),
+			engine: z.enum(['local', 'ai']),
+			route: z.string(),
+			aiAttempts: z.number(),
+			backgroundRemoved: z.boolean().nullable(),
+			darkCup: z.boolean(),
+			widthMm: z.number(),
+			heightMm: z.number(),
+			timeMs: z.number(),
+		})
+		.optional(),
 });
 
 // ─── Vetor invertido (fundo preto) ──────────────────────────────────

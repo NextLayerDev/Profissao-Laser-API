@@ -5,6 +5,7 @@ import { chooseInvertMode, invertModeForSubject } from '../lib/svg-negative.js';
 import { rasterizeSvgToPng, readViewBox } from '../lib/svg-raster.js';
 import { buildSilhouetteContourSvg } from '../lib/svg-silhouette-contour.js';
 import { parseVectorizeParams, svgToDxf } from '../lib/vectorize.js';
+import { invertSvgPolarity } from '../lib/vectorize-auto/svg-finalize.js';
 import { vectorRepository } from '../repositories/vector.js';
 import type { VectorizeParams } from '../types/vector.js';
 
@@ -89,14 +90,22 @@ export const vectorInvertService = {
 			// Só cai na heurística de pixels em vetores antigos, sem o campo.
 			const storedSubject = (vector.params as Record<string, unknown> | null)
 				?.subject;
-			const mode =
-				requested === 'auto'
+			// Vetor do fluxo Automático: "Inverter" idêntico ao da Comunidade Laser
+			// (retângulo do viewBox com a arte como furos), seja foto ou logo.
+			const isAutomatic =
+				(vector.params as Record<string, unknown> | null)?.preset ===
+				'automatico';
+			const mode: Exclude<InvertMode, 'auto'> = isAutomatic
+				? 'geometric'
+				: requested === 'auto'
 					? (invertModeForSubject(storedSubject) ??
 						(await chooseInvertMode(original)))
 					: requested;
 
 			let svgContent: string;
-			if (mode === 'silhouette') {
+			if (isAutomatic) {
+				svgContent = invertSvgPolarity(original);
+			} else if (mode === 'silhouette') {
 				// Foto original + params da geração → negativo RE-DITHERIZADO
 				// (tons invertidos ANTES do dither, como no fluxo manual). Sem o
 				// original (vetor antigo, fetch falhou), o builder cai no
@@ -144,7 +153,7 @@ export const vectorInvertService = {
 			const vb = readViewBox(svgContent);
 			const pngBuffer = await rasterizeSvgToPng(svgContent, {
 				flattenWhite: true,
-				maxDim: vb ? Math.max(vb.w, vb.h) : 1200,
+				maxDim: vb ? Math.round(Math.max(vb.w, vb.h)) : 1200,
 			});
 			// Caminho determinístico: re-inverter sobrescreve com o mesmo conteúdo.
 			const pngUrl = await uploadVectorPng(
