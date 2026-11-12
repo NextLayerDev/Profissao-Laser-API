@@ -867,8 +867,12 @@ export const purchaseService = {
 			if (plan.items.data.some((i) => i.price.id === product.stripePriceId))
 				throw new Error('Addon already attached to subscription');
 
+			// Pelo produto OU pelo preço: assinatura migrada do legado pode não
+			// trazer o id do produto na metadata, e o preço identifica do mesmo jeito.
 			const existing = (await listAddonSubscriptions(customerId)).find(
-				(sub) => sub.metadata?.addon_product_id === product.id,
+				(sub) =>
+					sub.metadata?.addon_product_id === product.id ||
+					sub.items.data.some((i) => i.price.id === product.stripePriceId),
 			);
 			if (existing && !existing.cancel_at_period_end)
 				throw new Error('Addon already attached to subscription');
