@@ -4,6 +4,8 @@
 // Mantido idêntico para garantir que o output do Gemini seja igual.
 // ─────────────────────────────────────────────────────────────────
 
+import { type LayoutPrompt, layoutPromptLines } from './previa-layout.js';
+
 // Função otimizada para converter URL de imagem para base64 com timeout
 export async function imageUrlToBase64(url: string): Promise<string> {
 	try {
@@ -55,6 +57,7 @@ export function generatePrompt(
 	textoLenteEsquerda?: string,
 	watermarkMode: 'none' | 'corners' | 'tiled' = 'none',
 	productColor: string | null = null,
+	layout: LayoutPrompt | null = null,
 ): string {
 	// hasWatermark = qualquer modo ativo (corners ou tiled).
 	// Usado pelos blocos de INPUT IMAGES; o bloco de instruções da watermark
@@ -440,6 +443,12 @@ export function generatePrompt(
 		}
 		lines.push('│                                                         │');
 		lines.push('│ 🚨 NO LOGO IMAGE - ENGRAVE TEXT ONLY                    │');
+		if (layout) {
+			lines.push('│                                                         │');
+			lines.push(
+				`${`│ [${layout.guideIdx}] placement guide = where each text goes (ref only)`.padEnd(58)}│`,
+			);
+		}
 		lines.push('└─────────────────────────────────────────────────────────┘');
 		lines.push('');
 		lines.push('⚠️ CRITICAL - TEXT-ONLY MODE RULES:');
@@ -462,6 +471,12 @@ export function generatePrompt(
 			lines.push('│                                                         │');
 			lines.push('│ [3] watermark     = Company branding overlay            │');
 			lines.push('│                     (place in 2 corners as overlay)     │');
+		}
+		if (layout) {
+			lines.push('│                                                         │');
+			lines.push(
+				`${`│ [${layout.guideIdx}] placement guide = where each element goes (ref only)`.padEnd(58)}│`,
+			);
 		}
 		lines.push('└─────────────────────────────────────────────────────────┘');
 		lines.push('');
@@ -707,8 +722,17 @@ export function generatePrompt(
 
 	lines.push('📐 ENGRAVING SPECIFICATIONS:');
 	lines.push('┌─────────────────────────────────────────────────────────┐');
-	lines.push(`│ Size:       ${sizeDescription.padEnd(42)}│`);
-	lines.push(`│ Position:   ${positionDescription.padEnd(42)}│`);
+	if (layout) {
+		lines.push(
+			`│ Size:       ${'USER LAYOUT — see the placement guide'.padEnd(42)}│`,
+		);
+		lines.push(
+			`│ Position:   ${'USER LAYOUT — see the placement guide'.padEnd(42)}│`,
+		);
+	} else {
+		lines.push(`│ Size:       ${sizeDescription.padEnd(42)}│`);
+		lines.push(`│ Position:   ${positionDescription.padEnd(42)}│`);
+	}
 	lines.push(`│ Intensity:  ${intensityDescription.padEnd(42)}│`);
 	lines.push(`│ Depth:      ${depthDescription.padEnd(42)}│`);
 
@@ -716,7 +740,7 @@ export function generatePrompt(
 		typeof laserSettings.rotacao === 'number'
 			? laserSettings.rotacao
 			: Number.parseInt(String(laserSettings.rotacao ?? '0'), 10);
-	if (!Number.isNaN(rotation) && rotation !== 0) {
+	if (!layout && !Number.isNaN(rotation) && rotation !== 0) {
 		const rotationDesc = `${rotation}° ${rotation > 0 ? 'clockwise' : 'counter-clockwise'}`;
 		lines.push(`│ Rotation:   ${rotationDesc.padEnd(42)}│`);
 	}
@@ -979,91 +1003,96 @@ export function generatePrompt(
 	lines.push('└─────────────────────────────────────────────────────────┘');
 	lines.push('');
 
-	// Adicionar detalhes visuais de posicionamento
-	lines.push('🎯 CRITICAL - EXACT LOGO POSITIONING:');
-	lines.push('┌─────────────────────────────────────────────────────────┐');
-	const posDetails =
-		positionDetailMap[laserSettings.posicao] || positionDetailMap.central;
-	for (const line of posDetails) {
-		lines.push(line);
-	}
-	lines.push('│                                                         │');
-	lines.push('│ ⚠️ PLACEMENT MUST BE PRECISE - NOT APPROXIMATE          │');
-	lines.push('│    Follow the percentages/coordinates EXACTLY           │');
-	lines.push('│    Deviations make the preview look unprofessional      │');
-	lines.push('└─────────────────────────────────────────────────────────┘');
-	lines.push('');
-
-	// Adicionar diagrama visual de posicionamento
-	lines.push('📊 VISUAL POSITIONING GUIDE:');
-	lines.push('┌─────────────────────────────────────────────────────────┐');
-	lines.push('│         PRODUCT SURFACE GRID                           │');
-	lines.push('│                                                         │');
-	lines.push('│   ┌───────────────────────────────────┐                 │');
-	lines.push('│   │        SUPERIOR (top 33%)         │ ← top area      │');
-	lines.push('│   │           15-25% from top         │                 │');
-	lines.push('│   ├───────────────────────────────────┤                 │');
-	lines.push('│   │                                   │                 │');
-	lines.push('│   │        CENTRAL (middle 33%)       │ ← center area   │');
-	lines.push('│   │           50% from top            │                 │');
-	lines.push('│   │                                   │                 │');
-	lines.push('│   ├───────────────────────────────────┤                 │');
-	lines.push('│   │        INFERIOR (bottom 33%)      │ ← bottom area   │');
-	lines.push('│   │           70-85% from top         │                 │');
-	lines.push('│   └───────────────────────────────────┘                 │');
-	lines.push('│                                                         │');
-	if (laserSettings.posicao === 'central') {
-		lines.push('│   🎯 SELECTED: CENTER - Logo at exact center point     │');
-	} else if (laserSettings.posicao === 'superior') {
-		lines.push('│   🎯 SELECTED: SUPERIOR - Logo in TOP area             │');
-	} else if (laserSettings.posicao === 'inferior') {
-		lines.push('│   🎯 SELECTED: INFERIOR - Logo in BOTTOM area          │');
-	} else if (laserSettings.posicao === 'lateral') {
-		lines.push('│   🎯 SELECTED: LATERAL - Logo offset to SIDE           │');
-	} else if (laserSettings.posicao === 'envolvente-360') {
-		lines.push('│   🎯 SELECTED: WRAP-AROUND 360° - art circles product  │');
-	}
-	lines.push('└─────────────────────────────────────────────────────────┘');
-	lines.push('');
-
-	// Adicionar guia de tamanho relativo
-	lines.push('📏 SIZE REFERENCE GUIDE:');
-	lines.push('┌─────────────────────────────────────────────────────────┐');
-	lines.push('│ Logo size is RELATIVE to the engravable surface:       │');
-	lines.push('│                                                         │');
-	if (laserSettings.tamanho === 'pequeno') {
-		lines.push('│   SMALL: Logo occupies ~15-20% of surface              │');
-		lines.push('│   ┌─────────────────────┐                               │');
-		lines.push('│   │                     │                               │');
-		lines.push('│   │      ┌───┐          │  ← Small logo                 │');
-		lines.push('│   │      └───┘          │    (discreet)                 │');
-		lines.push('│   │                     │                               │');
-		lines.push('│   └─────────────────────┘                               │');
-	} else if (laserSettings.tamanho === 'medio') {
-		lines.push('│   MEDIUM: Logo occupies ~30-40% of surface             │');
-		lines.push('│   ┌─────────────────────┐                               │');
-		lines.push('│   │                     │                               │');
-		lines.push('│   │    ┌─────────┐      │  ← Medium logo                │');
-		lines.push('│   │    │         │      │    (balanced)                 │');
-		lines.push('│   │    └─────────┘      │                               │');
-		lines.push('│   │                     │                               │');
-		lines.push('│   └─────────────────────┘                               │');
-	} else if (laserSettings.tamanho === 'grande') {
-		lines.push('│   LARGE: Logo occupies ~50-60% of surface              │');
-		lines.push('│   ┌─────────────────────┐                               │');
-		lines.push('│   │  ┌───────────────┐  │                               │');
-		lines.push('│   │  │               │  │  ← Large logo                 │');
-		lines.push('│   │  │               │  │    (prominent)                │');
-		lines.push('│   │  └───────────────┘  │                               │');
-		lines.push('│   └─────────────────────┘                               │');
+	if (layout) {
+		lines.push(...layoutPromptLines(layout));
+		lines.push('');
 	} else {
-		lines.push('│   CUSTOM: Logo sized proportionally (~40%)             │');
+		// Adicionar detalhes visuais de posicionamento
+		lines.push('🎯 CRITICAL - EXACT LOGO POSITIONING:');
+		lines.push('┌─────────────────────────────────────────────────────────┐');
+		const posDetails =
+			positionDetailMap[laserSettings.posicao] || positionDetailMap.central;
+		for (const line of posDetails) {
+			lines.push(line);
+		}
+		lines.push('│                                                         │');
+		lines.push('│ ⚠️ PLACEMENT MUST BE PRECISE - NOT APPROXIMATE          │');
+		lines.push('│    Follow the percentages/coordinates EXACTLY           │');
+		lines.push('│    Deviations make the preview look unprofessional      │');
+		lines.push('└─────────────────────────────────────────────────────────┘');
+		lines.push('');
+
+		// Adicionar diagrama visual de posicionamento
+		lines.push('📊 VISUAL POSITIONING GUIDE:');
+		lines.push('┌─────────────────────────────────────────────────────────┐');
+		lines.push('│         PRODUCT SURFACE GRID                           │');
+		lines.push('│                                                         │');
+		lines.push('│   ┌───────────────────────────────────┐                 │');
+		lines.push('│   │        SUPERIOR (top 33%)         │ ← top area      │');
+		lines.push('│   │           15-25% from top         │                 │');
+		lines.push('│   ├───────────────────────────────────┤                 │');
+		lines.push('│   │                                   │                 │');
+		lines.push('│   │        CENTRAL (middle 33%)       │ ← center area   │');
+		lines.push('│   │           50% from top            │                 │');
+		lines.push('│   │                                   │                 │');
+		lines.push('│   ├───────────────────────────────────┤                 │');
+		lines.push('│   │        INFERIOR (bottom 33%)      │ ← bottom area   │');
+		lines.push('│   │           70-85% from top         │                 │');
+		lines.push('│   └───────────────────────────────────┘                 │');
+		lines.push('│                                                         │');
+		if (laserSettings.posicao === 'central') {
+			lines.push('│   🎯 SELECTED: CENTER - Logo at exact center point     │');
+		} else if (laserSettings.posicao === 'superior') {
+			lines.push('│   🎯 SELECTED: SUPERIOR - Logo in TOP area             │');
+		} else if (laserSettings.posicao === 'inferior') {
+			lines.push('│   🎯 SELECTED: INFERIOR - Logo in BOTTOM area          │');
+		} else if (laserSettings.posicao === 'lateral') {
+			lines.push('│   🎯 SELECTED: LATERAL - Logo offset to SIDE           │');
+		} else if (laserSettings.posicao === 'envolvente-360') {
+			lines.push('│   🎯 SELECTED: WRAP-AROUND 360° - art circles product  │');
+		}
+		lines.push('└─────────────────────────────────────────────────────────┘');
+		lines.push('');
+
+		// Adicionar guia de tamanho relativo
+		lines.push('📏 SIZE REFERENCE GUIDE:');
+		lines.push('┌─────────────────────────────────────────────────────────┐');
+		lines.push('│ Logo size is RELATIVE to the engravable surface:       │');
+		lines.push('│                                                         │');
+		if (laserSettings.tamanho === 'pequeno') {
+			lines.push('│   SMALL: Logo occupies ~15-20% of surface              │');
+			lines.push('│   ┌─────────────────────┐                               │');
+			lines.push('│   │                     │                               │');
+			lines.push('│   │      ┌───┐          │  ← Small logo                 │');
+			lines.push('│   │      └───┘          │    (discreet)                 │');
+			lines.push('│   │                     │                               │');
+			lines.push('│   └─────────────────────┘                               │');
+		} else if (laserSettings.tamanho === 'medio') {
+			lines.push('│   MEDIUM: Logo occupies ~30-40% of surface             │');
+			lines.push('│   ┌─────────────────────┐                               │');
+			lines.push('│   │                     │                               │');
+			lines.push('│   │    ┌─────────┐      │  ← Medium logo                │');
+			lines.push('│   │    │         │      │    (balanced)                 │');
+			lines.push('│   │    └─────────┘      │                               │');
+			lines.push('│   │                     │                               │');
+			lines.push('│   └─────────────────────┘                               │');
+		} else if (laserSettings.tamanho === 'grande') {
+			lines.push('│   LARGE: Logo occupies ~50-60% of surface              │');
+			lines.push('│   ┌─────────────────────┐                               │');
+			lines.push('│   │  ┌───────────────┐  │                               │');
+			lines.push('│   │  │               │  │  ← Large logo                 │');
+			lines.push('│   │  │               │  │    (prominent)                │');
+			lines.push('│   │  └───────────────┘  │                               │');
+			lines.push('│   └─────────────────────┘                               │');
+		} else {
+			lines.push('│   CUSTOM: Logo sized proportionally (~40%)             │');
+		}
+		lines.push('│                                                         │');
+		lines.push('│ ⚠️ IMPORTANT: Maintain logo aspect ratio (no stretch)   │');
+		lines.push('│    Scale uniformly - width and height proportional      │');
+		lines.push('└─────────────────────────────────────────────────────────┘');
+		lines.push('');
 	}
-	lines.push('│                                                         │');
-	lines.push('│ ⚠️ IMPORTANT: Maintain logo aspect ratio (no stretch)   │');
-	lines.push('│    Scale uniformly - width and height proportional      │');
-	lines.push('└─────────────────────────────────────────────────────────┘');
-	lines.push('');
 
 	// ─── Photography / Visualization Type ────────────────────────────────────
 	lines.push('📸 PHOTOGRAPHY / VISUALIZATION TYPE:');
@@ -1218,59 +1247,130 @@ export function generatePrompt(
 			textPositionMap.abaixo;
 		const spacingDescription =
 			spacingMap[laserSettings.espacamentoLogoTexto] ?? spacingMap.medio;
-		lines.push('│ Text positioning:                                       │');
-		lines.push(`│   → ${textPosDescription.substring(0, 52).padEnd(52)}│`);
-		lines.push(
-			`│   → Spacing: ${spacingDescription.substring(0, 42).padEnd(42)}│`,
-		);
-		lines.push('│   → Maintain legibility and professional appearance     │');
-		lines.push('│                                                         │');
-
-		// Adicionar instruções específicas de tamanho do nome
-		lines.push('│ 📏 TEXT SIZE SPECIFICATIONS:                            │');
-		if (laserSettings.tamanhoNome === 'pequeno') {
-			lines.push('│   → SMALL TEXT - subtle and elegant                     │');
-			lines.push('│   → Width approximately 60% of logo width               │');
-			lines.push('│   → Discreet appearance, complementary to logo          │');
-			lines.push('│   → Ideal for long names or secondary personalization   │');
-		} else if (laserSettings.tamanhoNome === 'grande') {
-			lines.push('│   → LARGE TEXT - prominent and bold                     │');
-			lines.push('│   → Width approximately 100% of logo width or larger    │');
-			lines.push('│   → High visibility and impact                          │');
-			lines.push('│   → Text is a primary visual element                    │');
-		} else {
-			lines.push('│   → MEDIUM TEXT - balanced visibility                   │');
-			lines.push('│   → Width approximately 80% of logo width               │');
-			lines.push('│   → Good balance between visibility and elegance        │');
-			lines.push('│   → Standard sizing for most personalization            │');
-		}
-		lines.push('│                                                         │');
-
-		// Adicionar instruções específicas de orientação do nome
-		lines.push('│ 🔄 TEXT ORIENTATION SPECIFICATIONS:                     │');
-		if (laserSettings.orientacaoNome === 'vertical') {
-			lines.push('│   → VERTICAL TEXT - rotated 90° to stand upright        │');
-			lines.push('│   → Text reads from bottom to top                       │');
-			lines.push('│   → Position text beside the logo (left or right)       │');
-			lines.push('│   → Creates a tower/pillar effect with logo             │');
-			lines.push('│   → Ideal for cylindrical products (bottles, cups)      │');
+		if (layout?.caixas.texto) {
+			lines.push('│ Text placement, size and rotation:                      │');
+			lines.push(
+				'│   → EXACTLY inside the ORANGE box of the placement guide │',
+			);
+			lines.push('│     (see USER-DEFINED LAYOUT) — not tied to the logo    │');
 			lines.push('│                                                         │');
-			lines.push('│   Visual representation:                                │');
-			lines.push('│   [LOGO] ║N║                                           │');
-			lines.push('│          ║A║                                           │');
-			lines.push('│          ║M║                                           │');
-			lines.push('│          ║E║                                           │');
 		} else {
-			lines.push('│   → HORIZONTAL TEXT - normal reading orientation        │');
-			lines.push('│   → Text reads left to right below logo                 │');
-			lines.push('│   → Standard positioning under the logo                 │');
-			lines.push('│   → Classic and professional appearance                 │');
+			lines.push('│ Text positioning:                                       │');
+			lines.push(`│   → ${textPosDescription.substring(0, 52).padEnd(52)}│`);
+			lines.push(
+				`│   → Spacing: ${spacingDescription.substring(0, 42).padEnd(42)}│`,
+			);
+			lines.push('│   → Maintain legibility and professional appearance     │');
 			lines.push('│                                                         │');
-			lines.push('│   Visual representation:                                │');
-			lines.push('│        [LOGO]                                          │');
-			lines.push('│    ═══ NAME ═══                                        │');
+
+			// Adicionar instruções específicas de tamanho do nome
+			lines.push('│ 📏 TEXT SIZE SPECIFICATIONS:                            │');
+			if (laserSettings.tamanhoNome === 'pequeno') {
+				lines.push(
+					'│   → SMALL TEXT - subtle and elegant                     │',
+				);
+				lines.push(
+					'│   → Width approximately 60% of logo width               │',
+				);
+				lines.push(
+					'│   → Discreet appearance, complementary to logo          │',
+				);
+				lines.push(
+					'│   → Ideal for long names or secondary personalization   │',
+				);
+			} else if (laserSettings.tamanhoNome === 'grande') {
+				lines.push(
+					'│   → LARGE TEXT - prominent and bold                     │',
+				);
+				lines.push(
+					'│   → Width approximately 100% of logo width or larger    │',
+				);
+				lines.push(
+					'│   → High visibility and impact                          │',
+				);
+				lines.push(
+					'│   → Text is a primary visual element                    │',
+				);
+			} else {
+				lines.push(
+					'│   → MEDIUM TEXT - balanced visibility                   │',
+				);
+				lines.push(
+					'│   → Width approximately 80% of logo width               │',
+				);
+				lines.push(
+					'│   → Good balance between visibility and elegance        │',
+				);
+				lines.push(
+					'│   → Standard sizing for most personalization            │',
+				);
+			}
+			lines.push('│                                                         │');
+
+			// Adicionar instruções específicas de orientação do nome
+			lines.push('│ 🔄 TEXT ORIENTATION SPECIFICATIONS:                     │');
+			if (laserSettings.orientacaoNome === 'vertical') {
+				lines.push(
+					'│   → VERTICAL TEXT - rotated 90° to stand upright        │',
+				);
+				lines.push(
+					'│   → Text reads from bottom to top                       │',
+				);
+				lines.push(
+					'│   → Position text beside the logo (left or right)       │',
+				);
+				lines.push(
+					'│   → Creates a tower/pillar effect with logo             │',
+				);
+				lines.push(
+					'│   → Ideal for cylindrical products (bottles, cups)      │',
+				);
+				lines.push(
+					'│                                                         │',
+				);
+				lines.push(
+					'│   Visual representation:                                │',
+				);
+				lines.push(
+					'│   [LOGO] ║N║                                           │',
+				);
+				lines.push(
+					'│          ║A║                                           │',
+				);
+				lines.push(
+					'│          ║M║                                           │',
+				);
+				lines.push(
+					'│          ║E║                                           │',
+				);
+			} else {
+				lines.push(
+					'│   → HORIZONTAL TEXT - normal reading orientation        │',
+				);
+				lines.push(
+					'│   → Text reads left to right below logo                 │',
+				);
+				lines.push(
+					'│   → Standard positioning under the logo                 │',
+				);
+				lines.push(
+					'│   → Classic and professional appearance                 │',
+				);
+				lines.push(
+					'│                                                         │',
+				);
+				lines.push(
+					'│   Visual representation:                                │',
+				);
+				lines.push(
+					'│        [LOGO]                                          │',
+				);
+				lines.push(
+					'│    ═══ NAME ═══                                        │',
+				);
+			}
+			lines.push('│                                                         │');
 		}
-		lines.push('│                                                         │');
 		lines.push('│ ⚠️ CRITICAL - Text color requirements:                  │');
 		lines.push('│   → Text MUST be metallic inox effect                   │');
 		lines.push('│   → Use SAME uniform metallic tone as logo              │');

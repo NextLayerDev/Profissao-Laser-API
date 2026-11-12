@@ -4,6 +4,12 @@ import {
 	openrouter,
 	PREVIA_MODEL,
 } from '../lib/openrouter.js';
+import {
+	guiaDeLayout,
+	type LayoutPrompt,
+	layoutEfetivo,
+	medirLarguraProduto,
+} from '../lib/previa-layout.js';
 import { generatePrompt, imageUrlToBase64 } from '../lib/previa-prompt.js';
 import { deletePreviaImageByUrl, uploadPreviaImage } from '../lib/storage.js';
 import { previaRepository } from '../repositories/previa.js';
@@ -103,11 +109,44 @@ class PreviaService {
 			? base64s[willSendLogo ? 2 : 1]
 			: null;
 
+		// ── Layout marcado pelo aluno (opcional) → imagem-guia por último ──
+		// Vai depois da logo e da marca d'água, então os índices delas não mudam.
+		const hasCustomName =
+			effectiveLaserSettings.comNome === 'com' || isTextOnly;
+		const textoLayout = hasCustomName ? (customName ?? '').trim() : '';
+		const texto2Layout = modoLentes
+			? ''
+			: (effectiveLaserSettings.texto2 ?? '').trim();
+		const caixas = layoutEfetivo(effectiveLaserSettings, {
+			hasLogo: willSendLogo,
+			texto: textoLayout,
+			texto2: texto2Layout,
+			modoLentes: modoLentes === true,
+		});
+		let layoutPrompt: LayoutPrompt | null = null;
+		let guideB64: string | null = null;
+		if (caixas) {
+			try {
+				const produtoLargura = await medirLarguraProduto(imageproductB64);
+				guideB64 = await guiaDeLayout(imageproductB64, caixas, produtoLargura);
+				layoutPrompt = {
+					caixas,
+					guideIdx: 2 + (willSendLogo ? 1 : 0) + (willSendWatermark ? 1 : 0),
+					produtoLargura,
+					texto: textoLayout,
+					texto2: texto2Layout,
+				};
+			} catch (err) {
+				// Sem guia a prévia segue automática — melhor que falhar a geração.
+				console.error('Falha ao montar a guia de layout da prévia:', err);
+			}
+		}
+
 		// ── Gerar prompt dinâmico (sem imagebase, com flag de watermark) ────
 		const prompt = generatePrompt(
 			productName,
 			{ ...effectiveLaserSettings, apenasTexto: isTextOnly },
-			effectiveLaserSettings.comNome === 'com' || isTextOnly,
+			hasCustomName,
 			customName ?? undefined,
 			instrucoesPersonalizadas ?? null,
 			modoLentes,
@@ -115,6 +154,7 @@ class PreviaService {
 			textoLenteEsquerda ?? undefined,
 			resolvedWatermarkMode,
 			productColor,
+			layoutPrompt,
 		);
 
 		// ── Montar mensagem (produto + logo opcional + watermark opcional) ──
@@ -138,6 +178,12 @@ class PreviaService {
 			messageContent.push({
 				type: 'image_url',
 				image_url: { url: `data:image/png;base64,${watermarkB64}` },
+			});
+		}
+		if (layoutPrompt && guideB64) {
+			messageContent.push({
+				type: 'image_url',
+				image_url: { url: `data:image/png;base64,${guideB64}` },
 			});
 		}
 
