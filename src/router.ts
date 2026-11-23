@@ -24,6 +24,7 @@ import { laserLineTypeRoute } from './routes/laser-line-type.js';
 import { laserProductRoute } from './routes/laser-product.js';
 import { lessonRoute } from './routes/lesson.js';
 import { machineRoute } from './routes/machine.js';
+import { melhorEnvioOAuthRoute } from './routes/melhor-envio-oauth.js';
 import { mentorshipRoute } from './routes/mentorship.js';
 import { mercadoLivreOAuthRoute } from './routes/mercado-livre-oauth.js';
 import { moduleRoute } from './routes/module.js';
@@ -115,6 +116,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(editorAiRoute);
 	app.register(provisioningRoute);
 	app.register(mercadoLivreOAuthRoute);
+	app.register(melhorEnvioOAuthRoute);
 	app.register(mercadoLivreWebhookRoute);
 	app.register(mlSellerRoute);
 };
