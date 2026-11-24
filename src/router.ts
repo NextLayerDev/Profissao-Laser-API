@@ -27,6 +27,7 @@ import { licensedArtRoute } from './routes/licensed-art.js';
 import { licensedBrandRoute } from './routes/licensed-brand.js';
 import { licensedSellerRoute } from './routes/licensed-seller.js';
 import { machineRoute } from './routes/machine.js';
+import { melhorEnvioOAuthRoute } from './routes/melhor-envio-oauth.js';
 import { mentorshipRoute } from './routes/mentorship.js';
 import { mercadoLivreOAuthRoute } from './routes/mercado-livre-oauth.js';
 import { moduleRoute } from './routes/module.js';
@@ -127,6 +128,7 @@ export const routes = async (app: FastifyInstance) => {
 	app.register(editorAiRoute);
 	app.register(provisioningRoute);
 	app.register(mercadoLivreOAuthRoute);
+	app.register(melhorEnvioOAuthRoute);
 	app.register(mercadoLivreWebhookRoute);
 	app.register(mlSellerRoute);
 };
