@@ -2,6 +2,10 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# onnxruntime-node baixa o binário de GPU (CUDA) no install e o link dá 404,
+# o que derruba o npm ci e o deploy. A API só usa CPU: pula o download.
+ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
+
 COPY package.json package-lock.json ./
 RUN npm ci
 
@@ -12,6 +16,10 @@ RUN npm run build
 FROM node:22-alpine AS production
 
 WORKDIR /app
+
+# onnxruntime-node baixa o binário de GPU (CUDA) no install e o link dá 404,
+# o que derruba o npm ci e o deploy. A API só usa CPU: pula o download.
+ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
 
 # ffmpeg — o Ateliê monta vídeo de anúncio (Reels/Stories) a partir das artes que
 # já gerou: movimento de câmera sobre a peça, texto entrando, o kit como cenas.
