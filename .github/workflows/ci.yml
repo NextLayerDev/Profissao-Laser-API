@@ -14,7 +14,6 @@ env:
   NODE_VERSION: "24"
   # onnxruntime-node baixa o binário de GPU (CUDA) no install e o link dá 404.
   # A API só usa CPU, então o download de CUDA é pulado.
-  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
   npm_config_onnxruntime_node_install_cuda: skip
 
 jobs:

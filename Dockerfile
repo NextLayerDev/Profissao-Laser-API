@@ -4,7 +4,8 @@ WORKDIR /app
 
 # onnxruntime-node baixa o binário de GPU (CUDA) no install e o link dá 404,
 # o que derruba o npm ci e o deploy. A API só usa CPU: pula o download.
-ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
+# O script de install do onnxruntime-node 1.17 só lê esta variável.
+ENV npm_config_onnxruntime_node_install_cuda=skip
 
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -19,7 +20,8 @@ WORKDIR /app
 
 # onnxruntime-node baixa o binário de GPU (CUDA) no install e o link dá 404,
 # o que derruba o npm ci e o deploy. A API só usa CPU: pula o download.
-ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
+# O script de install do onnxruntime-node 1.17 só lê esta variável.
+ENV npm_config_onnxruntime_node_install_cuda=skip
 
 # ffmpeg — o Ateliê monta vídeo de anúncio (Reels/Stories) a partir das artes que
 # já gerou: movimento de câmera sobre a peça, texto entrando, o kit como cenas.
